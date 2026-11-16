@@ -170,6 +170,8 @@ export interface Space {
 }
 export const folderIdOf = (s: Space) => s.folderId ?? s.id
 export const DEFAULT_SPACE: Space = { id: 'default', name: 'My workspace' }
+/** Where MCP assistants may write, when Settings allows (core/mcpWorkspace.ts). Made on first use. */
+export const ASSISTANT_SPACE: Space = { id: 'assistant', name: 'AI assistant' }
 export const spaceOf = (x: { workspaceId?: string }) => x.workspaceId || DEFAULT_SPACE.id
 
 export interface PreparedFile { name: string; type: string; base64: string }
@@ -253,6 +255,8 @@ export interface Settings {
   mcpHostToken: string
   /** Methods assistants may send, comma separated ("" = all). */
   mcpHostMethods: string
+  /** Assistants get their own workspace (ASSISTANT_SPACE) to create, change and delete requests in. */
+  mcpHostWorkspace: boolean
 }
 
 export interface ClientCert {
@@ -268,7 +272,7 @@ export interface ClientCert {
 export const defaultSettings: Settings = {
   activeEnvId: null, theme: 'system', timeoutMs: 30_000, followRedirects: true, insecureTls: false, cookieJar: true,
   proxyUrl: '', proxyBypass: 'localhost, 127.0.0.1', clientCerts: [], caCerts: [], activeSpaceId: 'default', spaceEnv: {},
-  mcpHostEnabled: false, mcpHostPort: 4320, mcpHostToken: '', mcpHostMethods: 'GET,HEAD',
+  mcpHostEnabled: false, mcpHostPort: 4320, mcpHostToken: '', mcpHostMethods: 'GET,HEAD', mcpHostWorkspace: false,
 }
 
 let counter = 0
