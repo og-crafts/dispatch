@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useWorkspace, type WorkspaceApi } from './useWorkspace'
 import { useDialogs } from './Dialogs'
 import { HomeView } from './HomeView'
+import { ShareDialog } from './ShareDialog'
 import { SplitPane } from './SplitPane'
+import type { ShareTarget } from '../core/share'
 import { Sidebar } from './Sidebar'
 import { RequestPane } from './RequestPane'
 import { ResponsePane } from './ResponsePane'
@@ -124,6 +126,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
   const fileInput = useRef<HTMLInputElement>(null)
   const brunoInput = useRef<HTMLInputElement>(null)
   const [consoleOpen, setConsoleOpen] = useState(false)
+  const [sharing, setSharing] = useState<ShareTarget | null>(null)
   const [gettingToken, setGettingToken] = useState(false)
   const authActions = {
     gettingToken,
@@ -319,7 +322,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
         }} />
         <input ref={fileInput} type="file" aria-label="Import file" accept="application/json,.json,.yaml,.yml,.har" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void onImport(f) }} />
       </header>
-      <Sidebar ws={ws} dialogs={dialogs} onExportCollection={(c) => void onExportCollection(c)} onExportPostman={(c) => void onExportPostman(c)} />
+      <Sidebar ws={ws} dialogs={dialogs} onExportCollection={(c) => void onExportCollection(c)} onExportPostman={(c) => void onExportPostman(c)} onShare={setSharing} />
       <main className="work">
         <TabBar ws={ws} onClose={(id) => void closeTab(id)} page={page} />
         <div className="workBody">
@@ -342,7 +345,8 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
           : <>
               {ws.draft.protocol === 'http' ? (
                 <SplitPane
-                  first={<RequestPane ws={ws} onSave={save} onSaveAs={() => void saveAs()} notify={notify} authActions={authActions} renderDocs={renderDocs} />}
+                  first={<RequestPane ws={ws} onSave={save} onSaveAs={() => void saveAs()} notify={notify} authActions={authActions} renderDocs={renderDocs}
+                    onShare={() => setSharing({ kind: 'request', requestId: ws.draft.id, draft: ws.draft, lastResponse: ws.result?.response ?? null })} />}
                   second={<ResponsePane ws={ws} notify={notify} saveFile={saveAnyFile} />} />
               ) : (
                 <div className="nonHttp">
@@ -381,6 +385,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
         </div>
       )}
       {dialog}
+      {sharing && <ShareDialog ws={ws} target={sharing} onClose={() => setSharing(null)} notify={notify} />}
     </div>
   )
 }

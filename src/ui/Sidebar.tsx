@@ -5,6 +5,7 @@ import { statusTone, timeAgo } from '../core/format'
 import type { WorkspaceApi } from './useWorkspace'
 import { DND_TAB, type DragItem, carries, putItems, wantsCopy } from './dnd'
 import { Icon, type IconName } from './Icons'
+import type { ShareTarget } from '../core/share'
 
 type Tab = 'collections' | 'flows' | 'history' | 'environments'
 
@@ -14,7 +15,7 @@ export interface SidebarDialogs {
   pickPlace: (title: string, current: { collectionId: string | null; folderId: string | null }) => Promise<{ collectionId: string | null; folderId: string | null } | null>
 }
 
-interface Props { ws: WorkspaceApi; dialogs: SidebarDialogs; onExportCollection: (c: Collection) => void; onExportPostman?: (c: Collection) => void }
+interface Props { ws: WorkspaceApi; dialogs: SidebarDialogs; onExportCollection: (c: Collection) => void; onExportPostman?: (c: Collection) => void; onShare?: (t: ShareTarget) => void }
 
 const SECTIONS: { id: Tab; label: string; icon: IconName }[] = [
   { id: 'collections', label: 'Collections', icon: 'collections' },
@@ -49,7 +50,7 @@ function Menu({ label, items }: { label: string; items: [string, () => void, ('d
   )
 }
 
-export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman }: Props) {
+export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman, onShare }: Props) {
   const { ask, confirm, pickPlace } = dialogs
   const [tab, setTab] = useState<Tab>('collections')
   const [collapsed, setCollapsed] = useState(false)
@@ -126,6 +127,7 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman }: Pr
         ['Duplicate', async () => ws.openRequest(await ws.duplicateRequest(r))],
         ['Move to…', async () => { const to = await pickPlace(`Move “${r.name}”`, r); if (to) await ws.moveRequest(r, to.collectionId, to.folderId) }],
         ['Load test…', () => ws.setView({ kind: 'load', requestId: r.id })],
+        ...(onShare && r.protocol === 'http' ? [['Share as HTML…', () => onShare({ kind: 'request', requestId: r.id })] as [string, () => void]] : []),
         ['Select', () => toggleSelect(r.id)],
         ['Delete', async () => { if (await confirm(`Delete “${r.name}”?`)) await ws.removeRequest(r.id) }, 'danger'],
       ]} />
@@ -156,6 +158,7 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman }: Pr
             ['New request', () => ws.startNew(c.id, fo.id)],
             ['New subfolder', async () => { const n = await ask('New folder'); if (n) await ws.addFolder(c.id, n, fo.id) }],
             ['Run folder…', () => ws.setView({ kind: 'runner', collectionId: c.id, folderId: fo.id })],
+            ...(onShare ? [['Share as HTML…', () => onShare({ kind: 'folder', folderId: fo.id })] as [string, () => void]] : []),
             ['Rename', async () => { const n = await ask('Rename folder', fo.name); if (n) await ws.updateFolder({ ...fo, name: n }) }],
             ['Delete', async () => { if (await confirm(`Delete folder “${fo.name}” and everything in it?`)) await ws.removeFolder(fo.id) }, 'danger'],
           ]} />
@@ -233,6 +236,7 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman }: Pr
                     ['Mock server…', () => ws.setView({ kind: 'mock', collectionId: c.id })],
                     ['Rename', async () => { const n = await ask('Rename collection', c.name); if (n) await ws.updateCollection({ ...c, name: n }) }],
                     ['Export collection', () => onExportCollection(c)],
+                    ...(onShare ? [['Share as HTML…', () => onShare({ kind: 'collection', collectionId: c.id })] as [string, () => void]] : []),
                     ...ws.spaces.filter((x) => x.id !== ws.activeSpaceId).map((x) => [`Move to “${x.name}”`, () => void ws.moveToSpace('collection', c.id, x.id)] as [string, () => void]),
                     ...(onExportPostman ? [['Export as Postman collection', () => onExportPostman(c)] as [string, () => void]] : []),
                     ['Delete', async () => { if (await confirm(`Delete “${c.name}” and everything in it? You can undo this right after.`)) await ws.removeCollection(c.id) }, 'danger'],
