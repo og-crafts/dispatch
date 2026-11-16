@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { handleMcp } from '../core/mcpHandler'
+import { ASSISTANT_SPACE, spaceOf } from '../core/types'
 import { isDesktop } from '../core/transport'
 import type { WorkspaceApi } from './useWorkspace'
 import { version } from '../../package.json'
@@ -93,12 +94,21 @@ async function answerOne(body: string, ws: WorkspaceApi): Promise<string | null>
 }
 
 function options(ws: WorkspaceApi) {
+  const ownCols = ws.allCollections.filter((c) => spaceOf(c) === ASSISTANT_SPACE.id)
+  const ownIds = new Set(ownCols.map((c) => c.id))
   return {
-    ws: { source: 'dispatch' as const, collections: ws.collections, folders: ws.folders, requests: ws.requests, environments: ws.environments, flows: ws.flows, warnings: [] },
+    // The user's collections: the workspace on screen, never the assistant's own (that one is served as "assistant/…").
+    ws: { source: 'dispatch' as const, collections: ws.collections.filter((c) => !ownIds.has(c.id)), folders: ws.folders, requests: ws.requests, environments: ws.environments, flows: ws.flows, warnings: [] },
     environment: ws.environment, globals: ws.globals, settings: ws.settings,
     transport: ws.transport, pipeline: ws.pipeline.current,
     allowMethods: mcpMethods(ws.settings.mcpHostMethods),
     version, allCollections: true,
+    workspace: ws.settings.mcpHostWorkspace ? {
+      collections: ownCols,
+      save: ws.saveAssistant,
+      // Only requests in the assistant workspace; they go to the trash like any delete, so the user can undo.
+      remove: (ids: string[]) => ws.removeRequests(ids.filter((id) => ws.requests.some((r) => r.id === id && r.collectionId && ownIds.has(r.collectionId)))),
+    } : undefined,
     hooks: {
       afterSend: async (x: Parameters<WorkspaceApi['applyChanges']>[0], ctx: Parameters<WorkspaceApi['applyChanges']>[1]) => {
         await ws.applyChanges(x, ctx)

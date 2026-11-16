@@ -26,7 +26,7 @@ and an import format; never copy its name, branding, icons or UI.
   - `mcpAuth.ts`: MCP sign-in (discovery → registration → PKCE + `resource` → refresh), `MCP_SUGGESTIONS`; sign-ins
     sealed in IndexedDB meta `mcpSignIns`, keyed by environment + server. `examples/mcp-http-server.mjs --oauth` is
     a complete local sign-in server for tests and the Windows guide.
-  - `mcpHandler.ts`: the MCP tools (list_requests, send_request, run_collection, run_flow), one JSON-RPC message
+  - `mcpHandler.ts`: the MCP tools (list_requests, send_request, run_collection, run_flow; with `workspace` set, create/update/copy/delete_request in the assistant's own workspace, see `mcpWorkspace.ts`), one JSON-RPC message
     in, one reply out; shared by `dispatch-run mcp` (stdio, first collection) and the desktop app's local MCP
     endpoint (every collection in the active workspace, with hooks that save script/token changes like Send does).
   - `flows.ts`: flow graph (nodes, wires from output ports) and `runFlow`; straight chains run in a loop, recursion
