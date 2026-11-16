@@ -26,6 +26,9 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+        env:
+          # The runner's first Chromium start is sometimes slower than the 15 s default.
+          DISPATCH_BROWSER_START_MS: '60000'
       - run: npm run build
       - run: npm run build:cli
       - uses: actions/upload-artifact@v4
