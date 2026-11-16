@@ -100,6 +100,15 @@ Sync (needs a design), gRPC in the browser, AI assistance (needs a separate deci
 
 See [CLAUDE.md](CLAUDE.md).
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org)
+(starting with the first release after the project is accepted; earlier Windows installers are unsigned).
+Committers and reviewers: [og-crafts members](https://github.com/orgs/og-crafts/people). Approvers:
+[og-crafts owners](https://github.com/orgs/og-crafts/people?query=role%3Aowner). Privacy: this program will not transfer
+any information to other networked systems unless specifically requested by the user or the person installing or
+operating it. Full policy: https://dispatch.ogcrafts.cloud/code-signing/
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE).

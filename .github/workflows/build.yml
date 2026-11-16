@@ -84,6 +84,53 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ steps.upd.outputs.args && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ steps.upd.outputs.args && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+      # Windows release tags: SignPath Foundation signs the installers (docs/SIGNING.md). The owner approves each
+      # request in SignPath; until SIGNPATH_API_TOKEN is set, the installers stay unsigned.
+      - name: Installers to sign
+        id: tosign
+        if: matrix.name == 'windows' && startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then echo "::warning::SIGNPATH_API_TOKEN isn't set: the Windows installers are unsigned."; exit 0; fi
+          mkdir to-sign
+          cp src-tauri/target/release/bundle/nsis/*-setup.exe src-tauri/target/release/bundle/msi/*.msi to-sign/
+          echo "go=1" >> "$GITHUB_OUTPUT"
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        id: unsigned
+        if: steps.tosign.outputs.go == '1'
+        with: { name: windows-unsigned, path: to-sign/, if-no-files-found: error }
+      - name: Sign with SignPath (approve the request in SignPath)
+        if: steps.tosign.outputs.go == '1'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'dispatch' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: signed
+          parameters: |
+            version: ${{ toJSON(steps.tosign.outputs.version) }}
+      - name: Use the signed installers
+        if: steps.tosign.outputs.go == '1'
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ steps.upd.outputs.args && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ steps.upd.outputs.args && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+        run: |
+          cp signed/*-setup.exe src-tauri/target/release/bundle/nsis/
+          cp signed/*.msi src-tauri/target/release/bundle/msi/
+          # Signing changed the files, so their update signatures are made again.
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            for f in src-tauri/target/release/bundle/nsis/*-setup.exe src-tauri/target/release/bundle/msi/*.msi; do
+              rm -f "$f.sig"; npx tauri signer sign "$f" > /dev/null
+            done
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: dispatch-${{ matrix.name }}

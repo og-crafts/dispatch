@@ -90,7 +90,7 @@ def shell(path, title, desc, body, current="", noindex=False):
 <div><a class="brand" href="/"><img src="/assets/icon-32.png" width="32" height="32" alt="">Dispatch</a>
 <p>A local-first API client. No account, no cloud, no telemetry.</p></div>
 <div><h2>Dispatch</h2><ul><li><a href="/#features">Features</a></li><li><a href="/download/">Download</a></li><li><a href="/cli/">Command line</a></li><li>{app or '<a href="/download/">Web app</a>'}</li><li><a href="/changelog/">Changelog</a></li><li><a href="https://github.com/og-crafts/dispatch">Source code</a></li></ul></div>
-<div><h2>Fine print</h2><ul><li><a href="/privacy/">Privacy policy</a></li><li><a href="/terms/">Terms of use</a></li><li><a href="/support/">Support</a></li><li><a href="mailto:{EMAIL}">{EMAIL}</a></li></ul></div>
+<div><h2>Fine print</h2><ul><li><a href="/privacy/">Privacy policy</a></li><li><a href="/terms/">Terms of use</a></li><li><a href="/code-signing/">Code signing policy</a></li><li><a href="/support/">Support</a></li><li><a href="mailto:{EMAIL}">{EMAIL}</a></li></ul></div>
 <small>&copy; {DAY[:4]} OGCrafts. Dispatch is made by <a href="https://ogcrafts.cloud">OGCrafts</a>. Other product and format names that appear on this site are used only to say what Dispatch can import or export; they belong to their owners, and Dispatch is independent of and not affiliated with them.</small>
 </div></footer></body></html>"""
 
@@ -226,7 +226,8 @@ def download():
 <h3>Windows</h3><p>SmartScreen shows &ldquo;Windows protected your PC&rdquo;. Choose <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
 <h3>macOS</h3><p>Gatekeeper says it cannot verify the app. Open the <code>.dmg</code> and drag Dispatch to Applications. Then Control-click the app, choose <strong>Open</strong>, and confirm. If that option is missing, open <strong>System Settings, Privacy &amp; Security</strong> and choose <strong>Open Anyway</strong> next to the message about Dispatch.</p>
 <h3>Linux</h3><p>There is no signing warning. Install the <code>.deb</code> with <code>sudo apt install ./file.deb</code> or the <code>.rpm</code> with <code>sudo dnf install ./file.rpm</code>. For an AppImage, make it executable (<code>chmod +x file.AppImage</code>) and run it.</p>
-<p>Check the SHA-256 checksum next to each download before you open it. Dispatch does not update itself, so come back here for new versions.</p>"""
+<p>Check the SHA-256 checksum next to each download before you open it. From version 0.5.2 the desktop app can update itself: <strong>Menu, Check for updates</strong>. Updates are checked against Dispatch&rsquo;s own signing key before they install. Older versions need one manual install from this page.</p>
+<p>See the <a href="/code-signing/">code signing policy</a> for how Windows releases are signed.</p>"""
 
 def cli_page():
     dl = (f'<p><a class="btn primary" href="/downloads/dispatch-run.mjs" download>Download dispatch-run.mjs</a><code class="hash">SHA-256 {CLI_SHA}</code></p>' if CLI else '<p class="note">The download link appears here when the site is published.</p>')
@@ -345,7 +346,7 @@ def privacy():
 <p>When you press Send, Dispatch sends that request to the address you typed, with the headers and body you set. That is the only network traffic Dispatch makes. What the other server does with it is up to that server. Scripts you write can send requests too (<code>pm.sendRequest</code>), to the places you tell them to.</p>
 <p>A Browser login request opens your installed Chrome or Edge with a new, empty profile that is deleted afterwards, with sync and background networking turned off. It visits the pages in your steps. The values it keeps, such as cookies or a token, are stored as secret variables on this device.</p>
 <h2>What Dispatch does not do</h2>
-<ul><li>No account, sign-in or sync.</li><li>No analytics, telemetry or crash reporting.</li><li>No update check. Dispatch does not contact us or anyone else on its own.</li><li>No advertising and no trackers.</li><li>No fonts, scripts or images loaded from other sites, in the app or on this website.</li></ul>
+<ul><li>No account, sign-in or sync.</li><li>No analytics, telemetry or crash reporting.</li><li>No update check unless you turn it on. The desktop app looks for a new version only when you choose <strong>Menu, Check for updates</strong>, or turn on <strong>Check for updates when Dispatch starts</strong> in Settings (off by default). The check asks GitHub, where the releases are published, for a small file that names the newest version; GitHub sees your IP address, as with any download. Nothing about you or your data is sent, and nothing is installed unless you agree.</li><li>No advertising and no trackers.</li><li>No fonts, scripts or images loaded from other sites, in the app or on this website.</li></ul>
 <h2>The web app and this website</h2>
 <p>This website and the web app at <a href="/app/">dispatch.ogcrafts.cloud/app/</a> are static files hosted on GitHub Pages. When you open them, GitHub&rsquo;s servers receive the request for the files and, like any web host, may log your IP address and browser details under <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub&rsquo;s privacy statement</a>. We do not receive those logs for individual visitors and we do not add cookies or tracking. After the files load, the web app does its work in your browser.</p>
 <h2>Your control</h2>
@@ -353,6 +354,23 @@ def privacy():
 <h2>Children</h2><p>Dispatch is a developer tool and is not directed at children.</p>
 <h2>Changes and contact</h2>
 <p>If this policy changes, the date above changes and the changelog says so. Questions: <a href="mailto:{EMAIL}">{EMAIL}</a>.</p>"""
+
+def code_signing():
+    return f"""<h1>Code signing policy</h1><p class="updated">Last updated {DAY}.</p>
+<p>Free code signing provided by <a href="https://about.signpath.io">SignPath.io</a>, certificate by <a href="https://signpath.org">SignPath Foundation</a>.</p>
+<p>Windows installers of Dispatch are signed so that Windows can check they come from this project and were not changed on the way. Signing starts with the first release after the project is accepted by SignPath Foundation; earlier releases are unsigned.</p>
+<h2>What is signed</h2>
+<ul><li>Only Dispatch itself: the Windows setup program and MSI package published on the <a href="https://github.com/og-crafts/dispatch/releases">GitHub releases page</a> and on the <a href="/download/">download page</a>.</li>
+<li>Every signed file is built by GitHub Actions on GitHub-hosted runners, directly from the source code in the public repository <a href="https://github.com/og-crafts/dispatch">og-crafts/dispatch</a>. SignPath checks that origin before it signs.</li>
+<li>Nothing built outside that workflow is signed, and no third-party program is signed with this certificate.</li></ul>
+<h2>Team roles</h2>
+<ul><li>Committers and reviewers: <a href="https://github.com/orgs/og-crafts/people">members of the og-crafts organization</a>. Changes from anyone else arrive as pull requests and are reviewed by a member before they are merged.</li>
+<li>Approvers: <a href="https://github.com/orgs/og-crafts/people?query=role%3Aowner">owners of the og-crafts organization</a>. Every release is approved by hand in SignPath before it is signed.</li></ul>
+<p>Everyone in these roles uses multi-factor authentication for GitHub and SignPath.</p>
+<h2>Privacy</h2>
+<p>This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. Requests go only to the addresses you send them to, and the optional update check is off until you turn it on. The <a href="/privacy/">privacy policy</a> has the details.</p>
+<h2>Report a problem</h2>
+<p>If you think a signed Dispatch file is harmful or was not built from this project&rsquo;s source, write to <a href="mailto:{EMAIL}">{EMAIL}</a>. You can also report it to SignPath at <a href="mailto:support@signpath.io">support@signpath.io</a>.</p>"""
 
 def terms():
     return f"""<h1>Terms of use</h1><p class="updated">Last updated {DAY}.</p>
@@ -416,6 +434,7 @@ def main():
     pages["/changelog/"] = article("/changelog/", "Changelog", "What changed in each Dispatch release.", changelog(), "Changelog")
     pages["/privacy/"] = article("/privacy/", "Privacy policy", "Dispatch keeps your data on your device and sends nothing to us. Read the privacy policy in plain words.", privacy(), "Privacy policy")
     pages["/terms/"] = article("/terms/", "Terms of use", "The terms for using Dispatch.", terms(), "Terms of use")
+    pages["/code-signing/"] = article("/code-signing/", "Code signing policy", "How Dispatch's Windows releases are built and signed, and who approves them.", code_signing(), "Code signing policy")
     pages["/support/"] = article("/support/", "Support", "Get help with Dispatch.", support(), "Support")
     for path, h in pages.items():
         out = DIST / path.lstrip("/") / "index.html"; out.parent.mkdir(parents=True, exist_ok=True); out.write_text(h)
