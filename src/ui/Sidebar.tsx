@@ -4,6 +4,7 @@ import { bySort } from '../core/types'
 import { statusTone, timeAgo } from '../core/format'
 import type { WorkspaceApi } from './useWorkspace'
 import { DND_TAB, type DragItem, carries, putItems, wantsCopy } from './dnd'
+import { Icon, type IconName } from './Icons'
 
 type Tab = 'collections' | 'flows' | 'history' | 'environments'
 
@@ -14,6 +15,22 @@ export interface SidebarDialogs {
 }
 
 interface Props { ws: WorkspaceApi; dialogs: SidebarDialogs; onExportCollection: (c: Collection) => void; onExportPostman?: (c: Collection) => void }
+
+const SECTIONS: { id: Tab; label: string; icon: IconName }[] = [
+  { id: 'collections', label: 'Collections', icon: 'collections' },
+  { id: 'flows', label: 'Flows', icon: 'flows' },
+  { id: 'history', label: 'History', icon: 'history' },
+  { id: 'environments', label: 'Environments', icon: 'environments' },
+]
+
+/** The panel next to the rail: resizable by dragging its edge (or with the arrow keys), remembered per device. */
+const WIDTH_KEY = 'dispatch.sideWidth'
+const MIN_W = 200, MAX_W = 640, DEFAULT_W = 300
+const clampW = (n: number) => Math.min(MAX_W, Math.max(MIN_W, Math.round(n)))
+function savedWidth(): number {
+  try { const n = Number(localStorage.getItem(WIDTH_KEY)); return n ? clampW(n) : DEFAULT_W } catch { return DEFAULT_W }
+}
+function keepWidth(n: number) { try { localStorage.setItem(WIDTH_KEY, String(n)) } catch { /* private window: not remembered */ } }
 
 const Method = ({ m }: { m: string }) => <span className={`mtag m-${m}`}>{m === 'DELETE' ? 'DEL' : m === 'OPTIONS' ? 'OPT' : m}</span>
 const byName = <T extends { name: string }>(a: T, b: T) => a.name.localeCompare(b.name)
@@ -35,6 +52,12 @@ function Menu({ label, items }: { label: string; items: [string, () => void, ('d
 export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman }: Props) {
   const { ask, confirm, pickPlace } = dialogs
   const [tab, setTab] = useState<Tab>('collections')
+  const [collapsed, setCollapsed] = useState(false)
+  const [width, setWidth] = useState(savedWidth)
+  const resizing = useRef<{ x: number; w: number } | null>(null)
+  /** Picks a section; picking the open one again folds the panel away (the rail stays). */
+  const pickSection = (t: Tab) => { if (t === tab && !collapsed) setCollapsed(true); else { setTab(t); setCollapsed(false) } }
+  const setW = (n: number) => { const w = clampW(n); setWidth(w); keepWidth(w) }
   const [filter, setFilter] = useState('')
   const [closed, setClosed] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -47,7 +70,7 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman }: Pr
     .some((t) => t?.toLowerCase().includes(f))
   // Ctrl+K jumps to search.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setTab('collections'); requestAnimationFrame(() => filterRef.current?.focus()) } }
+    const onKey = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setTab('collections'); setCollapsed(false); requestAnimationFrame(() => filterRef.current?.focus()) } }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
@@ -93,7 +116,7 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman }: Pr
     <li key={r.id} className={`row ${ws.draft.id === r.id && ws.view.kind === 'request' ? 'on' : ''} ${selected.has(r.id) ? 'selected' : ''} ${dropAt === `before:${r.id}` ? 'dropBefore' : ''}`}
       draggable={!!r.collectionId} onDragStart={(e) => startDrag(e, { kind: 'request', id: r.id }, r.name)} onDragEnd={() => { setDrag(null); setDropAt(null); setCopying(false) }}
       {...(r.collectionId ? dropProps(`before:${r.id}`, { collectionId: r.collectionId, folderId: r.folderId }, r.id) : {})}>
-      <button type="button" className="rowMain" title={r.url} aria-pressed={selected.has(r.id) || undefined}
+      <button type="button" className="rowMain" title={`${r.name}\n${r.url}`} aria-pressed={selected.has(r.id) || undefined}
         onClick={(e) => { if (e.ctrlKey || e.metaKey) toggleSelect(r.id); else { setSelected(new Set()); ws.openRequest(r) } }}>
         {r.protocol === 'http' ? <Method m={r.method} /> : <span className="mtag m-proto">{({ ws: 'WS', mqtt: 'MQTT', grpc: 'gRPC', sse: 'SSE', socketio: 'SIO', mcp: 'MCP', browser: 'WEB' } as Record<string, string>)[r.protocol]}</span>}<span className="rowName">{r.name}</span>
         {openTabIds.has(r.id) && ws.draft.id !== r.id && <span className="openDot" aria-label="open in a tab" />}
@@ -128,7 +151,7 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman }: Pr
           draggable onDragStart={(e) => { e.stopPropagation(); startDrag(e, { kind: 'folder', id: fo.id }, fo.name) }} onDragEnd={() => { setDrag(null); setDropAt(null); setCopying(false) }}
           {...dropProps(`into:${fo.id}`, { collectionId: c.id, folderId: fo.id }, null)}>
           <button type="button" className="caret" aria-expanded={open} aria-label={`${open ? 'Collapse' : 'Expand'} ${fo.name}`} onClick={() => toggle(fo.id)}>{open ? '▾' : '▸'}</button>
-          <button type="button" className="rowMain folderName" onClick={() => ws.setView({ kind: 'folder', id: fo.id })}><span className="folderIcon" aria-hidden>▤</span><span className="rowName">{fo.name}</span></button>
+          <button type="button" className="rowMain folderName" title={fo.name} onClick={() => ws.setView({ kind: 'folder', id: fo.id })}><span className="folderIcon" aria-hidden>▤</span><span className="rowName">{fo.name}</span></button>
           <Menu label={`More for ${fo.name}`} items={[
             ['New request', () => ws.startNew(c.id, fo.id)],
             ['New subfolder', async () => { const n = await ask('New folder'); if (n) await ws.addFolder(c.id, n, fo.id) }],
@@ -145,18 +168,36 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman }: Pr
   const loose = ws.requests.filter((r) => !r.collectionId && match(r)).sort(byName)
 
   return (
-    <aside className="side" aria-label="Library">
-      <div className="tabs side-tabs" role="tablist">
-        {(['collections', 'flows', 'history', 'environments'] as Tab[]).map((t) => (
-          <button key={t} type="button" role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>
-            {t === 'collections' ? 'Collections' : t === 'flows' ? 'Flows' : t === 'history' ? 'History' : 'Environments'}
-          </button>
-        ))}
+    <aside className={`side ${collapsed ? 'collapsed' : ''}`} aria-label="Library" style={{ ['--side-w' as string]: `${width}px` }}>
+      <nav className="rail" aria-label="Sections">
+        <button type="button" className={`railBtn ${ws.view.kind === 'home' ? 'on' : ''}`} aria-current={ws.view.kind === 'home' ? 'page' : undefined} onClick={() => ws.setView({ kind: 'home' })}>
+          <Icon name="home" /><span>Home</span>
+        </button>
+        <div className="railGroup" role="tablist" aria-orientation="vertical" aria-label="Library sections">
+          {SECTIONS.map((x) => (
+            <button key={x.id} type="button" role="tab" aria-selected={tab === x.id && !collapsed} className={`railBtn ${tab === x.id && !collapsed ? 'on' : ''}`}
+              title={tab === x.id && !collapsed ? `Hide ${x.label}` : x.label} onClick={() => pickSection(x.id)}>
+              <Icon name={x.icon} /><span>{x.label}</span>
+            </button>
+          ))}
+        </div>
+        <span className="railSep" aria-hidden="true" />
+        <button type="button" className={`railBtn ${ws.view.kind === 'runner' ? 'on' : ''}`} onClick={() => ws.setView({ kind: 'runner', collectionId: null, folderId: null })}><Icon name="runner" /><span>Runner</span></button>
+        <button type="button" className={`railBtn ${ws.view.kind === 'load' ? 'on' : ''}`} onClick={() => ws.setView({ kind: 'load', requestId: null })}><Icon name="load" /><span>Load test</span></button>
+        <button type="button" className={`railBtn ${ws.view.kind === 'schedules' ? 'on' : ''}`} onClick={() => ws.setView({ kind: 'schedules' })}><Icon name="schedules" /><span>Schedules</span></button>
+        <span className="grow" />
+        <button type="button" className={`railBtn ${ws.view.kind === 'spaces' ? 'on' : ''}`} onClick={() => ws.setView({ kind: 'spaces' })}><Icon name="spaces" /><span>Workspaces</span></button>
+        <button type="button" className={`railBtn ${ws.view.kind === 'settings' ? 'on' : ''}`} onClick={() => ws.setView({ kind: 'settings' })}><Icon name="settings" /><span>Settings</span></button>
+      </nav>
+      {!collapsed && <div className="sidePanel">
+      <div className="sideHead">
+        <h2>{SECTIONS.find((x) => x.id === tab)!.label}</h2>
+        <button type="button" className="icon" aria-label="Hide the sidebar" title="Hide the sidebar" onClick={() => setCollapsed(true)}><Icon name="panel" size={16} /></button>
       </div>
 
       {tab === 'collections' && <>
         <div className="sideTools">
-          <input ref={filterRef} type="search" placeholder="Search (Ctrl K)" aria-label="Filter requests" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          <label className="search"><Icon name="search" size={15} /><input ref={filterRef} type="search" placeholder="Search  Ctrl K" aria-label="Filter requests" value={filter} onChange={(e) => setFilter(e.target.value)} /></label>
           <button type="button" className="btn small" onClick={async () => { const n = await ask('New collection'); if (n) await ws.addCollection(n) }}>+ Collection</button>
         </div>
         {selected.size > 0 && (
@@ -182,8 +223,8 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman }: Pr
               <li key={c.id} className="folder">
                 <div className={`row ${ws.view.kind === 'collection' && ws.view.id === c.id ? 'on' : ''} ${dropAt === `into:${c.id}` ? 'dropInto' : ''}`} {...dropProps(`into:${c.id}`, { collectionId: c.id, folderId: null }, null)}>
                   <button type="button" className="caret" aria-expanded={open} aria-label={`${open ? 'Collapse' : 'Expand'} ${c.name}`} onClick={() => toggle(c.id)}>{open ? '▾' : '▸'}</button>
-                  <button type="button" className="rowMain folderName" onClick={() => ws.setView({ kind: 'collection', id: c.id })}>{c.name}</button>
-                  <button type="button" className="icon" aria-label={`New request in ${c.name}`} title="New request here" onClick={() => ws.startNew(c.id)}>+</button>
+                  <button type="button" className="rowMain folderName" title={c.name} onClick={() => ws.setView({ kind: 'collection', id: c.id })}><span className="rowTitle">{c.name}</span></button>
+                  <button type="button" className="icon rowAdd" aria-label={`New request in ${c.name}`} title="New request here" onClick={() => ws.startNew(c.id)}>+</button>
                   <Menu label={`More for ${c.name}`} items={[
                     ['New request', () => ws.startNew(c.id)],
                     ['New folder', async () => { const n = await ask('New folder'); if (n) await ws.addFolder(c.id, n) }],
@@ -206,11 +247,6 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman }: Pr
             <li className="muted small pad">Saved requests show up here. Make a request and press Save, or import a Postman collection or OpenAPI file from the menu.</li>
           )}
         </ul>
-        <div className="sideFoot">
-          <button type="button" className="btn small ghost" onClick={() => ws.setView({ kind: 'runner', collectionId: null, folderId: null })}>▶ Runner</button>
-          <button type="button" className="btn small ghost" onClick={() => ws.setView({ kind: 'load', requestId: null })}>⚡ Load test</button>
-          <button type="button" className="btn small ghost" onClick={() => ws.setView({ kind: 'schedules' })}>Schedules</button>
-        </div>
       </>}
 
       {tab === 'history' && <>
@@ -289,6 +325,22 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman }: Pr
           {!ws.environments.length && <li className="muted small pad">Make an environment to keep base URLs and tokens out of your requests, then use them as <code>{'{{name}}'}</code>.</li>}
         </ul>
       </>}
+      </div>}
+      {!collapsed && (
+        <div className="resizer" role="separator" aria-orientation="vertical" aria-label="Resize the sidebar" tabIndex={0}
+          aria-valuemin={MIN_W} aria-valuemax={MAX_W} aria-valuenow={width} title="Drag to resize; double-click to reset"
+          onPointerDown={(e) => { e.preventDefault(); (e.target as HTMLElement).setPointerCapture(e.pointerId); resizing.current = { x: e.clientX, w: width }; document.body.classList.add('resizing') }}
+          onPointerMove={(e) => { if (resizing.current) setWidth(clampW(resizing.current.w + e.clientX - resizing.current.x)) }}
+          onPointerUp={(e) => { if (!resizing.current) return; resizing.current = null; document.body.classList.remove('resizing'); setW(width); (e.target as HTMLElement).releasePointerCapture?.(e.pointerId) }}
+          onDoubleClick={() => setW(DEFAULT_W)}
+          onKeyDown={(e) => {
+            const step = e.shiftKey ? 64 : 16
+            if (e.key === 'ArrowLeft') { e.preventDefault(); setW(width - step) }
+            else if (e.key === 'ArrowRight') { e.preventDefault(); setW(width + step) }
+            else if (e.key === 'Home') { e.preventDefault(); setW(MIN_W) }
+            else if (e.key === 'End') { e.preventDefault(); setW(MAX_W) }
+          }} />
+      )}
     </aside>
   )
 }

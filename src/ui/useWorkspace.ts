@@ -21,6 +21,7 @@ export interface FolderStatus { conflicts: string[]; error?: string; at: number 
 
 export type View =
   | { kind: 'request' }
+  | { kind: 'home' }
   | { kind: 'collection'; id: string }
   | { kind: 'folder'; id: string }
   | { kind: 'environment'; id: string }
@@ -226,6 +227,17 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   const saveDraft = useCallback(async (into?: { collectionId: string | null; folderId?: string | null; name: string }) => {
     const r: RequestDef = { ...draft, ...(into ?? {}), updatedAt: Date.now() }
     if (into && into.folderId === undefined) r.folderId = into.collectionId === draft.collectionId ? draft.folderId : null
+    await persistRequest(r)
+    setDraft(r)
+    return r
+  }, [draft, persistRequest, setDraft])
+
+  /**
+   * Save as: the draft (with any unsaved edits) becomes a new saved request; the tab moves to it and the
+   * original stays as it was last saved.
+   */
+  const saveDraftAs = useCallback(async (into: { collectionId: string | null; folderId: string | null; name: string }) => {
+    const r: RequestDef = { ...structuredClone(draft), ...into, id: uid(), sort: Date.now(), updatedAt: Date.now() }
     await persistRequest(r)
     setDraft(r)
     return r
@@ -698,7 +710,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     ready, transport, collections: visibleCollections, folders, requests, environments: visibleEnvironments, globals, history, settings, logs,
     tabs, activeId, active, draft, view, result: active.result, sending: active.sending, saved, dirty, isDirty,
     collection, environment, prepared, chain, runContext, pipeline: pipelineRef, variableNames,
-    setDraft, setView, setSettings, setLogs, log, openRequest, startNew, closeTab, selectTab, saveDraft, renameRequest,
+    setDraft, setView, setSettings, setLogs, log, openRequest, startNew, closeTab, selectTab, saveDraft, saveDraftAs, renameRequest,
     moveRequest, removeRequest, duplicateRequest, saveAssistant, send, cancel, applyChanges, applyAuthUpdate, openHistory, clearHistory,
     addCollection, updateCollection, removeCollection, addFolder, updateFolder, removeFolder,
     addEnvironment, updateEnvironment, removeEnvironment, duplicateEnvironment, setGlobals, importWorkspace,
