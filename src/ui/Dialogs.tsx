@@ -14,8 +14,8 @@ export function useDialogs() {
   const [pending, setPending] = useState<Pending | null>(null)
   const ask = useCallback((title: string, initial = '') => new Promise<string | null>((resolve) => setPending({ kind: 'ask', title, initial, resolve })), [])
   const confirm = useCallback((message: string) => new Promise<boolean>((resolve) => setPending({ kind: 'confirm', message, resolve })), [])
-  const askSave = useCallback((name: string, collections: Collection[], folders: Folder[], place: Place) =>
-    new Promise<SaveChoice | null>((resolve) => setPending({ kind: 'save', title: 'Save request', name, collections, folders, place, resolve })), [])
+  const askSave = useCallback((name: string, collections: Collection[], folders: Folder[], place: Place, title = 'Save request') =>
+    new Promise<SaveChoice | null>((resolve) => setPending({ kind: 'save', title, name, collections, folders, place, resolve })), [])
   /** Choose a collection + folder (no name). */
   const askPlace = useCallback((title: string, collections: Collection[], folders: Folder[], place: Place) =>
     new Promise<Place | null>((resolve) => setPending({ kind: 'save', title, name: null, collections, folders, place,

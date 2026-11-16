@@ -35,6 +35,12 @@ and an import format; never copy its name, branding, icons or UI.
   RunnerView, LoadView, DocsView, MockView, RealtimePane for WebSocket/MQTT/SSE/Socket.IO, GrpcPane, Editors,
   SettingsView/CookiesView, BackupsView, Schedules, ResponseHistory…). `editor/codemirror.ts` is the lazy editor;
   `CodeArea` falls back to a textarea in jsdom. `linkedDirs.ts` syncs collections to folders.
+- App shell: `Sidebar.tsx` is a nav rail (Home, the four library sections as tabs, Runner/Load test/Schedules,
+  Workspaces, Settings) plus a library panel that folds (pick the open section again) and resizes (edge handle in
+  the gap, arrow keys; width in localStorage `dispatch.sideWidth`). Pages open as one extra tab in the tab bar
+  (`TabBar` `page`), so requests are one click away. `HomeView.tsx` is the Home page; `Icons.tsx` the line icons.
+  Look: tokens at the top of `app.css` (light + dark), the aurora is `body::before`, panels are frosted glass
+  (`--surface` + backdrop-filter); the "Look" section at the end of `app.css` overrides the older rules.
 - `src/ui/FlowView.tsx` — the flow canvas (absolutely placed blocks, SVG wires, pointer drag; every wire can also
   be set from the side panel's “Then go to” selects, which is what keyboard users and tests use).
 - `src/cli/main.ts` — `dispatch-run` (run, `load`, `mock`, `mcp`, `flow`); bundled by `scripts/build-cli.mjs`.

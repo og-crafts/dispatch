@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useWorkspace, type WorkspaceApi } from './useWorkspace'
 import { useDialogs } from './Dialogs'
+import { HomeView } from './HomeView'
+import { SplitPane } from './SplitPane'
 import { Sidebar } from './Sidebar'
 import { RequestPane } from './RequestPane'
 import { ResponsePane } from './ResponsePane'
@@ -70,7 +72,10 @@ function Console({ ws, onClose }: { ws: WorkspaceApi; onClose: () => void }) {
 /** Other importers (OpenAPI, HAR) register here so App doesn't need to know them. */
 export type Importer = (text: string, fileName: string) => ImportResult | null
 
-function TabBar({ ws, onClose }: { ws: WorkspaceApi; onClose: (id: string) => void }) {
+/** A page (Settings, a collection, the runner…) shows as one more tab, so the requests are always one click away. */
+type PageTab = { title: string; onClose: () => void }
+
+function TabBar({ ws, onClose, page }: { ws: WorkspaceApi; onClose: (id: string) => void; page?: PageTab }) {
   return (
     <div className="tabBar" role="tablist" aria-label="Open requests">
       {ws.tabs.map((t) => {
@@ -89,6 +94,15 @@ function TabBar({ ws, onClose }: { ws: WorkspaceApi; onClose: (id: string) => vo
           </div>
         )
       })}
+      {page && (
+        <div className="reqTab page on">
+          <button type="button" role="tab" aria-selected className="reqTabMain" title={page.title}>
+            <span className="pageMark" aria-hidden="true" />
+            <span className="reqTabName">{page.title}</span>
+          </button>
+          <button type="button" className="reqTabX" aria-label={`Close ${page.title}`} title="Back to your requests" onClick={page.onClose}>×</button>
+        </div>
+      )}
       <button type="button" className="reqTabNew" aria-label="New tab" title="New request (Ctrl+T)" onClick={() => ws.startNew()}>+</button>
     </div>
   )
@@ -154,6 +168,17 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
     notify('Saved.')
   }, [ws, askSave, notify])
 
+  /** Save as: a copy under a new name or place; the tab moves to the copy, the original keeps its last save. */
+  const saveAs = useCallback(async () => {
+    const base = ws.draft.name === 'New request' && ws.draft.url.trim() ? nameFromUrl(withScheme(ws.draft.url)) : ws.draft.name
+    const choice = await askSave(ws.saved ? `${base} copy` : base, ws.collections, ws.folders, ws.draft, 'Save as')
+    if (!choice) return
+    let collectionId = choice.collectionId
+    if (choice.newCollection) collectionId = (await ws.addCollection(choice.newCollection)).id
+    const r = await ws.saveDraftAs({ collectionId, folderId: choice.folderId, name: choice.name })
+    notify(`Saved as “${r.name}”.`)
+  }, [ws, askSave, notify])
+
   const closeTab = useCallback(async (id: string) => {
     const t = ws.tabs.find((x) => x.id === id)
     if (t && ws.isDirty(t.draft) && !(await confirm(`Discard unsaved changes to “${t.draft.name}”?`))) return
@@ -165,13 +190,14 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
       const mod = e.ctrlKey || e.metaKey
       const k = e.key.toLowerCase()
       if (mod && e.key === 'Enter') { e.preventDefault(); void ws.send() }
+      else if (mod && e.shiftKey && k === 's') { e.preventDefault(); void saveAs() }
       else if (mod && k === 's') { e.preventDefault(); void save() }
       else if (mod && (k === 't' || (e.altKey && k === 'n'))) { e.preventDefault(); ws.startNew(ws.draft.collectionId, ws.draft.folderId) }
       else if (mod && k === 'w') { e.preventDefault(); void closeTab(ws.activeId) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [ws, save, closeTab])
+  }, [ws, save, saveAs, closeTab])
 
   const onImport = async (file: File) => {
     try {
@@ -218,12 +244,21 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
   const folder = viewed.kind === 'folder' ? ws.folders.find((f) => f.id === viewed.id) : undefined
   const env = viewed.kind === 'environment' ? ws.environments.find((e) => e.id === viewed.id) : undefined
   const extraView = (viewed.kind === 'runner' || viewed.kind === 'load') ? extras.views?.[viewed.kind] : undefined
+  const flowName = viewed.kind === 'flow' ? ws.flows.find((x) => x.id === viewed.id)?.name : undefined
+  const pageTitles: Record<string, string> = {
+    home: 'Home', globals: 'Globals', runner: 'Runner', load: 'Load test', docs: 'Docs', mock: 'Mock server', backups: 'Local backups',
+    settings: 'Settings', cookies: 'Cookies', schedules: 'Schedules', spaces: 'Workspaces',
+  }
+  const pageTitle = viewed.kind === 'request' ? null
+    : col ? col.name : folder ? folder.name : env ? env.name : flowName ?? pageTitles[viewed.kind] ?? null
+  const page = pageTitle ? { title: pageTitle, onClose: () => ws.setView({ kind: 'request' }) } : undefined
+  const newFlow = async () => { const n = await ask('New flow', 'New flow'); if (n) { const f = await ws.addFlow(n); ws.setView({ kind: 'flow', id: f.id }) } }
   const dialogs = { ask, confirm, pickPlace: (title: string, cur: { collectionId: string | null; folderId: string | null }) => askPlace(title, ws.collections, ws.folders, cur) }
 
   return (
     <div className="app">
       <header className="top">
-        <span className="brand"><img src="./icon.svg" alt="" width="26" height="26" />Dispatch</span>
+        <button type="button" className="brand" title="Home" onClick={() => ws.setView({ kind: 'home' })}><img src="./icon.svg" alt="" width="26" height="26" />Dispatch</button>
         <label className="spacePick">
           <span className="sr">Workspace</span>
           <select aria-label="Workspace" value={ws.activeSpaceId} onChange={(e) => { if (e.target.value === '__manage') ws.setView({ kind: 'spaces' }); else ws.switchSpace(e.target.value) }}>
@@ -286,7 +321,10 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
       </header>
       <Sidebar ws={ws} dialogs={dialogs} onExportCollection={(c) => void onExportCollection(c)} onExportPostman={(c) => void onExportPostman(c)} />
       <main className="work">
-        {col ? <CollectionEditor key={col.id} ws={ws} confirm={confirm} collection={col} authActions={authActions} renderDocs={renderDocs} />
+        <TabBar ws={ws} onClose={(id) => void closeTab(id)} page={page} />
+        <div className="workBody">
+        {viewed.kind === 'home' ? <HomeView ws={ws} onImport={() => fileInput.current?.click()} onNewFlow={() => void newFlow()} />
+          : col ? <CollectionEditor key={col.id} ws={ws} confirm={confirm} collection={col} authActions={authActions} renderDocs={renderDocs} />
           : folder ? <FolderEditor key={folder.id} ws={ws} confirm={confirm} folder={folder} authActions={authActions} renderDocs={renderDocs} />
           : env ? <EnvironmentEditor key={env.id} ws={ws} confirm={confirm} environment={env} />
           : viewed.kind === 'globals' ? <GlobalsEditor ws={ws} />
@@ -302,12 +340,10 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
           : viewed.kind === 'load' ? <LoadView key={viewed.requestId ?? 'tab'} ws={ws} notify={notify} requestId={viewed.requestId} />
           : extraView ? extraView(ws, notify)
           : <>
-              <TabBar ws={ws} onClose={(id) => void closeTab(id)} />
               {ws.draft.protocol === 'http' ? (
-                <div className="split">
-                  <RequestPane ws={ws} onSave={save} notify={notify} authActions={authActions} renderDocs={renderDocs} />
-                  <ResponsePane ws={ws} notify={notify} saveFile={saveAnyFile} />
-                </div>
+                <SplitPane
+                  first={<RequestPane ws={ws} onSave={save} onSaveAs={() => void saveAs()} notify={notify} authActions={authActions} renderDocs={renderDocs} />}
+                  second={<ResponsePane ws={ws} notify={notify} saveFile={saveAnyFile} />} />
               ) : (
                 <div className="nonHttp">
                   <div className="titleRow request">
@@ -315,6 +351,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
                     <input className="reqName" value={ws.draft.name} aria-label="Request name" onChange={(e) => ws.setDraft((d) => ({ ...d, name: e.target.value }))} />
                     {ws.dirty && <span className="dot" title="Unsaved changes" aria-label="Unsaved changes" />}
                     <span className="grow" />
+                    <button type="button" className="btn ghost" onClick={() => void saveAs()} title="Save a copy under a new name or place (Ctrl+Shift+S)">Save as…</button>
                     <button type="button" className="btn ghost" onClick={() => void save()}>Save <kbd>Ctrl S</kbd></button>
                   </div>
                   {ws.draft.protocol === 'grpc' ? <GrpcPane ws={ws} notify={notify} />
@@ -324,6 +361,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
                 </div>
               )}
             </>}
+        </div>
       </main>
       {consoleOpen && <Console ws={ws} onClose={() => setConsoleOpen(false)} />}
       <footer className="statusBar small">

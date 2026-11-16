@@ -95,7 +95,7 @@ describe('drag and drop', () => {
 
   it('adds dropped requests and folders to the runner', async () => {
     await startWithShop()
-    fireEvent.click(side().getByRole('button', { name: '▶ Runner' }))
+    fireEvent.click(side().getByRole('button', { name: 'Runner' }))
     const view = await screen.findByRole('region', { name: 'Runner' })
     const target = within(view).getByRole('heading', { name: 'What to run' }).parentElement!
     await drag(row('B'), target)

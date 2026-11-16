@@ -24,15 +24,29 @@ function PemPick({ label, onText, notify }: { label: string; onText: (t: string)
   )
 }
 
-/** App settings: general, network (proxy, CA certificates, client certificates). */
+type SettingsTab = 'general' | 'network' | 'certs' | 'ai'
+const SETTINGS_TABS: [SettingsTab, string][] = [['general', 'General'], ['network', 'Network'], ['certs', 'Certificates'], ['ai', 'AI assistants']]
+
+/** App settings in tabs: general; on the desktop also network (proxy), certificates (CA, client) and AI assistants (MCP). */
 export function SettingsView({ ws, notify, mcpHost = { state: 'off' } }: { ws: WorkspaceApi; notify: (m: string) => void; mcpHost?: McpHostStatus }) {
   const st = ws.settings
   const desktop = ws.transport.unrestricted
+  const [tab, setTab] = useState<SettingsTab>('general')
+  const shown: SettingsTab = desktop ? tab : 'general'
   const setCert = (id: string, patch: Partial<ClientCert>) => ws.setSettings({ clientCerts: st.clientCerts.map((c) => (c.id === id ? { ...c, ...patch } : c)) })
   return (
     <section className="editor" aria-label="Settings">
       <p className="eyebrow">Settings</p>
       <h1 className="titleInput">Settings</h1>
+      {desktop && (
+        <div className="tabs settingsTabs" role="tablist" aria-label="Settings sections">
+          {SETTINGS_TABS.map(([id, label]) => (
+            <button key={id} type="button" role="tab" id={`settings-tab-${id}`} aria-selected={shown === id} className={shown === id ? 'on' : ''} onClick={() => setTab(id)}>{label}</button>
+          ))}
+        </div>
+      )}
+      <div role={desktop ? 'tabpanel' : undefined} aria-labelledby={desktop ? `settings-tab-${shown}` : undefined} className="settingsPanel">
+      {shown === 'general' && <>
       <h2>General</h2>
       <div className="auth">
         <label className="field"><span>Theme</span>
@@ -46,11 +60,13 @@ export function SettingsView({ ws, notify, mcpHost = { state: 'off' } }: { ws: W
         <label className="toggle"><input type="checkbox" checked={st.followRedirects} onChange={(e) => ws.setSettings({ followRedirects: e.target.checked })} /> Follow redirects</label>
         {desktop && <>
           <label className="toggle"><input type="checkbox" checked={st.cookieJar} onChange={(e) => ws.setSettings({ cookieJar: e.target.checked })} /> Keep cookies between requests</label>
-          <label className="toggle"><input type="checkbox" checked={st.insecureTls} onChange={(e) => ws.setSettings({ insecureTls: e.target.checked })} /> Accept any TLS certificate (self-signed). Safer: add your CA below instead.</label>
+          <label className="toggle"><input type="checkbox" checked={st.insecureTls} onChange={(e) => ws.setSettings({ insecureTls: e.target.checked })} /> Accept any TLS certificate (self-signed). Safer: add your CA under Certificates instead.</label>
         </>}
       </div>
       {!desktop && <p className="warnLine small">Proxy and certificate settings are for the desktop app; in the browser, the browser’s own settings apply.</p>}
+      </>}
       {desktop && <>
+        {shown === 'network' && <>
         <h2>Proxy</h2>
         <div className="auth">
           <label className="field"><span>Proxy URL (http://, https:// or socks5://; empty for none)</span>
@@ -60,6 +76,8 @@ export function SettingsView({ ws, notify, mcpHost = { state: 'off' } }: { ws: W
             <input className="mono" value={st.proxyBypass} onChange={(e) => ws.setSettings({ proxyBypass: e.target.value })} />
           </label>
         </div>
+        </>}
+        {shown === 'certs' && <>
         <h2>CA certificates</h2>
         <p className="muted small">Trusted in addition to the usual ones, e.g. your homelab’s own CA. Paste or load PEM.</p>
         {st.caCerts.map((pem, i) => (
@@ -91,8 +109,10 @@ export function SettingsView({ ws, notify, mcpHost = { state: 'off' } }: { ws: W
           </div>
         ))}
         <div className="actions"><button type="button" className="btn small" onClick={() => ws.setSettings({ clientCerts: [...st.clientCerts, { id: uid(), host: '', cert: '', key: '', enabled: true }] })}>+ Add certificate</button></div>
-        <McpHostSettings ws={ws} notify={notify} status={mcpHost} />
+        </>}
+        {shown === 'ai' && <McpHostSettings ws={ws} notify={notify} status={mcpHost} />}
       </>}
+      </div>
     </section>
   )
 }

@@ -70,6 +70,7 @@ describe('MCP endpoint port setting', () => {
     const setSettings = vi.fn()
     const ws = { settings: { ...defaultSettings, mcpHostEnabled: true }, transport: { unrestricted: true }, setSettings } as any
     render(<SettingsView ws={ws} notify={() => {}} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'AI assistants' }))
     const port = screen.getByLabelText('MCP port') as HTMLInputElement
     for (const v of ['4', '43', '432', '4321']) fireEvent.change(port, { target: { value: v } })
     expect(setSettings).not.toHaveBeenCalled()
