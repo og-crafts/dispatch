@@ -30,7 +30,9 @@ export const nodeLauncher: BrowserLauncher = {
     const p = spawn(exe, [...extra, ...browserArgs(profile, show)], { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true })
     const cleanup = async () => { p.kill(); await new Promise((r) => setTimeout(r, 200)); try { rmSync(profile, { recursive: true, force: true }) } catch { /* in use */ } }
     let buf = ''
-    const t = setTimeout(() => { void cleanup(); reject(new Error('The browser didn’t start in time.')) }, 15_000)
+    // DISPATCH_BROWSER_START_MS gives a slow machine longer (CI: a cold first start can pass 15 s).
+    const startMs = Number(process.env.DISPATCH_BROWSER_START_MS) || 15_000
+    const t = setTimeout(() => { void cleanup(); reject(new Error('The browser didn’t start in time.')) }, startMs)
     p.stderr.on('data', (d: Buffer) => {
       buf += d.toString()
       const m = buf.match(/DevTools listening on (ws:\/\/\S+)/)

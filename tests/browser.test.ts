@@ -77,14 +77,14 @@ describe.skipIf(!browser)('browser login (real Chromium)', () => {
     expect(r.steps.every((s) => s.ok)).toBe(true)
     expect(r.steps[2].note).toContain('••••') // passwords never shown
     expect(storeExtracted([kv('token', 'old')], r.extracted).map((v) => [v.key, v.value, !!v.secret])).toEqual([['token', 'tok-xyz', false], ['sessionId', 'abc123', true], ['greeting', 'Hello Ann', true]])
-  }, 30_000)
+  }, 90_000)
   it('reports which step failed', async () => {
     vars.set('pass', 'wrong')
     const r = await runBrowserSteps({ ...defaultBrowserConfig(), browserPath: browser!, timeoutMs: 2000,
       steps: [newStep('goto', '{{base}}/login'), newStep('fill', 'input[name=username]', '{{user}}'), newStep('fill', 'input[type=password]', '{{pass}}'), newStep('click', 'button'), newStep('waitUrl', '/app')] }, fill, nodeLauncher)
     expect(r.error).toMatch(/Step 5 \(waitUrl\) failed: Timed out waiting for the address to contain “\/app”/)
     expect(r.steps.map((s) => s.ok)).toEqual([true, true, true, true, false])
-  }, 30_000)
+  }, 90_000)
 
   const loginRequest = (col: string) => newRequest({ name: 'Log in', protocol: 'browser', collectionId: col, sort: 1, browser: { ...defaultBrowserConfig(), browserPath: browser!, timeoutMs: 10_000, steps: [
     newStep('goto', '{{base}}/login'), newStep('fill', 'input[name=username]', '{{user}}'), newStep('fill', 'input[type=password]', '{{pass}}'),
