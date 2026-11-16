@@ -1,6 +1,7 @@
 /**
  * The MCP tools Dispatch offers to AI assistants: list_requests, send_request, run_collection, and run_flow when
- * there are flows. Transport-free (one JSON-RPC message in, one reply out), so the same handler serves
+ * there are flows; with the assistant's own workspace on (desktop), also create/update/copy/delete_request there
+ * (mcpWorkspace.ts). Transport-free (one JSON-RPC message in, one reply out), so the same handler serves
  * `dispatch-run mcp` over stdio and the desktop app's local MCP endpoint over HTTP.
  */
 import type { ImportResult } from './backup'
@@ -10,6 +11,7 @@ import { type Execution, type Pipeline, type RunContext, execute, sendOptions } 
 import { collectItems, failed, runCollection, type RunItem, type RunSummary } from './runner'
 import { type Flow, type FlowRun, runFlow } from './flows'
 import type { ScriptEngine } from './scriptPipeline'
+import { ASSISTANT_PREFIX, type AssistantWorkspace, WORKSPACE_TOOL_NAMES, workspaceCall, workspaceTools } from './mcpWorkspace'
 
 export interface McpServeOptions {
   ws: ImportResult
@@ -25,6 +27,8 @@ export interface McpServeOptions {
   engine?: ScriptEngine
   /** Serve every collection in `ws` (names become the first path segment); otherwise only the first. */
   allCollections?: boolean
+  /** The assistant's own workspace, where it may write (paths "assistant/…"). Needs allCollections. */
+  workspace?: AssistantWorkspace
   /** The desktop app saves what a send or run changed (variables set by scripts, refreshed tokens). */
   hooks?: {
     afterSend?: (x: Execution, ctx: RunContext) => Promise<void>
@@ -35,11 +39,11 @@ export interface McpServeOptions {
 
 const BODY_LIMIT = 20_000
 
-export function mcpTools(flowNames: string[] = [], multi = false) {
+export function mcpTools(flowNames: string[] = [], multi = false, ownWorkspace = false) {
   return [
     {
       name: 'list_requests',
-      description: `List the saved requests${multi ? ' in every collection' : ' in this collection'}: their names, folders, methods and URLs (with {{variables}}).`,
+      description: `List the saved requests${multi ? ' in every collection' : ' in this collection'}: their names, folders, methods and URLs (with {{variables}}).${ownWorkspace ? ' Paths starting with "assistant/" are in your own workspace, where you can create, change and delete; the rest are the user\u2019s, which you can only send.' : ''}`,
       inputSchema: { type: 'object', properties: {} },
     },
     {
@@ -71,6 +75,7 @@ export function mcpTools(flowNames: string[] = [], multi = false) {
       description: `Run a flow (requests chained with conditions and loops) and return each step. Flows: ${flowNames.join(', ')}.`,
       inputSchema: { type: 'object', properties: { name: { type: 'string', enum: flowNames, description: 'The flow to run.' } }, required: ['name'] },
     }] : []),
+    ...(ownWorkspace ? workspaceTools() : []),
   ]
 }
 
@@ -83,9 +88,19 @@ export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | nul
   const cols: Collection[] = o.allCollections ? o.ws.collections : o.ws.collections.slice(0, 1)
   const multi = !!o.allCollections
   const col = cols[0]
-  const items = (): RunItem[] => cols.flatMap((c) => collectItems(c, null, o.ws.folders, o.ws.requests))
-  const pathOf = (it: RunItem) => [...it.path.split(' / ').slice(multi ? 0 : 1), it.request.name].join('/')
-  const colOf = (it: RunItem) => cols.find((c) => c.id === it.request.collectionId) ?? col
+  const own = multi && o.workspace ? o.workspace.collections : []
+  const ownIds = new Set(own.map((c) => c.id))
+  const items = (): RunItem[] => [...cols, ...own].flatMap((c) => collectItems(c, null, o.ws.folders, o.ws.requests))
+  const pathOf = (it: RunItem) => (ownIds.has(it.request.collectionId ?? '') ? ASSISTANT_PREFIX : '') + [...it.path.split(' / ').slice(multi ? 0 : 1), it.request.name].join('/')
+  const colOf = (it: RunItem) => [...cols, ...own].find((c) => c.id === it.request.collectionId) ?? col
+  /** A request by the path list_requests shows, or by its name when that is unique. */
+  const lookup = (want: string): { it: RunItem; path: string } | { error: string } => {
+    const all = items()
+    const named = all.filter((x) => x.request.name === want)
+    const it = all.find((x) => pathOf(x) === want) ?? (named.length === 1 || !multi ? named[0] : undefined)
+    if (!it) return { error: named.length > 1 ? `Several requests are named “${want}”: ${named.map(pathOf).join(', ')}. Use the full path.` : `No request named “${want}”. Use list_requests.` }
+    return { it, path: pathOf(it) }
+  }
   const canFlow = !!(o.engine || o.hooks?.runFlow)
   switch (msg.method) {
     case 'initialize':
@@ -93,10 +108,10 @@ export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | nul
         protocolVersion: msg.params?.protocolVersion ?? '2025-06-18',
         capabilities: { tools: {} },
         serverInfo: { name: 'dispatch', version: o.version },
-        instructions: `${multi ? `Requests from Dispatch (collections: ${cols.map((c) => `“${c.name}”`).join(', ') || 'none'})` : `Requests from the Dispatch collection “${col?.name ?? '(none)'}”`}${o.environment ? ` with environment “${o.environment.name}”` : ''}. Use list_requests to see what's there.`,
+        instructions: `${multi ? `Requests from Dispatch (collections: ${cols.map((c) => `“${c.name}”`).join(', ') || 'none'})` : `Requests from the Dispatch collection “${col?.name ?? '(none)'}”`}${o.environment ? ` with environment “${o.environment.name}”` : ''}. Use list_requests to see what's there.${own.length || (multi && o.workspace) ? ' You also have your own workspace (paths starting with "assistant/") where you can create, change, copy and delete requests; the user\u2019s requests can only be listed and sent, and the user moves what they want to keep.' : ''}`,
       })
     case 'ping': return reply({})
-    case 'tools/list': return reply({ tools: mcpTools(canFlow ? (o.ws.flows ?? []).map((f) => f.name) : [], multi) })
+    case 'tools/list': return reply({ tools: mcpTools(canFlow ? (o.ws.flows ?? []).map((f) => f.name) : [], multi, !!(multi && o.workspace)) })
     case 'tools/call': {
       const name = msg.params?.name
       const args = msg.params?.arguments ?? {}
@@ -105,11 +120,9 @@ export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | nul
         return text(list.length ? list.join('\n') : 'No requests.')
       }
       if (name === 'send_request') {
-        const want = String(args.name ?? '')
-        const all = items()
-        const named = all.filter((x) => x.request.name === want)
-        const it = all.find((x) => pathOf(x) === want) ?? (named.length === 1 || !multi ? named[0] : undefined)
-        if (!it) return text(named.length > 1 ? `Several requests are named “${want}”: ${named.map(pathOf).join(', ')}. Use the full path.` : `No request named “${want}”. Use list_requests.`, true)
+        const found = lookup(String(args.name ?? ''))
+        if ('error' in found) return text(found.error, true)
+        const { it } = found
         if (o.allowMethods.length && !o.allowMethods.includes(it.request.method)) return text(`${it.request.method} requests aren’t allowed here (allowed: ${o.allowMethods.join(', ')}).`, true)
         const locals = new Map(Object.entries(args.variables ?? {}).map(([k, v]) => [k, String(v)]))
         const ctx: RunContext = { collection: colOf(it), folders: o.ws.folders, environment: o.environment, globals: o.globals, locals }
@@ -155,6 +168,10 @@ export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | nul
           `${r.ok ? 'Passed' : `Failed: ${r.error}`} (${r.steps.length} steps, ${r.durationMs} ms)`,
           ...r.steps.filter((x) => x.status !== 'running').slice(0, 100).map((x) => `${x.status === 'ok' ? '✓' : x.status === 'failed' ? '✗' : '·'} ${x.label}${x.status_code !== undefined ? ` ${x.status_code}` : ''}${x.port ? ` → ${x.port}` : ''} ${x.detail}`),
         ].join('\n'), !r.ok)
+      }
+      if (WORKSPACE_TOOL_NAMES.includes(name) && multi && o.workspace) {
+        const [t, isError] = await workspaceCall(name, args, { w: o.workspace, folders: o.ws.folders, requests: o.ws.requests, allCollections: [...cols, ...own], allowMethods: o.allowMethods, lookup })
+        return text(t, isError)
       }
       return fail(-32602, `Unknown tool ${name}`)
     }
