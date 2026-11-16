@@ -242,9 +242,9 @@ rebranded site files; `site/release.json` on `main` points at 0.5.1). The OGCraf
   on release tags; `docs/RELEASING.md` "Auto-updates"). They switch on when the owner runs
   `scripts/setup-updater.sh` (key in `~/keys`, public key into `tauri.conf.json`, GitHub secrets) and that
   `tauri.conf.json` change is merged. Claude's auto mode refused to make the key itself (2026-11-16).
-- **Windows code signing:** a choice between SignPath Foundation (free for open source, publisher shows as SignPath
-  Foundation), a Certum open-source certificate (paid, owner's name) and the Microsoft Store (free, MSIX signed by
-  Microsoft). Azure Artifact Signing isn't open to individuals outside the US/Canada. See `docs/RELEASING.md`.
+- **Windows code signing: SignPath Foundation** (owner, 2026-11-16). Code signing policy page, privacy wording and
+  the CI step (gated on the `SIGNPATH_API_TOKEN` secret) are built; the owner turns on MFA, applies, and after
+  approval sets up the SignPath project and token, then approves each release in SignPath. All in `docs/SIGNING.md`.
 - A look at the Windows setup pages and the .dmg window (branded installers, PR #10, merged).
 - Sync design.
 - OGCrafts email extras: Gmail "Send mail as" via Resend and a DMARC record (see the memory note ogcrafts-brand).

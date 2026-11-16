@@ -39,7 +39,9 @@ Options as of 2026-11 (checked by Claude; prices and rules change, so confirm be
   Tauri doesn't build MSIX itself.
 - **Azure Artifact Signing (Trusted Signing, 9.99 USD/month):** not open to individuals outside the US/Canada.
 
-Wiring for any certificate: `bundle.windows.signCommand` in `tauri.conf.json` (https://v2.tauri.app/distribute/sign/windows/),
+**Chosen (2026-11-16): SignPath Foundation.** Set-up, application and the CI flow: `docs/SIGNING.md`.
+
+Wiring for a certificate of our own instead: `bundle.windows.signCommand` in `tauri.conf.json` (https://v2.tauri.app/distribute/sign/windows/),
 with its secrets in GitHub.
 
 - **macOS:** an Apple Developer account (99 USD/year). Add `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
