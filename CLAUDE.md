@@ -121,12 +121,37 @@ unpack it from `apt-get download libasound2t64` with `dpkg-deb -x` and set `LD_L
 
 ## Where we left off
 
-Updated 2026-11-14. The latest tag is **v0.5.1**, published (Latest) on 2026-11-14.
-`main` is ahead of it: PRs #6 (local MCP endpoint), #7 (drag and drop), #8 (docs), #10 (branded installers) and the
-OGCrafts move (#12, #13, #14) are merged but untagged and not yet tried in the real desktop app. **The 0.5.1
-installers were built before the move: they still use bundle ID `com.onelifestack.dispatch` and publisher
-OneLifeStack.** The next release (0.5.2 or 0.6.0) is the first with `cloud.ogcrafts.dispatch`; it installs as a
-separate app, so 0.5.1 users reinstall once.
+Updated 2026-11-16. The latest tag is **v0.5.1**, published (Latest) on 2026-11-14.
+`main` (52b2630) is ahead of it, untagged: PRs #6 (local MCP endpoint), #7 (drag and drop), #8 (docs), #10 (branded
+installers), the OGCrafts move (#12, #13, #14), and from 2026-11-16 #16 (MCP: the assistant's own workspace), #17
+(UX refresh: nav rail, resizable panels, Home, glass look, Settings tabs, Save as…) and #18 (Share as HTML). No PRs
+are open. **The 0.5.1 installers were built before the move: they still use bundle ID `com.onelifestack.dispatch`
+and publisher OneLifeStack.** The next release (0.5.2 or 0.6.0) is the first with `cloud.ogcrafts.dispatch`; it
+installs as a separate app, so 0.5.1 users reinstall once.
+
+**Desktop check on Windows (2026-11-16, Claude over SSH, build of main 52b2630).** Run on the owner's Predator
+(Windows 11, WebView2 157) from the CI `dispatch-windows` artifact, MSI unpacked with `msiexec /a` (no install), so
+the installed 0.5.1 stayed untouched. Passed: new layout renders; Home; a real send (200, no CORS); Save to a new
+collection; Save as… on an edited saved request (copy gets the edit, original keeps its last save); library panel
+drag, arrow keys (when focused), width remembered across reload; request/response divider drag and double-click
+reset; rail folds and reopens the library; Settings tabs; MCP endpoint starts, refuses no token (401), Origin (403),
+foreign Host (403), GET (401); all #16 tools (create, update, send, copy, delete own; update/delete of a user
+request refused with the copy_request hint; POST refused under GET,HEAD); the "AI assistant" workspace shows what
+the assistant made; Share dialog opens with `{{baseUrl}}` and the secret check. Not covered: the native save dialog
+behind "Save HTML file", drag and drop, installers, scaling/monitors. Small findings (not filed):
+- The rail label "Environments" is cut off ("Environm…").
+- Home's "Pick up where you left off" says no open requests while a blank New request tab is open.
+- Opening a request from the tree closes the Settings page tab (maybe intended: pages are one transient tab).
+- The request title above the URL is clipped without an ellipsis.
+- Switching workspace keeps the other workspace's request tabs open.
+- copy_request on a request with no auth says "its inherited none auth was copied onto it".
+- The Share dialog counts 0 sample responses for a request just sent through MCP.
+How it was driven, for next time: run the exe in the owner's desktop session via a temporary scheduled task (a
+`.bat` that sets `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222` then starts it; the owner must
+be logged in), `ssh -L 19222:127.0.0.1:9222` and drive it over CDP (`Runtime.evaluate`, `Input.dispatchMouseEvent`,
+`Input.insertText`, `Page.captureScreenshot`); MCP via `ssh -L 14320:127.0.0.1:4320` with `Host: 127.0.0.1:4320`.
+Afterwards stop the exe, unregister the task, and delete `%LOCALAPPDATA%\cloud.ogcrafts.dispatch` so a later real
+install starts clean.
 
 **Moved to OGCrafts (2026-11-14).** Dispatch is no longer an OneLifeStack app. Home: GitHub org
 `og-crafts` (a free org; admin login `og-crafterr`). Repo `og-crafts/dispatch` (transferred, so issues, PRs and the
@@ -182,7 +207,9 @@ by Runner"). To fill in the `.dmg` later, run `gh run rerun <run> --failed` for 
   `dispatch-windows`, still says 0.5.1) for the MCP endpoint (curl checks for 401/403/405, port field, token,
   port in use) and drag and drop; part C covers 150%/200% scaling, multiple monitors and SmartScreen text. The
   report goes on #9, not #2. Artifacts expire 2027-02-08.
-- **Next step:** read the newest comment on #2 and any `[Windows] …` issues or `test/windows-*` branches the agent
+- As of 2026-11-16 no tester report on #9 (and none new on #2). Part B is partly covered by Claude's desktop check
+  above (MCP endpoint; not drag and drop).
+- **Next step:** read the newest comment on #9 and any `[Windows] …` issues or `test/windows-*` branches the agent
   opened. Then fix in a PR, bump the version (package.json, tauri.conf.json, Cargo.toml + lock, `VERSION` in
   `src/cli/main.ts`, `clientVersion` in `src/core/mcp.ts`, the version in `docs/TESTING-WINDOWS.md`), tag, add
   release notes, and refresh #2's body from the guide.
@@ -193,15 +220,14 @@ by Runner"). To fill in the `.dmg` later, run `gh run rerun <run> --failed` for 
   blocks named "End" can't be told apart in flow selects; importing a
   backup into the same workspace duplicates everything; error texts include Rust internals (`os error 10061`).
 - Issue #2: the Windows test (rounds 1–3 done; round 4 moved into #9). Issue #9: the next Windows round.
-- PR #10: branded installers (NSIS sidebar/header, MSI banner/dialog, styled .dmg; `src-tauri/installer/`,
-  `scripts/make-installer-art.mjs`). All CI checks pass; the look has only been seen as images on Linux. Needs a
-  look at the Windows setup pages and the .dmg window, then the owner's merge (not yet merged).
+- No PRs open (2026-11-16). PR #10, branded installers (`src-tauri/installer/`, `scripts/make-installer-art.mjs`),
+  is merged; its look has only been seen as images on Linux.
 - Merged 2026-11-10, in `main` but not in any tag: the desktop app's local MCP endpoint (#6; Settings → AI
   assistants; `src-tauri/src/mcp_host.rs`, `src/core/mcpHandler.ts`, `src/ui/mcpHost.ts`; the port applies on
   blur/Enter and start/stop are serialised) and drag and drop between views (#7; Ctrl/Alt-drag copies in the
   sidebar, tabs onto collections, requests onto flow canvases and the Runner; `src/ui/dnd.ts`).
 - Flaky CI: `tests/browser.test.ts` ("The browser didn't start in time") and the Linux `linuxdeploy` step each
-  failed once and passed on `gh run rerun --failed`.
+  failed once and passed on `gh run rerun --failed`. The browser test failed again on PR #18 (2026-11-16).
 
 **Sites.** dispatch.ogcrafts.cloud shows 0.5.1 (published 2026-11-14 from a branch off the v0.5.1 tag plus the
 rebranded site files; `site/release.json` on `main` points at 0.5.1). The OGCrafts home site, https://ogcrafts.cloud
