@@ -17,7 +17,7 @@ https://signpath.org/terms; the points that apply to Dispatch are below.
 
 ## What SignPath requires (from their terms, 2026-11)
 
-- OSI licence for everything (MIT), no proprietary parts, actively maintained, already released (0.5.0, 0.5.1),
+- OSI licence for everything (MIT), no proprietary parts, actively maintained, already released (0.1.0),
   functionality described on the download page.
 - Only our own binaries, built from this repo by GitHub Actions on GitHub-hosted runners (SignPath checks this).
 - No hacking tools; no data sent to systems the user didn't choose (Dispatch sends requests only where the user
@@ -49,7 +49,7 @@ The form is on https://signpath.org/apply (a HubSpot form; fields may differ). S
 - **Build system:** GitHub Actions on GitHub-hosted `windows-latest` runners, triggered by version tags;
   workflow `.github/workflows/build.yml`.
 - **Team:** one maintainer (owner of the og-crafts GitHub organization), who authors, reviews and approves.
-- **Releases:** 0.5.0 (2026-11-05), 0.5.1 (2026-11-14) on GitHub Releases.
+- **Releases:** 0.1.0 (2026-11) on GitHub Releases.
 - **Contact:** hello@ogcrafts.cloud
 
 ## After approval (owner, then Claude)
