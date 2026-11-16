@@ -238,9 +238,13 @@ rebranded site files; `site/release.json` on `main` points at 0.5.1). The OGCraf
 
 **Waiting on the owner.**
 - Deciding whether to tag 0.5.2 soon so the old bundle ID is short-lived.
-- Code-signing certificates and the updater key (`docs/RELEASING.md`). The updater key unblocks in-app updates:
-  once the public key exists, add `tauri-plugin-updater`, the config and a "Check for updates" item. Without it, a
-  key-less "Check for updates" button that opens the release page is possible (it contacts GitHub, so keep it opt-in).
+- **Updater key:** in-app updates are built (☰ → Check for updates…, opt-in check on start, signed `latest.json`
+  on release tags; `docs/RELEASING.md` "Auto-updates"). They switch on when the owner runs
+  `scripts/setup-updater.sh` (key in `~/keys`, public key into `tauri.conf.json`, GitHub secrets) and that
+  `tauri.conf.json` change is merged. Claude's auto mode refused to make the key itself (2026-11-16).
+- **Windows code signing:** a choice between SignPath Foundation (free for open source, publisher shows as SignPath
+  Foundation), a Certum open-source certificate (paid, owner's name) and the Microsoft Store (free, MSIX signed by
+  Microsoft). Azure Artifact Signing isn't open to individuals outside the US/Canada. See `docs/RELEASING.md`.
 - A look at the Windows setup pages and the .dmg window (branded installers, PR #10, merged).
 - Sync design.
 - OGCrafts email extras: Gmail "Send mail as" via Resend and a DMARC record (see the memory note ogcrafts-brand).

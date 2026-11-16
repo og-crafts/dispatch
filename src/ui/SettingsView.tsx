@@ -61,6 +61,7 @@ export function SettingsView({ ws, notify, mcpHost = { state: 'off' } }: { ws: W
         {desktop && <>
           <label className="toggle"><input type="checkbox" checked={st.cookieJar} onChange={(e) => ws.setSettings({ cookieJar: e.target.checked })} /> Keep cookies between requests</label>
           <label className="toggle"><input type="checkbox" checked={st.insecureTls} onChange={(e) => ws.setSettings({ insecureTls: e.target.checked })} /> Accept any TLS certificate (self-signed). Safer: add your CA under Certificates instead.</label>
+          <label className="toggle"><input type="checkbox" checked={st.updateCheckOnStart} onChange={(e) => ws.setSettings({ updateCheckOnStart: e.target.checked })} /> Check for updates when Dispatch starts (asks GitHub for the newest release; nothing is installed without asking)</label>
         </>}
       </div>
       {!desktop && <p className="warnLine small">Proxy and certificate settings are for the desktop app; in the browser, the browser’s own settings apply.</p>}

@@ -18,6 +18,8 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
+# In-app updates; loaded only when tauri.conf.json has the update key (see docs/RELEASING.md).
+tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "brotli", "deflate", "http2", "charset", "multipart", "cookies", "stream"] }
 tokio = { version = "1", features = ["sync", "macros", "time", "net", "io-util", "process"] }

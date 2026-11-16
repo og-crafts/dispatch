@@ -25,26 +25,46 @@ on an upgrade from an older install (the old root-level shortcut could be left b
 
 ## Code signing (needs the owner)
 
-- **Windows:** an OV or EV code-signing certificate (or Azure Trusted Signing). Add the certificate as GitHub
-  secrets and set `bundle.windows.certificateThumbprint` / a `signCommand` in `tauri.conf.json`
-  (https://v2.tauri.app/distribute/sign/windows/).
+Windows SmartScreen warns about any installer that isn't Authenticode-signed with a certificate it trusts, and even
+a signed one until the certificate has built up some download reputation (EV certificates no longer skip this).
+Options as of 2026-11 (checked by Claude; prices and rules change, so confirm before paying):
+
+- **SignPath Foundation (free, open source):** signs releases of OSI-licensed public projects from GitHub Actions
+  with the Foundation's certificate. Needs an application, MFA for everyone with access, and a code-signing policy
+  page on the site; the publisher Windows shows is "SignPath Foundation", not OGCrafts.
+- **Certum Open Source Code Signing (paid, ~€69+/year):** a certificate in the owner's name ("Open Source Developer,
+  …") kept in Certum's SimplySign cloud, which needs a phone code; signing from CI needs extra tooling.
+- **Microsoft Store:** free for individual developers since 2025-09. An MSIX package is signed by Microsoft, so Store
+  installs show no SmartScreen warning and the Store does the updates; MSI/EXE submissions must already be signed.
+  Tauri doesn't build MSIX itself.
+- **Azure Artifact Signing (Trusted Signing, 9.99 USD/month):** not open to individuals outside the US/Canada.
+
+Wiring for any certificate: `bundle.windows.signCommand` in `tauri.conf.json` (https://v2.tauri.app/distribute/sign/windows/),
+with its secrets in GitHub.
+
 - **macOS:** an Apple Developer account (99 USD/year). Add `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
   `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` as GitHub secrets; Tauri signs and
   notarizes during `tauri build` when they're set (https://v2.tauri.app/distribute/sign/macos/).
 
-## Auto-updates (needs the owner's signing key)
+## Auto-updates
 
-Tauri's updater only installs updates signed with your key, so the key must be created and kept by you:
+Built: the desktop app has **☰ → Check for updates…** and a setting (Settings → General, off by default because it
+contacts GitHub) to check quietly on start. Nothing installs without the person agreeing. An update is installed only
+if its signature matches the public key built into the app, so only the holder of the private key can ship updates.
 
-1. `npx tauri signer generate -w ~/.tauri/dispatch.key` (choose a password). Keep the private key safe; losing it
-   means existing installs can't update.
-2. Add GitHub secrets `TAURI_SIGNING_PRIVATE_KEY` (file contents) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
-3. Then the code changes (Claude can make these once the public key exists):
-   - `src-tauri/Cargo.toml`: `tauri-plugin-updater = "2"`; register it in `lib.rs`.
-   - `tauri.conf.json`: `bundle.createUpdaterArtifacts: true` and
-     `plugins.updater: { pubkey: "<public key>", endpoints: ["https://github.com/og-crafts/dispatch/releases/latest/download/latest.json"] }`.
-   - The workflow passes the two secrets as env to `tauri build` and uploads `latest.json` with the release.
-   - A "Check for updates" item in the menu and a quiet check on start.
+- Rust: `src-tauri/src/updater.rs` (`update_check`, `update_install`); the plugin loads only when
+  `plugins.updater.pubkey` is set, so builds without a key still run. UI: `src/ui/updates.ts`.
+- Release tags: when the `TAURI_SIGNING_PRIVATE_KEY` secret is set, the desktop jobs build with
+  `src-tauri/tauri.updater.conf.json` (signed updater files: NSIS `.exe`, AppImages, `Dispatch.app.tar.gz`, each with
+  a `.sig`), and the `updater` job attaches `latest.json` (`scripts/make-latest-json.mjs`) to the draft release.
+- Installed copies read `https://github.com/og-crafts/dispatch/releases/latest/download/latest.json`, so an update
+  reaches people when the owner **publishes** the release, not before.
+- Linux `.deb`/`.rpm` installs don't self-update (Tauri updates AppImages only); they show the download page.
 
-The repo is private, so release downloads need a GitHub login; for updates to reach other people, releases would
-have to be published somewhere public (a public releases repo or the homelab).
+**One-time set-up (owner):** `scripts/setup-updater.sh`. It makes the key pair in `~/keys` (with a random password
+next to it), writes the public key into `tauri.conf.json`, and stores the key and password as GitHub secrets. Commit
+the `tauri.conf.json` change, then run `~/bin/backup-secrets`. Losing the private key means installed copies can't
+update any more (they'd need a manual reinstall with a new key).
+
+Copies installed before the first release with the key (0.5.1 and older) have no updater: those people install the
+next version by hand once.
