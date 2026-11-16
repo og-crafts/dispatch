@@ -46,7 +46,7 @@ const BODY_KINDS: [BodyKind, string][] = [
   ['urlencoded', 'Form (urlencoded)'], ['formdata', 'Form-data (files)'], ['binary', 'Binary file'], ['graphql', 'GraphQL'],
 ]
 
-export function RequestPane({ ws, onSave, notify, authActions, scriptHelp, renderDocs, onSaveAs }: Props & { onSaveAs?: () => void }) {
+export function RequestPane({ ws, onSave, notify, authActions, scriptHelp, renderDocs, onShare, onSaveAs }: Props & { onShare?: () => void; onSaveAs?: () => void }) {
   const { draft, setDraft, sending } = ws
   const [tab, setTab] = useState<Tab>('params')
   const [scriptTab, setScriptTab] = useState<'pre' | 'post'>('pre')
@@ -100,6 +100,7 @@ export function RequestPane({ ws, onSave, notify, authActions, scriptHelp, rende
         <button type="button" className="btn small ghost" aria-expanded={paramOpen} onClick={() => setParamOpen(!paramOpen)} title="Turn hard-coded values into variables">Parameterize</button>
         <VarsHelp ws={ws} notify={notify} />
         <CodePanel ws={ws} notify={notify} />
+        {onShare && <button type="button" className="btn small ghost" onClick={onShare} title="Save this request, a sample response and curl as an HTML page to share">Share</button>}
         {onSaveAs && <button type="button" className="btn small ghost" onClick={onSaveAs} title="Save a copy under a new name or place (Ctrl+Shift+S)">Save as…</button>}
         <button type="button" className="btn ghost" onClick={onSave}>Save <kbd>Ctrl S</kbd></button>
       </div>

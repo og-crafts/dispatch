@@ -41,6 +41,10 @@ and an import format; never copy its name, branding, icons or UI.
   (`TabBar` `page`), so requests are one click away. `HomeView.tsx` is the Home page; `Icons.tsx` the line icons.
   Look: tokens at the top of `app.css` (light + dark), the aurora is `body::before`, panels are frosted glass
   (`--surface` + backdrop-filter); the "Look" section at the end of `app.css` overrides the older rules.
+- Share as HTML: `core/share.ts` builds sanitized data (Sanitizer: secret-named values, JWT/bearer/AWS keys,
+  emails, IPs, server address → `{{baseUrl}}`, sampled lists; variables stay `{{name}}`), `core/shareHtml.ts`
+  renders one self-contained page (CSP, data embedded as JSON, DOM built with textContent). `ui/ShareDialog.tsx`
+  asks for title/version/author/contact/description. Entry points: request Share button, request/folder/collection menus.
 - `src/ui/FlowView.tsx` — the flow canvas (absolutely placed blocks, SVG wires, pointer drag; every wire can also
   be set from the side panel's “Then go to” selects, which is what keyboard users and tests use).
 - `src/cli/main.ts` — `dispatch-run` (run, `load`, `mock`, `mcp`, `flow`); bundled by `scripts/build-cli.mjs`.

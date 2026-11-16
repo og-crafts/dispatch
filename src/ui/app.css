@@ -703,6 +703,17 @@ pre.out, .diff, .markdown pre { background: var(--sunken); border: 1px solid var
   .homeHero h1 { font-size: 24px; }
 }
 
+/* Share as HTML */
+.shareDialog { width: min(620px, calc(100vw - 32px)); }
+.shareGrid { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+.shareGrid .wide { grid-column: 1 / -1; }
+.shareOpts { border: 1px solid var(--outline); border-radius: 12px; padding: .5rem .8rem .7rem; display: grid; gap: .45rem; margin: 0; }
+.shareOpts legend { padding: 0 .3rem; }
+.shareOpts .toggle, .shareDialog .toggle { margin-left: 0; }
+.shareSummary { font-weight: 400; }
+.shareSummary { background: var(--primary-soft); border-radius: 10px; padding: .55rem .75rem; margin: 0; }
+@media (max-width: 760px) { .shareGrid { grid-template-columns: 1fr; } }
+
 /* Request / response divider (SplitPane): each side scrolls on its own; the body editor uses the room it gets. */
 .split.sized { height: 100%; min-height: 0; }
 .split.sized > .request, .split.sized > .response { min-height: 0; overflow: auto; }

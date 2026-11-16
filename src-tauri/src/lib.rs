@@ -189,11 +189,18 @@ fn cancel_request(state: tauri::State<'_, InFlight>, id: u64) {
 /// Asks where to save and writes the file. Returns false when the user cancels the dialog.
 #[tauri::command]
 async fn save_text_file(app: tauri::AppHandle, file_name: String, contents: String) -> Result<bool, String> {
+    // The filter follows the file's own extension (backups are .json, shared pages .html).
+    let ext = std::path::Path::new(&file_name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("json")
+        .to_ascii_lowercase();
+    let label = if ext == "html" { "Web page".to_string() } else { ext.to_ascii_uppercase() };
     let picked = app
         .dialog()
         .file()
         .set_file_name(&file_name)
-        .add_filter("JSON", &["json"])
+        .add_filter(&label, &[ext.as_str()])
         .blocking_save_file();
     let Some(path) = picked else { return Ok(false) };
     let path = path.into_path().map_err(|e| e.to_string())?;
