@@ -15,6 +15,7 @@ import { WorkerEngine } from '../core/workerEngine'
 import { type Flow, type FlowRun, type FlowStep, newFlow, runFlow } from '../core/flows'
 import { FAKE } from '../core/fake'
 import { authPipeline } from '../core/auth'
+import { track } from './telemetry'
 
 /** A linked folder's last sync: files changed outside the app that it left alone, or an error. */
 export interface FolderStatus { conflicts: string[]; error?: string; at: number }
@@ -342,6 +343,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     await applyChanges(x, ctx)
     if (x.authUpdate) await applyAuthUpdate(x.authUpdate)
     await recordHistory(tab.draft, x)
+    track('request_sent', { protocol: tab.draft.protocol, ok: !!x.response && x.response.status < 400 })
   }, [active, patchTab, runContext, transport, settings, log, applyChanges, applyAuthUpdate, recordHistory])
 
   const cancel = useCallback(() => aborts.current.get(active.id)?.abort(), [active.id])
