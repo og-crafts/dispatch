@@ -1,6 +1,6 @@
 import { useEffect, useReducer, useState } from 'react'
 import type { ClientCert } from '../core/types'
-import { uid } from '../core/types'
+import { ASSISTANT_SPACE, uid } from '../core/types'
 import { CookieTransport } from '../core/transport'
 import type { StoredCookie } from '../core/cookies'
 import type { WorkspaceApi } from './useWorkspace'
@@ -130,12 +130,12 @@ function McpHostSettings({ ws, notify, status }: { ws: WorkspaceApi; notify: (m:
     if (n !== st.mcpHostPort) ws.setSettings({ mcpHostPort: n })
   }
   const url = `http://127.0.0.1:${st.mcpHostPort}/mcp`
-  const command = `claude mcp add --transport http dispatch ${url} --header "Authorization: Bearer ${st.mcpHostToken}"`
+  const command = `claude mcp add -s user --transport http dispatch ${url} --header "Authorization: Bearer ${st.mcpHostToken}"`
   const copy = (text: string, what: string) => { void navigator.clipboard?.writeText(text).then(() => notify(`${what} copied`), () => notify('Couldn’t copy')) }
   const allowed = mcpMethods(st.mcpHostMethods)
   return <>
     <h2>AI assistants (MCP)</h2>
-    <p className="muted small">Lets an AI assistant on this computer (Claude Code, Claude Desktop, Cursor…) list, send and run the requests in the workspace you’re looking at, with the active environment, cookies and signed-in tokens. It can’t edit or delete them. Only programs that have the token below can connect, and only from this computer.</p>
+    <p className="muted small">Lets an AI assistant on this computer (Claude Code, Claude Desktop, Cursor…) list, send and run the requests in the workspace you’re looking at, with the active environment, cookies and signed-in tokens. It can’t change or delete them. Only programs that have the token below can connect, and only from this computer.</p>
     <div className="auth">
       <label className="toggle"><input type="checkbox" checked={st.mcpHostEnabled} onChange={(e) => ws.setSettings({ mcpHostEnabled: e.target.checked, ...(e.target.checked && !st.mcpHostToken ? { mcpHostToken: newMcpToken() } : {}) })} /> Let AI assistants use Dispatch</label>
       <label className="field inline"><span>Port</span><input type="number" min={1024} max={65535} value={portDraft} aria-label="MCP port"
@@ -144,6 +144,8 @@ function McpHostSettings({ ws, notify, status }: { ws: WorkspaceApi; notify: (m:
         <input className="mono" value={st.mcpHostMethods} placeholder="empty = all" aria-label="Methods AI assistants may send" onChange={(e) => ws.setSettings({ mcpHostMethods: e.target.value })} />
       </label>
       <p className="muted small">{allowed.length ? `Only ${allowed.join(', ')} requests. Add POST to allow logins and other writes.` : 'Every method, including POST, PUT, PATCH and DELETE.'}</p>
+      <label className="toggle"><input type="checkbox" checked={st.mcpHostWorkspace} onChange={(e) => ws.setSettings({ mcpHostWorkspace: e.target.checked })} /> Give them their own workspace to build requests in</label>
+      <p className="muted small">Assistants can create, change, copy and delete requests in a workspace called “{ASSISTANT_SPACE.name}”, and nowhere else. Your workspaces stay as they are. To keep something they made, open that workspace and use Move to on the collection. Sending still follows the methods above.</p>
       {status.state === 'on' && <p className="small"><span className="pill">Listening on {url}</span></p>}
       {status.state === 'error' && <p className="warnLine small">{status.message}</p>}
       {st.mcpHostToken && <>
@@ -156,7 +158,7 @@ function McpHostSettings({ ws, notify, status }: { ws: WorkspaceApi; notify: (m:
           <button type="button" className="btn small" onClick={() => copy(command, 'Claude Code command')}>Copy Claude Code command</button>
           <button type="button" className="btn small danger" onClick={() => { ws.setSettings({ mcpHostToken: newMcpToken() }); notify('New token: connected assistants need the new one') }}>New token</button>
         </div>
-        <p className="muted small">Claude Code: <code>claude mcp add --transport http dispatch {url} --header "Authorization: Bearer …"</code>. Responses (including tokens and cookies in them) go to the assistant.</p>
+        <p className="muted small">Claude Code: <code>claude mcp add -s user --transport http dispatch {url} --header "Authorization: Bearer …"</code>. Responses (including tokens and cookies in them) go to the assistant.</p>
       </>}
     </div>
   </>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as db from '../core/db'
 import type { Collection, Environment, Folder, HistoryEntry, HttpResponse, KV, LogLine, PreparedRequest, RequestDef, Settings, TestResult } from '../core/types'
-import { DEFAULT_SPACE, type Space, bySort, defaultSettings, newCollection, newEnvironment, newFolder, newRequest, normalizeRequest, spaceOf, uid } from '../core/types'
+import { ASSISTANT_SPACE, DEFAULT_SPACE, type Space, bySort, defaultSettings, newCollection, newEnvironment, newFolder, newRequest, normalizeRequest, spaceOf, uid } from '../core/types'
 import { prepare } from '../core/prepare'
 import { CookieTransport, type Transport, defaultTransport, isDesktop } from '../core/transport'
 import { browserHook } from '../core/browserPipeline'
@@ -512,6 +512,25 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
       if (settingsRef.current.activeEnvId === id) setSettings({ activeEnvId: null })
     }
   }, [collections, environments, updateCollection, updateEnvironment, setSettings])
+  /**
+   * Saves what an MCP assistant made or changed in its own workspace, adding that workspace the first time.
+   * Only items in the assistant workspace are written; anything else is ignored.
+   */
+  const collectionsRef = useRef(collections); collectionsRef.current = collections
+  const saveAssistant = useCallback(async (c: { collections: Collection[]; folders: Folder[]; requests: RequestDef[] }) => {
+    if (!spacesRef.current.some((x) => x.id === ASSISTANT_SPACE.id)) await saveSpaces([...spacesRef.current, ASSISTANT_SPACE])
+    const cols = c.collections.filter((x) => x.workspaceId === ASSISTANT_SPACE.id)
+    const ok = new Set([...collectionsRef.current.filter((x) => spaceOf(x) === ASSISTANT_SPACE.id).map((x) => x.id), ...cols.map((x) => x.id)])
+    const fs = c.folders.filter((f) => ok.has(f.collectionId))
+    const rs = c.requests.filter((r) => r.collectionId && ok.has(r.collectionId))
+    for (const x of cols) await db.putCollection(x)
+    for (const f of fs) await db.putFolder(f)
+    for (const r of rs) await db.putRequest(r)
+    const upsert = <T extends { id: string }>(list: T[], add: T[]) => [...list.filter((x) => !add.some((y) => y.id === x.id)), ...add]
+    if (cols.length) setCollections((xs) => upsert(xs, cols).sort(byName))
+    if (fs.length) setFolders((xs) => upsert(xs, fs))
+    if (rs.length) setRequests((xs) => upsert(xs, rs))
+  }, [saveSpaces])
 
   /**
    * Moves requests and folders under a parent (a collection's top level, or a folder), placed before `beforeId`
@@ -692,7 +711,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     tabs, activeId, active, draft, view, result: active.result, sending: active.sending, saved, dirty, isDirty,
     collection, environment, prepared, chain, runContext, pipeline: pipelineRef, variableNames,
     setDraft, setView, setSettings, setLogs, log, openRequest, startNew, closeTab, selectTab, saveDraft, saveDraftAs, renameRequest,
-    moveRequest, removeRequest, duplicateRequest, send, cancel, applyChanges, applyAuthUpdate, openHistory, clearHistory,
+    moveRequest, removeRequest, duplicateRequest, saveAssistant, send, cancel, applyChanges, applyAuthUpdate, openHistory, clearHistory,
     addCollection, updateCollection, removeCollection, addFolder, updateFolder, removeFolder,
     addEnvironment, updateEnvironment, removeEnvironment, duplicateEnvironment, setGlobals, importWorkspace,
   }
