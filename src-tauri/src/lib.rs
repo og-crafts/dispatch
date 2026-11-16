@@ -13,6 +13,7 @@ use tokio::sync::oneshot;
 
 pub mod grpc;
 pub mod mcp_host;
+pub mod updater;
 
 #[derive(Deserialize)]
 pub struct SendRequest {
@@ -701,7 +702,16 @@ pub fn run() {
         .manage(Browsers::default())
         .manage(std::sync::Arc::new(MockState::default()))
         .manage(std::sync::Arc::new(mcp_host::McpHost::default()))
-        .invoke_handler(tauri::generate_handler![send_request, cancel_request, save_text_file, save_base64_file, open_url, oauth_listen, mock_start, mock_stop, mock_reply, grpc::grpc_describe, grpc::grpc_call, pick_folder, read_folder, sync_folder, notify_desktop, sse_open, sse_close, mcp_stdio_start, mcp_stdio_send, mcp_stdio_stop, browser_launch, browser_close, mcp_host::mcp_host_start, mcp_host::mcp_host_stop, mcp_host::mcp_host_reply])
+        .manage(updater::PendingUpdate::default())
+        .setup(|app| {
+            // Only builds that carry the update key load the updater (it refuses to start without one).
+            #[cfg(desktop)]
+            if updater::configured(app.handle()) {
+                app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            }
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![send_request, cancel_request, save_text_file, save_base64_file, open_url, oauth_listen, mock_start, mock_stop, mock_reply, grpc::grpc_describe, grpc::grpc_call, pick_folder, read_folder, sync_folder, notify_desktop, sse_open, sse_close, mcp_stdio_start, mcp_stdio_send, mcp_stdio_stop, browser_launch, browser_close, mcp_host::mcp_host_start, mcp_host::mcp_host_stop, mcp_host::mcp_host_reply, updater::update_check, updater::update_install])
         .run(tauri::generate_context!())
         .expect("error while running Dispatch");
 }

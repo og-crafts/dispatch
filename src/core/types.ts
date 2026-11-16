@@ -257,6 +257,8 @@ export interface Settings {
   mcpHostMethods: string
   /** Assistants get their own workspace (ASSISTANT_SPACE) to create, change and delete requests in. */
   mcpHostWorkspace: boolean
+  /** Desktop: look for a newer release when Dispatch starts (it contacts GitHub, so it's off until turned on). */
+  updateCheckOnStart: boolean
 }
 
 export interface ClientCert {
@@ -273,6 +275,7 @@ export const defaultSettings: Settings = {
   activeEnvId: null, theme: 'system', timeoutMs: 30_000, followRedirects: true, insecureTls: false, cookieJar: true,
   proxyUrl: '', proxyBypass: 'localhost, 127.0.0.1', clientCerts: [], caCerts: [], activeSpaceId: 'default', spaceEnv: {},
   mcpHostEnabled: false, mcpHostPort: 4320, mcpHostToken: '', mcpHostMethods: 'GET,HEAD', mcpHostWorkspace: false,
+  updateCheckOnStart: false,
 }
 
 let counter = 0

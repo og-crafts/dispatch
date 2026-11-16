@@ -4,6 +4,7 @@ import { useDialogs } from './Dialogs'
 import { HomeView } from './HomeView'
 import { ShareDialog } from './ShareDialog'
 import { SplitPane } from './SplitPane'
+import { runUpdateCheck, updatesAvailable } from './updates'
 import type { ShareTarget } from '../core/share'
 import { Sidebar } from './Sidebar'
 import { RequestPane } from './RequestPane'
@@ -146,6 +147,13 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
     setToast({ text: msg, action }); clearTimeout(toastTimer.current)
     toastTimer.current = setTimeout(() => setToast(null), action ? 9000 : msg.length > 80 ? 8000 : 3500)
   }, [])
+  // The quiet check on start, once, when the person turned it on (Settings → General).
+  const updateChecked = useRef(false)
+  useEffect(() => {
+    if (!ws.ready || updateChecked.current || !updatesAvailable() || !ws.settings.updateCheckOnStart) return
+    updateChecked.current = true
+    void runUpdateCheck(notify, confirm, true)
+  }, [ws.ready, ws.settings.updateCheckOnStart, notify, confirm])
   useFolderSync(ws, notify)
   const sched = useScheduler(ws)
   // Every delete can be undone from the toast.
@@ -322,6 +330,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
             <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); ws.setView({ kind: 'backups' }) }}>Local backups…</button>
             <hr />
             <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); ws.setView({ kind: 'settings' }) }}>Settings…</button>
+            {updatesAvailable() && <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); void runUpdateCheck(notify, confirm) }}>Check for updates…</button>}
             {ws.transport.unrestricted && <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); ws.setView({ kind: 'cookies' }) }}>Cookies…</button>}
           </div>
         </details>

@@ -37,7 +37,7 @@
       "icons/icon.ico"
     ],
     "publisher": "OGCrafts",
-    "copyright": "\u00a9 2026 OGCrafts",
+    "copyright": "© 2026 OGCrafts",
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
@@ -56,9 +56,29 @@
     "macOS": {
       "dmg": {
         "background": "installer/dmg-background.png",
-        "windowSize": { "width": 660, "height": 400 },
-        "appPosition": { "x": 180, "y": 200 },
-        "applicationFolderPosition": { "x": 480, "y": 200 }
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        },
+        "appPosition": {
+          "x": 180,
+          "y": 200
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 200
+        }
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZDRjY2QjVDMUY2RjY0RjQKUldUMFpHOGZYR3YyL085V3R0K0krYXAzVmc1NTRxSHNWRUdURktWQTZlNldybmtTOC9zRCtNaWgK",
+      "endpoints": [
+        "https://github.com/og-crafts/dispatch/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }
