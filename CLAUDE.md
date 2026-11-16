@@ -121,7 +121,7 @@ unpack it from `apt-get download libasound2t64` with `dpkg-deb -x` and set `LD_L
 
 ## Where we left off
 
-Updated 2026-11-16. The latest tag is **v0.5.1**, published (Latest) on 2026-11-14.
+Updated 2026-11-16. **Versioning restarted at v0.1.0** (see Releases below); until v0.1.0 is published, the old v0.5.1 numbers in these notes refer to deleted preview releases.
 `main` (52b2630) is ahead of it, untagged: PRs #6 (local MCP endpoint), #7 (drag and drop), #8 (docs), #10 (branded
 installers), the OGCrafts move (#12, #13, #14), and from 2026-11-16 #16 (MCP: the assistant's own workspace), #17
 (UX refresh: nav rail, resizable panels, Home, glass look, Settings tabs, Save as…) and #18 (Share as HTML). No PRs
@@ -163,8 +163,9 @@ imports (`LEGACY_FORMATS` in `src/core/backup.ts`). Contact: hello@ogcrafts.clou
 `gh` has three logins: use `gh auth switch` or `GH_TOKEN=$(gh auth token --user NAME)` for the right one.
 The old `onelifestack/dispatch-site` is left unpublished (custom domain removed); the archive repo stays under
 `onelifestack`. Dispatch was removed from developer.onelifestack.com. The next release (0.5.2 or 0.6.0) is the first
-under the new bundle ID. The installer art was changed in text only and still needs rebuilding with
-`scripts/make-installer-art.mjs`.
+under the new bundle ID. The installer art was rebuilt with the OGCrafts text on 2026-11-16 (`scripts/make-installer-art.mjs`; it needs
+`CHROMIUM=~/.cache/ms-playwright/chromium_headless_shell-1148/chrome-linux/headless_shell` and libasound, see
+"Visual check without a desktop").
 
 **The repo is public (MIT) since 2026-11-05.** GitHub billing blocked Actions on the private repo, so the owner
 made it public. To keep a personal e-mail out of the public history, the old repo was renamed
@@ -173,21 +174,15 @@ reports, and the draft releases up to v0.4.4) and this repo was pushed fresh wit
 numbers restarted here; below, numbers marked *archive* refer to the old repo. Locally, remote `archive` is the old
 repo. Never commit with any address other than the noreply one (see the folder CLAUDE.md).
 
-**Releases.** Every release is a *draft*: the owner publishes. Tags in order:
-- v0.2.0
-- v0.4.0: workspaces, MCP, flows, browser login
-- v0.4.1: Windows process fixes
-- v0.4.2: browser-login origin fix (archive #9)
-- v0.4.3: MCP sign-in (archive #11 / PR #13)
-- v0.4.4: deleted flows stay deleted (archive #14), MCP Sign out sticks (archive #15)
-- v0.5.0: linked workspaces, phase 1 (a workspace kept as a folder of files; docs/DESIGN-linked-workspaces.md);
-  MIT licence; the first release built in the public repo
-- v0.5.1: round 3 fixes (copied workspace folders, import message, dialog and table layout)
-
-Releases up to v0.4.4 are drafts in the archive repo only.
-
-Releases 0.4.1–0.4.3 have no macOS `.dmg` (0.4.4 has one): GitHub's macOS arm64 runners weren't available ("The job was not acquired
-by Runner"). To fill in the `.dmg` later, run `gh run rerun <run> --failed` for the tag's run.
+**Releases.** Every release is a *draft*: the owner publishes. **Versioning restarted at v0.1.0 (owner,
+2026-11-16):** the earlier previews (v0.2.0–v0.5.1, built under OneLifeStack) had their GitHub releases and tags
+deleted from this repo and their changelog entries replaced by one 0.1.0 entry; their history stays in the commits,
+in the private archive repo (drafts up to v0.4.4) and in the notes below. Version numbers live in `package.json`
+(+ lock), `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` (+ lock), `VERSION` in `src/cli/main.ts`,
+`clientVersion` in `src/core/mcp.ts` and `docs/TESTING-WINDOWS.md`.
+- v0.1.0: the first release as Dispatch by OGCrafts (bundle ID `cloud.ogcrafts.dispatch`, in-app updates, Share
+  as HTML, the UX refresh, the MCP assistant workspace). Previews can't update to it: export a backup, uninstall,
+  install 0.1.0, import.
 
 **Windows test (issue #2; rounds 1–2 in archive #8).**
 - An agent on the owner's Windows machine follows `docs/TESTING-WINDOWS.md`, which is copied into the issue body,

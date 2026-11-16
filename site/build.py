@@ -226,7 +226,7 @@ def download():
 <h3>Windows</h3><p>SmartScreen shows &ldquo;Windows protected your PC&rdquo;. Choose <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
 <h3>macOS</h3><p>Gatekeeper says it cannot verify the app. Open the <code>.dmg</code> and drag Dispatch to Applications. Then Control-click the app, choose <strong>Open</strong>, and confirm. If that option is missing, open <strong>System Settings, Privacy &amp; Security</strong> and choose <strong>Open Anyway</strong> next to the message about Dispatch.</p>
 <h3>Linux</h3><p>There is no signing warning. Install the <code>.deb</code> with <code>sudo apt install ./file.deb</code> or the <code>.rpm</code> with <code>sudo dnf install ./file.rpm</code>. For an AppImage, make it executable (<code>chmod +x file.AppImage</code>) and run it.</p>
-<p>Check the SHA-256 checksum next to each download before you open it. From version 0.5.2 the desktop app can update itself: <strong>Menu, Check for updates</strong>. Updates are checked against Dispatch&rsquo;s own signing key before they install. Older versions need one manual install from this page.</p>
+<p>Check the SHA-256 checksum next to each download before you open it. The desktop app can update itself: <strong>Menu, Check for updates</strong>. Updates are checked against Dispatch&rsquo;s own signing key before they install. If you installed a preview from before 0.1.0, it can&rsquo;t update to 0.1.0: export a backup in it (<strong>Menu, Export backup</strong>), uninstall it, install 0.1.0 from this page and import the backup.</p>
 <p>See the <a href="/code-signing/">code signing policy</a> for how Windows releases are signed.</p>"""
 
 def cli_page():
@@ -272,60 +272,20 @@ def cli_page():
 def changelog():
     def rel(v, d, title, items): return f'<div class="release"><h2 id="v{v.replace(".", "-")}">{v} <span class="muted">{d}</span></h2><p>{title}</p>{ul(items)}</div>'
     return "<h1>Changelog</h1><p class=\"lead\">What changed in each release, newest first.</p>" + \
-    rel("0.5.1", "2026-11-05", "Fixes from testing on Windows.", [
-        "A copy of a workspace folder with a new workspace id now opens as its own copy. Before, it moved the original workspace's items and secrets into the copy.",
-        "The import message counts flows too.",
-        "Long commands and paths wrap in confirmation dialogs.",
-        "Flows deleted in 0.4.x can still be in the data and show up in Export backup: delete them again to remove them for good.",
-    ]) + rel("0.5.0", "2026-11-05", "Workspaces as folders of files, and Dispatch is now open source.", [
-        "Desktop: link a workspace to a folder and it is kept there as plain files, one per request, environment and flow, ready for git. Secret values are never written to the folder.",
-        "Open a workspace folder, such as a teammate's clone, to add that workspace.",
-        "Files changed outside Dispatch, in an editor or by a `git pull`, are never overwritten. Dispatch shows them as conflicts: use the folder's version (a backup is taken first) or keep yours. Collection folders get the same protection.",
-        "Dispatch is open source under the MIT licence.",
-    ]) + rel("0.4.4", "2026-11-05", "Fixes from testing on Windows.", [
-        "A deleted flow no longer comes back after a restart or in an exported backup.",
-        "Sign out from an MCP server now sticks, even when a token was being refreshed at that moment.",
-    ]) + rel("0.4.3", "2026-11-04", "Sign in to MCP servers.", [
-        "Desktop: sign in to MCP servers that use OAuth (discovery, client registration and PKCE). The sign-in is kept per environment as a secret and refreshed when it runs out.",
-        "Suggestions for well-known MCP servers.",
-    ]) + rel("0.4.0", "2026-11-04", "Browser logins, flows and MCP. 0.4.1 and 0.4.2 fixed Windows issues found in testing.", [
-        "Browser login requests: drive an installed Chrome or Edge through a login page and keep its cookies or token as secret variables (desktop, runner, schedules and CLI).",
-        "Flows: wire requests together on a canvas with If, Script, Set variable, For each, Delay and End blocks, with live status and a run log. `dispatch-run flow` runs them from an export.",
-        "MCP requests: test MCP servers over HTTP or, on desktop, a local command; list and call tools, read resources, get prompts.",
-        "`dispatch-run mcp` serves a collection to AI assistants, with `--allow-methods` to limit what they may send.",
-        "Workspaces to group collections and environments.",
-        "Duplicate environments.",
-        "Parameterize: turn hard-coded hosts, credentials and IDs into variables, also offered after pasting curl.",
-        "Endpoint alternatives: one variable, several named targets; the runner can run once per alternative.",
-        "Windows fixes: commands keep their backslashes, `.cmd` tools are found, no stray console windows.",
-    ]) + rel("0.3.0", "2026-11-04", "Safer storage, a real editor, and collections that live in files.", [
-        "Code editor with syntax colours, `{{variable}}` and `pm.` completion, GraphQL completion from the schema, and foldable JSON responses.",
-        "Secrets are encrypted at rest with a device key that cannot be exported. OAuth tokens are saved after an automatic refresh.",
-        "Undo for every delete, and daily local backups with restore.",
-        "Sidebar drag and drop, multi-select, and search across bodies, headers and docs (Ctrl+K).",
-        "Desktop: client certificates (mTLS), extra CA certificates, proxy settings and a cookie manager.",
-        "Scripts can `require` lodash, moment, crypto-js, uuid, ajv and handlebars; JSON Schema checks; `pm.visualizer` with a Visualize tab.",
-        "Export to Postman format; import from Insomnia and Bruno.",
-        "Desktop: collections as a folder of YAML files for git, written as you work. The CLI runs those folders.",
-        "Desktop: scheduled runs with failure notifications.",
-        "Server-sent events and Socket.IO requests.",
-        "Response history per request, with side-by-side compare.",
-        "Installers built for Windows, Linux (x64 and ARM64) and macOS (Intel and Apple silicon).",
-    ]) + rel("0.2.0", "2026-11-04", "Scripts, the runner, load tests and many more request types.", [
-        "Nested folders, request tabs, path variables, and more body types: form-data with files, binary, XML, HTML and GraphQL.",
-        "Pre-request and post-response scripts with tests, in a sandbox, with a console.",
-        "70 fake-data variables like `{{$randomEmail}}`, and a panel listing the variables in scope.",
-        "Collection and suite runner with iterations, delays, and CSV or JSON data files; JSON and JUnit reports.",
-        "Load testing with virtual users, ramp-up, thresholds and charts.",
-        "The `dispatch-run` command-line runner.",
-        "Digest, OAuth 2.0, JWT and AWS Signature v4 auth.",
-        "Code generation in 12 languages.",
-        "Import OpenAPI 3, Swagger 2 and HAR files.",
-        "Generated Markdown docs, saved examples, and a local mock server.",
-        "GraphQL schema tools, WebSocket and MQTT (over WebSocket), and gRPC on desktop.",
-    ]) + rel("0.1.0", "2026-11-03", "The first version.", [
-        "HTTP requests with params, headers, bodies and auth, a response viewer, collections and history.",
-        "Runs as a web app and in a desktop shell, with the data kept on the device.",
+    rel("0.1.0", "2026-11-16", "The first release of Dispatch by OGCrafts.", [
+        "Requests: HTTP with params, path variables, headers, every body type (JSON, form-data with files, binary, XML, GraphQL) and auth (Basic, Bearer, Digest, OAuth 2.0, JWT, AWS Signature v4); GraphQL schema tools, WebSocket, MQTT, server-sent events, Socket.IO, and gRPC on desktop.",
+        "Collections with nested folders, tabs, environments, globals and workspaces; each workspace keeps its own tabs. Undo for every delete, daily local backups, and search across everything (Ctrl+K).",
+        "A code editor with `{{variable}}` and `pm.` completion; pre-request and post-response scripts with tests in a sandbox, with lodash, moment, crypto-js, uuid, ajv and handlebars; 70 fake-data variables.",
+        "The runner (iterations, delays, CSV or JSON data, JUnit reports), load tests with charts, scheduled runs with notifications, response history with compare, saved examples, generated docs and a local mock server.",
+        "Flows: wire requests together on a canvas with If, Script, Set variable, For each, Delay and End blocks.",
+        "Browser login requests that drive Chrome or Edge through a login page and keep the cookies or token as secrets.",
+        "MCP: test MCP servers (HTTP or a local command, with OAuth sign-in), and let AI assistants on your computer list and send your requests through a local endpoint, with an optional workspace of their own to build requests in.",
+        "Share a request, folder or collection as one self-contained HTML page, with secrets and server addresses left out.",
+        "Import Postman, OpenAPI 3, Swagger 2, HAR, Insomnia and Bruno; export to Postman; code in 12 languages; paste curl.",
+        "Workspaces and collections can live in folders of plain files for git (desktop).",
+        "Secrets encrypted at rest with a device key; client certificates, CA certificates, proxy and a cookie manager on desktop.",
+        "The desktop app can update itself: Menu, Check for updates. Updates are verified with Dispatch&rsquo;s signing key before they install.",
+        "Desktop for Windows, macOS (Intel and Apple silicon) and Linux (x64 and ARM64), the web app, and the `dispatch-run` command-line runner.",
     ])
 
 def support():

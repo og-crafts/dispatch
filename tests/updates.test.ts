@@ -5,7 +5,7 @@ const invoke = vi.fn()
 vi.mock('@tauri-apps/api/core', () => ({ invoke: (cmd: string) => invoke(cmd) }))
 const { runUpdateCheck } = await import('../src/ui/updates')
 
-const info = (version: string | null) => ({ current: '0.5.2', version, notes: version ? 'Faster sends.' : null, date: null })
+const info = (version: string | null) => ({ current: '0.1.0', version, notes: version ? 'Faster sends.' : null, date: null })
 beforeEach(() => invoke.mockReset())
 
 describe('runUpdateCheck', () => {
@@ -13,19 +13,19 @@ describe('runUpdateCheck', () => {
     invoke.mockResolvedValueOnce(info(null))
     const notify = vi.fn()
     await runUpdateCheck(notify, vi.fn())
-    expect(notify).toHaveBeenCalledWith('You have the newest version (0.5.2).')
+    expect(notify).toHaveBeenCalledWith('You have the newest version (0.1.0).')
   })
 
   it('asks before installing, and installs on yes', async () => {
-    invoke.mockResolvedValueOnce(info('0.6.0')).mockResolvedValueOnce(undefined)
+    invoke.mockResolvedValueOnce(info('0.2.0')).mockResolvedValueOnce(undefined)
     const confirm = vi.fn(async (_m: string) => true)
     await runUpdateCheck(vi.fn(), confirm)
-    expect(confirm.mock.calls[0][0]).toMatch(/Install Dispatch 0\.6\.0\? You have 0\.5\.2\.[\s\S]*Faster sends\./)
+    expect(confirm.mock.calls[0][0]).toMatch(/Install Dispatch 0\.2\.0\? You have 0\.1\.0\.[\s\S]*Faster sends\./)
     expect(invoke.mock.calls.map((c) => c[0])).toEqual(['update_check', 'update_install'])
   })
 
   it('installs nothing on no', async () => {
-    invoke.mockResolvedValueOnce(info('0.6.0'))
+    invoke.mockResolvedValueOnce(info('0.2.0'))
     await runUpdateCheck(vi.fn(), async () => false)
     expect(invoke.mock.calls.map((c) => c[0])).toEqual(['update_check'])
   })
@@ -37,9 +37,9 @@ describe('runUpdateCheck', () => {
     invoke.mockResolvedValueOnce(info(null))
     await runUpdateCheck(notify, vi.fn(), true)
     expect(notify).not.toHaveBeenCalled()
-    invoke.mockResolvedValueOnce(info('0.6.0'))
+    invoke.mockResolvedValueOnce(info('0.2.0'))
     await runUpdateCheck(notify, vi.fn(), true)
-    expect(notify).toHaveBeenCalledWith('Dispatch 0.6.0 is available.', expect.objectContaining({ label: 'Install…' }))
+    expect(notify).toHaveBeenCalledWith('Dispatch 0.2.0 is available.', expect.objectContaining({ label: 'Install…' }))
   })
 
   it('shows why a check failed', async () => {

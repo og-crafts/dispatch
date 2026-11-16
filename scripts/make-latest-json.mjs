@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Builds latest.json for Tauri's updater from a tag's signed installers.
 //
-//   node scripts/make-latest-json.mjs <folder with the build artifacts> <tag, e.g. v0.5.2> > latest.json
+//   node scripts/make-latest-json.mjs <folder with the build artifacts> <tag, e.g. v0.2.0> > latest.json
 //
 // The folder holds what the desktop jobs uploaded (any depth): the Windows NSIS setup .exe, the Linux AppImages and
 // the macOS Dispatch.app.tar.gz, each with its .sig from the update key. Installed apps read this file from
