@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useWorkspace, type WorkspaceApi } from './useWorkspace'
+import { useWorkspace, type View, type WorkspaceApi } from './useWorkspace'
 import { useDialogs } from './Dialogs'
 import { HomeView } from './HomeView'
 import { ShareDialog } from './ShareDialog'
@@ -74,8 +74,9 @@ function Console({ ws, onClose }: { ws: WorkspaceApi; onClose: () => void }) {
 /** Other importers (OpenAPI, HAR) register here so App doesn't need to know them. */
 export type Importer = (text: string, fileName: string) => ImportResult | null
 
-/** A page (Settings, a collection, the runner…) shows as one more tab, so the requests are always one click away. */
-type PageTab = { title: string; onClose: () => void }
+/** A page (Settings, a collection, the runner…) shows as one more tab, so the requests are always one click away.
+ *  It stays in the tab bar while you work in a request, so the page is one click away too. */
+type PageTab = { title: string; on: boolean; onOpen: () => void; onClose: () => void }
 
 function TabBar({ ws, onClose, page }: { ws: WorkspaceApi; onClose: (id: string) => void; page?: PageTab }) {
   return (
@@ -97,8 +98,8 @@ function TabBar({ ws, onClose, page }: { ws: WorkspaceApi; onClose: (id: string)
         )
       })}
       {page && (
-        <div className="reqTab page on">
-          <button type="button" role="tab" aria-selected className="reqTabMain" title={page.title}>
+        <div className={`reqTab page ${page.on ? 'on' : ''}`}>
+          <button type="button" role="tab" aria-selected={page.on} className="reqTabMain" title={page.title} onClick={page.onOpen}>
             <span className="pageMark" aria-hidden="true" />
             <span className="reqTabName">{page.title}</span>
           </button>
@@ -127,6 +128,9 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
   const brunoInput = useRef<HTMLInputElement>(null)
   const [consoleOpen, setConsoleOpen] = useState(false)
   const [sharing, setSharing] = useState<ShareTarget | null>(null)
+  // The last page shown (Settings, a collection…), kept as a tab while a request is open.
+  const [lastPage, setLastPage] = useState<View | null>(null)
+  useEffect(() => { if (ws.view.kind !== 'request') setLastPage(ws.view) }, [ws.view])
   const [gettingToken, setGettingToken] = useState(false)
   const authActions = {
     gettingToken,
@@ -242,19 +246,30 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
 
   if (!ws.ready) return <p className="loading">Opening…</p>
 
+  const titleOf = (v: View): string | null => {
+    if (v.kind === 'request') return null
+    if (v.kind === 'collection') return ws.collections.find((c) => c.id === v.id)?.name ?? null
+    if (v.kind === 'folder') return ws.folders.find((f) => f.id === v.id)?.name ?? null
+    if (v.kind === 'environment') return ws.environments.find((e) => e.id === v.id)?.name ?? null
+    if (v.kind === 'flow') return ws.flows.find((x) => x.id === v.id)?.name ?? null
+    return pageTitles[v.kind] ?? null
+  }
   const viewed = ws.view
   const col = viewed.kind === 'collection' ? ws.collections.find((c) => c.id === viewed.id) : undefined
   const folder = viewed.kind === 'folder' ? ws.folders.find((f) => f.id === viewed.id) : undefined
   const env = viewed.kind === 'environment' ? ws.environments.find((e) => e.id === viewed.id) : undefined
   const extraView = (viewed.kind === 'runner' || viewed.kind === 'load') ? extras.views?.[viewed.kind] : undefined
-  const flowName = viewed.kind === 'flow' ? ws.flows.find((x) => x.id === viewed.id)?.name : undefined
   const pageTitles: Record<string, string> = {
     home: 'Home', globals: 'Globals', runner: 'Runner', load: 'Load test', docs: 'Docs', mock: 'Mock server', backups: 'Local backups',
     settings: 'Settings', cookies: 'Cookies', schedules: 'Schedules', spaces: 'Workspaces',
   }
-  const pageTitle = viewed.kind === 'request' ? null
-    : col ? col.name : folder ? folder.name : env ? env.name : flowName ?? pageTitles[viewed.kind] ?? null
-  const page = pageTitle ? { title: pageTitle, onClose: () => ws.setView({ kind: 'request' }) } : undefined
+  const shownPage = viewed.kind === 'request' ? lastPage : viewed
+  const pageTitle = shownPage ? titleOf(shownPage) : null
+  const page: PageTab | undefined = shownPage && pageTitle ? {
+    title: pageTitle, on: viewed.kind !== 'request',
+    onOpen: () => ws.setView(shownPage),
+    onClose: () => { setLastPage(null); ws.setView({ kind: 'request' }) },
+  } : undefined
   const newFlow = async () => { const n = await ask('New flow', 'New flow'); if (n) { const f = await ws.addFlow(n); ws.setView({ kind: 'flow', id: f.id }) } }
   const dialogs = { ask, confirm, pickPlace: (title: string, cur: { collectionId: string | null; folderId: string | null }) => askPlace(title, ws.collections, ws.folders, cur) }
 

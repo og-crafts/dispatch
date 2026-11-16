@@ -211,7 +211,11 @@ export async function workspaceCall(name: string, args: any, x: WorkspaceCallCon
     if (!mine.has(src.collectionId ?? '')) {
       // The copy no longer sits under the original's folders and collection, so take the auth it inherited.
       const auth = effectiveAuth(src, srcCol, folderChain(x.folders, src.folderId))
-      if (src.auth.kind === 'inherit' && auth) { copy.auth = structuredClone(auth); notes.push(`its inherited ${auth.kind} auth was copied onto it`) }
+      if (src.auth.kind === 'inherit' && auth) {
+        copy.auth = structuredClone(auth)
+        // "No auth" needs no mention.
+        if (auth.kind !== 'none') notes.push(`the ${auth.kind} auth it inherited was copied onto it`)
+      }
       if (srcCol?.variables.length) {
         if (at.fresh) { at.collection.variables = structuredClone(srcCol.variables); notes.push(`the new collection got “${srcCol.name}”’s variables`) }
         else notes.push(`“${srcCol.name}”’s collection variables weren’t copied`)

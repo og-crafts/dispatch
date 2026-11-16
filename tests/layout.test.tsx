@@ -1,6 +1,6 @@
 /** The app shell: the rail, Home, pages as tabs, and the resizable, foldable library panel. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { App } from '../src/ui/App'
 import { resetForTests } from '../src/core/db'
 import type { HttpResponse, PreparedRequest } from '../src/core/types'
@@ -45,6 +45,37 @@ describe('app shell', () => {
     expect(screen.getByLabelText('URL')).toBeTruthy()
   })
 
+  it('lists a blank new request under "Pick up where you left off"', async () => {
+    render(<App transport={new FakeTransport()} />)
+    await screen.findByLabelText('URL')
+    fireEvent.click(side().getByRole('button', { name: 'Home' }))
+    const home = await screen.findByRole('region', { name: 'Home' })
+    const card = within(home).getByRole('heading', { name: 'Pick up where you left off' }).closest('section')!
+    expect(within(card as HTMLElement).getByRole('button', { name: /New request/ })).toBeTruthy()
+    expect(within(card as HTMLElement).queryByText(/No open requests/)).toBeNull()
+  })
+
+  it('keeps each workspace’s tabs to itself', async () => {
+    await start()
+    fireEvent.click(side().getByRole('button', { name: /^GET Get things$/ }))
+    const bar = () => within(screen.getByRole('tablist', { name: 'Open requests' }))
+    expect(bar().getByRole('tab', { name: /Get things/ })).toBeTruthy()
+    const pick = () => screen.getByRole('combobox', { name: 'Workspace' }) as HTMLSelectElement
+    fireEvent.change(pick(), { target: { value: '__manage' } })
+    fireEvent.click(within(await screen.findByRole('region', { name: 'Workspaces' })).getByRole('button', { name: '+ New workspace' }))
+    const d = await screen.findByRole('dialog', { hidden: true })
+    fireEvent.change(within(d).getByLabelText('New workspace'), { target: { value: 'Work' } })
+    fireEvent.click(within(d).getByRole('button', { name: 'OK', hidden: true }))
+    await waitFor(() => expect(pick().selectedOptions[0].textContent).toBe('Work'))
+    // Work starts with one new request, not the other workspace's tabs.
+    await waitFor(() => expect(bar().queryByRole('tab', { name: /Get things/ })).toBeNull())
+    expect(bar().getAllByRole('tab', { name: /New request/ })).toHaveLength(1)
+    // Back home: its tabs return, on the one last used.
+    const homeId = within(pick()).getByRole('option', { name: 'My workspace' }).getAttribute('value')!
+    fireEvent.change(pick(), { target: { value: homeId } })
+    await waitFor(() => expect(bar().getByRole('tab', { name: /Get things/, selected: true })).toBeTruthy())
+  })
+
   it('shows a page as a tab, so a request is one click away', async () => {
     await start()
     fireEvent.click(side().getByRole('button', { name: 'Settings' }))
@@ -52,11 +83,15 @@ describe('app shell', () => {
     expect(bar.getByRole('tab', { name: 'Settings', selected: true })).toBeTruthy()
     fireEvent.click(bar.getByRole('tab', { name: /New request/ }))
     expect(screen.getByLabelText('URL')).toBeTruthy()
-    expect(bar.queryByRole('tab', { name: 'Settings' })).toBeNull()
-    // Closing the page tab also goes back.
+    // The page stays as a tab while the request is open, and brings the page back.
+    fireEvent.click(bar.getByRole('tab', { name: 'Settings', selected: false }))
+    expect(bar.getByRole('tab', { name: 'Settings', selected: true })).toBeTruthy()
+    fireEvent.click(bar.getByRole('tab', { name: /New request/ }))
+    // Closing the page tab goes back to the request and removes the tab.
     fireEvent.click(side().getByRole('button', { name: 'Workspaces' }))
     fireEvent.click(screen.getByRole('button', { name: 'Close Workspaces' }))
     expect(screen.getByLabelText('URL')).toBeTruthy()
+    expect(bar.queryByRole('tab', { name: 'Workspaces' })).toBeNull()
   })
 
   it('folds the panel when its section is picked again, and the rail stays', async () => {

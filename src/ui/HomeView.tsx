@@ -14,7 +14,7 @@ export function HomeView({ ws, onImport, onNewFlow }: { ws: WorkspaceApi; onImpo
   const colIds = new Set(ws.collections.map((c) => c.id))
   const saved = ws.requests.filter((r) => r.collectionId && colIds.has(r.collectionId)).length
   const recent = ws.history.slice(0, 8)
-  const tabs = ws.tabs.filter((t) => t.draft.url || ws.requests.some((r) => r.id === t.draft.id))
+  const tabs = ws.tabs
 
   return (
     <section className="home" aria-label="Home">

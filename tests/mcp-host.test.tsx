@@ -41,6 +41,8 @@ describe('MCP handler for the desktop app', () => {
     expect(sent).toContain('POST https://shop.test/login')
     expect(afterSend).toHaveBeenCalledOnce()
     expect((afterSend.mock.calls[0] as any[])[1].collection.id).toBe(b.id)
+    // The request sent goes along too, so the app can add it to History.
+    expect((afterSend.mock.calls[0] as any[])[2]).toMatchObject({ name: 'Login', method: 'POST' })
     await call('send_request', { name: 'Items' })
     expect(sent).toContain('GET https://shop.test/items')
   })
@@ -189,6 +191,16 @@ describe('MCP assistant workspace', () => {
     expect(c.collections[0].variables.map((v) => v.key)).toEqual(['base'])
     expect(items.auth.kind).toBe('inherit')
     expect(items.collectionId).toBe(shop.id)
+  })
+
+  it('says nothing about auth when the copied request had none', async () => {
+    const { o, call } = setup()
+    const plain = newCollection('Plain')
+    const ping = newRequest({ name: 'Ping', url: 'https://p.test', collectionId: plain.id })
+    ;(o.ws.collections as Collection[]).push(plain); o.ws.requests.push(ping)
+    const r = await call('copy_request', { from: 'Plain/Ping', to: 'assistant/Pings' })
+    expect(txt(r)).toContain('Copied Plain/Ping to assistant/Pings/Ping')
+    expect(txt(r)).not.toMatch(/auth/)
   })
 
   it('deletes its own requests', async () => {

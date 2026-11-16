@@ -110,9 +110,11 @@ function options(ws: WorkspaceApi) {
       remove: (ids: string[]) => ws.removeRequests(ids.filter((id) => ws.requests.some((r) => r.id === id && r.collectionId && ownIds.has(r.collectionId)))),
     } : undefined,
     hooks: {
-      afterSend: async (x: Parameters<WorkspaceApi['applyChanges']>[0], ctx: Parameters<WorkspaceApi['applyChanges']>[1]) => {
+      afterSend: async (x: Parameters<WorkspaceApi['applyChanges']>[0], ctx: Parameters<WorkspaceApi['applyChanges']>[1], request?: Parameters<WorkspaceApi['recordHistory']>[0]) => {
         await ws.applyChanges(x, ctx)
         if (x.authUpdate) await ws.applyAuthUpdate(x.authUpdate)
+        // Shows in History and Home, and gives Share a sample response.
+        if (request) await ws.recordHistory(request, x)
       },
       afterRun: async (s: { finalEnvironment?: unknown; finalGlobals?: unknown }) => {
         if (s.finalEnvironment && ws.environment) await ws.updateEnvironment({ ...ws.environment, variables: s.finalEnvironment as never })
