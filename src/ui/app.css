@@ -129,7 +129,7 @@ button.icon:hover { color: var(--ink); background: var(--primary-soft); }
 /* Request */
 .request { padding: .8rem 1rem 0; background: var(--bg); }
 .titleRow { display: flex; align-items: center; gap: .5rem; margin-bottom: .5rem; }
-.reqName { border-color: transparent; background: transparent; font-weight: 700; font-size: 15px; padding: .25rem .4rem; field-sizing: content; min-width: 8rem; max-width: min(100%, 520px); }
+.reqName { border-color: transparent; background: transparent; font-weight: 700; font-size: 15px; padding: .25rem .4rem; field-sizing: content; min-width: 8rem; max-width: min(100%, 520px); flex: 0 1 auto; text-overflow: ellipsis; }
 .reqName:hover { border-color: var(--outline); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); flex: none; }
 .urlBar { display: flex; gap: 0; }
@@ -586,11 +586,11 @@ button.icon { border-radius: 8px; }
 .side { display: flex; flex-direction: row; position: relative; min-height: 0; border-right: 1px solid var(--outline); }
 .sidePanel, .rail { border-radius: 18px 0 0 18px; }
 .sidePanel { border-radius: 0 18px 18px 0; overflow: hidden; }
-.rail { width: 74px; flex: none; display: flex; flex-direction: column; gap: 2px; padding: 8px 6px; border-right: 1px solid var(--outline); overflow-y: auto; scrollbar-width: none; }
+.rail { width: 82px; flex: none; display: flex; flex-direction: column; gap: 2px; padding: 8px 6px; border-right: 1px solid var(--outline); overflow-y: auto; scrollbar-width: none; }
 .side.collapsed .rail { border-right: 0; }
 .railGroup { display: flex; flex-direction: column; gap: 2px; }
 .railBtn { display: grid; justify-items: center; gap: 3px; border: 0; background: none; color: var(--muted); padding: 8px 2px 6px; border-radius: 12px; cursor: pointer;
-  font: 600 10.5px system-ui, sans-serif; position: relative; transition: background-color .15s, color .15s; }
+  font: 600 10px system-ui, sans-serif; position: relative; transition: background-color .15s, color .15s; }
 .railBtn span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .railBtn:hover { color: var(--ink); background: var(--sunken); }
 .railBtn.on { color: var(--ink); background: var(--primary-soft); }

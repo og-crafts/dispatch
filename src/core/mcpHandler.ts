@@ -5,7 +5,7 @@
  * `dispatch-run mcp` over stdio and the desktop app's local MCP endpoint over HTTP.
  */
 import type { ImportResult } from './backup'
-import type { Collection, Environment, KV, Settings } from './types'
+import type { Collection, Environment, KV, RequestDef, Settings } from './types'
 import type { Transport } from './transport'
 import { type Execution, type Pipeline, type RunContext, execute, sendOptions } from './runtime'
 import { collectItems, failed, runCollection, type RunItem, type RunSummary } from './runner'
@@ -31,7 +31,8 @@ export interface McpServeOptions {
   workspace?: AssistantWorkspace
   /** The desktop app saves what a send or run changed (variables set by scripts, refreshed tokens). */
   hooks?: {
-    afterSend?: (x: Execution, ctx: RunContext) => Promise<void>
+    /** `request` is what was sent; the desktop app adds it to History. */
+    afterSend?: (x: Execution, ctx: RunContext, request?: RequestDef) => Promise<void>
     afterRun?: (s: RunSummary) => Promise<void>
     runFlow?: (f: Flow) => Promise<FlowRun>
   }
@@ -127,7 +128,7 @@ export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | nul
         const locals = new Map(Object.entries(args.variables ?? {}).map(([k, v]) => [k, String(v)]))
         const ctx: RunContext = { collection: colOf(it), folders: o.ws.folders, environment: o.environment, globals: o.globals, locals }
         const x = await execute(it.request, ctx, o.transport, sendOptions(it.request, o.settings), o.pipeline)
-        await o.hooks?.afterSend?.(x, ctx)
+        await o.hooks?.afterSend?.(x, ctx, it.request)
         if (x.error && !x.response) return text(`Not sent: ${x.error}`, true)
         const r = x.response!
         const body = r.binary ? `(binary, ${r.size} bytes)` : r.body.length > BODY_LIMIT ? `${r.body.slice(0, BODY_LIMIT)}\n… (cut at ${BODY_LIMIT} characters)` : r.body

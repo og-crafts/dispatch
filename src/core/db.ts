@@ -171,12 +171,13 @@ export async function putMany(plain: { collections?: Collection[]; folders?: Fol
 }
 
 /** Open tabs (drafts included), with their secrets sealed like saved requests. */
-export async function putOpenTabs(drafts: RequestDef[], active: number) {
+export async function putOpenTabs(drafts: RequestDef[], active: number, spaces?: (string | null)[]) {
   const f = await sealer()
-  await put('meta', { tabs: await Promise.all(drafts.map((d) => secretsOf.request(d, f))), active }, 'tabs')
+  await put('meta', { tabs: await Promise.all(drafts.map((d) => secretsOf.request(d, f))), active, spaces }, 'tabs')
 }
-export async function getOpenTabs(): Promise<{ tabs: RequestDef[]; active: number } | undefined> {
-  const saved = await getMeta<{ tabs: RequestDef[]; active: number }>('tabs')
+/** `spaces[i]` is the workspace tab i belongs to (missing in data saved before workspaces had their own tabs). */
+export async function getOpenTabs(): Promise<{ tabs: RequestDef[]; active: number; spaces?: (string | null)[] } | undefined> {
+  const saved = await getMeta<{ tabs: RequestDef[]; active: number; spaces?: (string | null)[] }>('tabs')
   if (!saved?.tabs) return saved
   const f = await unsealer()
   return { ...saved, tabs: await Promise.all(saved.tabs.map((d) => secretsOf.request(normalizeRequest(d), f))) }

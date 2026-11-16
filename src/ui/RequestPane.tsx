@@ -94,7 +94,7 @@ export function RequestPane({ ws, onSave, notify, authActions, scriptHelp, rende
     <section className="request" aria-label="Request">
       <div className="titleRow">
         <ProtocolPicker draft={draft} onChange={(protocol, url) => set({ protocol, url })} />
-        <input className="reqName" value={draft.name} aria-label="Request name" onChange={(e) => set({ name: e.target.value })} />
+        <input className="reqName" value={draft.name} aria-label="Request name" title={draft.name} onChange={(e) => set({ name: e.target.value })} />
         {ws.dirty && <span className="dot" title="Unsaved changes" aria-label="Unsaved changes" />}
         <span className="grow" />
         <button type="button" className="btn small ghost" aria-expanded={paramOpen} onClick={() => setParamOpen(!paramOpen)} title="Turn hard-coded values into variables">Parameterize</button>

@@ -51,6 +51,8 @@ export interface Tab {
   draft: RequestDef
   result: Result | null
   sending: boolean
+  /** The workspace it was opened in; only that workspace's tabs show. Unset = the workspace on screen (stamped soon after). */
+  space?: string
 }
 
 const same = (a: RequestDef, b: RequestDef) => JSON.stringify({ ...a, updatedAt: 0 }) === JSON.stringify({ ...b, updatedAt: 0 })
@@ -84,6 +86,9 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   const [settings, setSettingsState] = useState<Settings>(defaultSettings)
   const [tabs, setTabs] = useState<Tab[]>(() => [newTab()])
   const [activeId, setActiveId] = useState<string>(() => tabs[0].id)
+  const activeIdRef = useRef(activeId); activeIdRef.current = activeId
+  /** The tab last used in each workspace, to come back to it. */
+  const lastTab = useRef<Record<string, string>>({})
   const [view, setView] = useState<View>({ kind: 'request' })
   const [logs, setLogs] = useState<LogLine[]>([])
   /** Recently deleted things, newest last, so a delete can be undone. */
@@ -131,7 +136,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
         if (live) setBackups(list)
       })()
       if (saved?.tabs?.length) {
-        const restored = saved.tabs.map((d) => newTab(normalizeRequest(d)))
+        const restored = saved.tabs.map((d, i) => ({ ...newTab(normalizeRequest(d)), space: saved.spaces?.[i] ?? undefined }))
         setTabs(restored); setActiveId(restored[Math.min(saved.active, restored.length - 1)]?.id ?? restored[0].id)
       }
       setReady(true)
@@ -142,12 +147,19 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   // Open tabs survive a reload (drafts included).
   useEffect(() => {
     if (!ready) return
-    const t = setTimeout(() => { void db.putOpenTabs(tabs.map((x) => x.draft), Math.max(0, tabs.findIndex((x) => x.id === activeId))) }, 400)
+    const t = setTimeout(() => { void db.putOpenTabs(tabs.map((x) => x.draft), Math.max(0, tabs.findIndex((x) => x.id === activeId)), tabs.map((x) => x.space ?? null)) }, 400)
     return () => clearTimeout(t)
   }, [tabs, activeId, ready])
 
   settingsRef.current = settings
-  const active = tabs.find((t) => t.id === activeId) ?? tabs[0]
+  // Each workspace has its own tabs: a new tab belongs to the workspace on screen.
+  useEffect(() => {
+    if (tabs.some((t) => !t.space)) setTabs((ts) => ts.map((t) => (t.space ? t : { ...t, space: settingsRef.current.activeSpaceId })))
+  }, [tabs])
+  const shownTabs = tabs.filter((t) => (t.space ?? settings.activeSpaceId) === settings.activeSpaceId)
+  const active = shownTabs.find((t) => t.id === activeId) ?? shownTabs[0] ?? tabs.find((t) => t.id === activeId) ?? tabs[0]
+  // Edits go to activeId, so keep it on the tab actually shown (e.g. tabs restored while another workspace is open).
+  useEffect(() => { if (active.id !== activeId) setActiveId(active.id) }, [active.id, activeId])
   const draft = active.draft
   const savedOf = useCallback((d: RequestDef) => requests.find((r) => r.id === d.id) ?? null, [requests])
   const isDirty = useCallback((d: RequestDef) => {
@@ -190,7 +202,8 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     setView({ kind: 'request' })
     setTabs((ts) => {
       const open = ts.find((t) => t.draft.id === r.id)
-      if (open) { setActiveId(open.id); return result ? ts.map((t) => (t.id === open.id ? { ...t, result } : t)) : ts }
+      // Open in another workspace's tabs: it moves to this one.
+      if (open) { setActiveId(open.id); return ts.map((t) => (t.id === open.id ? { ...t, result: result ?? t.result, space: settingsRef.current.activeSpaceId } : t)) }
       const tab = { ...newTab(structuredClone(r)), result }
       const cur = ts.find((t) => t.id === activeId)
       // Replace the current tab when it's an untouched new request.
@@ -209,10 +222,13 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   const closeTab = useCallback((id: string) => {
     aborts.current.get(id)?.abort()
     setTabs((ts) => {
-      const i = ts.findIndex((t) => t.id === id)
+      const here = settingsRef.current.activeSpaceId
+      const mine = (t: Tab) => (t.space ?? here) === here
+      const i = ts.filter(mine).findIndex((t) => t.id === id)
       const rest = ts.filter((t) => t.id !== id)
-      if (!rest.length) { const t = newTab(); setActiveId(t.id); return [t] }
-      if (id === activeId) setActiveId(rest[Math.max(0, i - 1)].id)
+      const restHere = rest.filter(mine)
+      if (!restHere.length) { const t = { ...newTab(), space: here }; setActiveId(t.id); return [...rest, t] }
+      if (id === activeId) setActiveId(restHere[Math.max(0, i - 1)].id)
       return rest
     })
   }, [activeId])
@@ -301,6 +317,15 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     }
   }, [requests, folders, collections])
 
+  /** Adds a send to History (the Send button, and requests an AI assistant sends through the local MCP endpoint). */
+  const recordHistory = useCallback(async (request: RequestDef, x: Execution) => {
+    let entry: HistoryEntry = { id: uid(), at: Date.now(), request: structuredClone(request), sent: x.sent, response: x.response, error: x.error, tests: x.tests }
+    // Large bodies would bloat history; keep the first 256 KB and drop binary data.
+    if (entry.response) entry = { ...entry, response: { ...entry.response, body: entry.response.body.slice(0, 262_144), base64: undefined } }
+    await db.addHistory(entry)
+    setHistory((h) => [entry, ...h].slice(0, db.HISTORY_LIMIT))
+  }, [])
+
   const send = useCallback(async () => {
     const tab = active
     if (tab.sending) return
@@ -316,12 +341,8 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     }])
     await applyChanges(x, ctx)
     if (x.authUpdate) await applyAuthUpdate(x.authUpdate)
-    let entry: HistoryEntry = { id: uid(), at: Date.now(), request: structuredClone(tab.draft), sent: x.sent, response: x.response, error: x.error, tests: x.tests }
-    // Large bodies would bloat history; keep the first 256 KB and drop binary data.
-    if (entry.response) entry = { ...entry, response: { ...entry.response, body: entry.response.body.slice(0, 262_144), base64: undefined } }
-    await db.addHistory(entry)
-    setHistory((h) => [entry, ...h].slice(0, db.HISTORY_LIMIT))
-  }, [active, patchTab, runContext, transport, settings, log, applyChanges, applyAuthUpdate])
+    await recordHistory(tab.draft, x)
+  }, [active, patchTab, runContext, transport, settings, log, applyChanges, applyAuthUpdate, recordHistory])
 
   const cancel = useCallback(() => aborts.current.get(active.id)?.abort(), [active.id])
 
@@ -478,6 +499,15 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     const env = remembered && environments.some((e) => e.id === remembered && spaceOf(e) === id) ? remembered : null
     setSettings({ activeSpaceId: id, activeEnvId: env, spaceEnv: { ...s.spaceEnv, [s.activeSpaceId]: s.activeEnvId } })
     setView({ kind: 'request' })
+    // Show that workspace's tabs, back on the one last used there (or a new request if it has none).
+    lastTab.current[s.activeSpaceId] = activeIdRef.current
+    setTabs((ts) => {
+      const stamped = ts.map((t) => (t.space ? t : { ...t, space: s.activeSpaceId }))
+      const theirs = stamped.filter((t) => t.space === id)
+      if (!theirs.length) { const t = { ...newTab(), space: id }; setActiveId(t.id); return [...stamped, t] }
+      setActiveId(theirs.find((t) => t.id === lastTab.current[id])?.id ?? theirs[0].id)
+      return stamped
+    })
   }, [environments, setSettings])
   const addSpace = useCallback(async (name: string) => {
     const sp = { id: uid(), name }
@@ -708,7 +738,8 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     /** Everything, across workspaces (exports, backups, file sync). The plain lists below are this workspace's. */
     allCollections: collections, allEnvironments: environments,
     ready, transport, collections: visibleCollections, folders, requests, environments: visibleEnvironments, globals, history, settings, logs,
-    tabs, activeId, active, draft, view, result: active.result, sending: active.sending, saved, dirty, isDirty,
+    recordHistory,
+    tabs: shownTabs, activeId: active.id, active, draft, view, result: active.result, sending: active.sending, saved, dirty, isDirty,
     collection, environment, prepared, chain, runContext, pipeline: pipelineRef, variableNames,
     setDraft, setView, setSettings, setLogs, log, openRequest, startNew, closeTab, selectTab, saveDraft, saveDraftAs, renameRequest,
     moveRequest, removeRequest, duplicateRequest, saveAssistant, send, cancel, applyChanges, applyAuthUpdate, openHistory, clearHistory,
