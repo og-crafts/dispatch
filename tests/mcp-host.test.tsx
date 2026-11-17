@@ -311,7 +311,8 @@ describe('MCP assistant inbox and editable workspaces', () => {
     // Headers: leaving out the hidden Authorization keeps it; naming it replaces it.
     const h = txt(await call('update_request', { name: 'Shop/Orders/Items', headers: { 'X-Trace': '2' } }))
     expect(h).toContain('Kept the hidden Authorization header')
-    expect(saved[0].requests[0].headers.map((y) => [y.key, y.value])).toEqual([['X-Trace', '2'], ['Authorization', 'Bearer abcdefghijkl']])
+    // The kept header keeps its place (it came first).
+    expect(saved[0].requests[0].headers.map((y) => [y.key, y.value])).toEqual([['Authorization', 'Bearer abcdefghijkl'], ['X-Trace', '2']])
     await call('update_request', { name: 'Shop/Orders/Items', headers: { authorization: 'Bearer {{token}}' } })
     expect(saved[1].requests[0].headers.map((y) => [y.key, y.value])).toEqual([['authorization', 'Bearer {{token}}']])
     // URL, body and scripts holding a hidden value can't be rewritten (they'd drop it).
@@ -335,6 +336,26 @@ describe('MCP assistant inbox and editable workspaces', () => {
     expect(t).toContain('token=<hidden>')
     for (const secret of ['pa55word', 'abcdefghijkl0', 'qq77secret']) expect(t).not.toContain(secret)
     expect(txt(await call('update_request', { name: 'Shop/Orders/Docs', docs: 'new' }))).toContain('The docs text holds a secret')
+  })
+
+  it('list_requests and send errors hide secrets too', async () => {
+    const login = { ...items, id: 'login1', name: 'Login', url: 'https://bob:pa55word@shop.test/login', handoff: { note: 'use token=qq77secret', from: 'x', at: 0 } }
+    const { call } = setup(false, [login])
+    const list = txt(await call('list_requests', {}))
+    expect(list).toContain('{{base}}/items?api_key=<hidden>')
+    expect(list).toContain('https://bob:<hidden>@shop.test/login')
+    expect(list).toContain('use token=<hidden>')
+    for (const secret of ['zzz999', 'pa55word', 'qq77secret']) expect(list).not.toContain(secret)
+    // A transport error that repeats the resolved URL.
+    const failing: Transport = { label: 'test', unrestricted: true, send: async (r) => { throw new Error(`builder error for url (${r.url})`) } }
+    const o = {
+      ws: { source: 'dispatch' as const, collections: [shop], folders: [orders], requests: [items], environments: [], flows: [], warnings: [] },
+      environment: null, globals: [], settings: defaultSettings, transport: failing, pipeline: {}, allowMethods: [], version: 'test', allCollections: true,
+    }
+    const r = await handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'send_request', arguments: { name: 'Shop/Orders/Items' } } }, o)
+    expect(r.result.isError).toBe(true)
+    expect(txt(r)).toContain('api_key=<hidden>')
+    expect(txt(r)).not.toContain('zzz999')
   })
 
   it('bare paths: the assistant’s own collection stays its own, a user collection called “assistant” is reachable', async () => {

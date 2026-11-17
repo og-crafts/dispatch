@@ -136,7 +136,7 @@ function McpHostSettings({ ws, notify, status }: { ws: WorkspaceApi; notify: (m:
   const allowed = mcpMethods(st.mcpHostMethods)
   return <>
     <h2>AI assistants (MCP)</h2>
-    <p className="muted small">Lets an AI assistant on this computer (Claude Code, Claude Desktop, Cursor…) list, send and run the requests in the workspace you’re looking at, with the active environment, cookies and signed-in tokens. It can’t change or delete them. Only programs that have the token below can connect, and only from this computer.</p>
+    <p className="muted small">Lets an AI assistant on this computer (Claude Code, Claude Desktop, Cursor…) list, send and run the requests in the workspace you’re looking at, with the active environment, cookies and signed-in tokens. It can’t change or delete them unless you allow that below and on the Workspaces page. Only programs that have the token below can connect, and only from this computer.</p>
     <div className="auth">
       <label className="toggle"><input type="checkbox" checked={st.mcpHostEnabled} onChange={(e) => ws.setSettings({ mcpHostEnabled: e.target.checked, ...(e.target.checked && !st.mcpHostToken ? { mcpHostToken: newMcpToken() } : {}) })} /> Let AI assistants use Dispatch</label>
       <label className="field inline"><span>Port</span><input type="number" min={1024} max={65535} value={portDraft} aria-label="MCP port"
@@ -146,7 +146,7 @@ function McpHostSettings({ ws, notify, status }: { ws: WorkspaceApi; notify: (m:
       </label>
       <p className="muted small">{allowed.length ? `Only ${allowed.join(', ')} requests. Add POST to allow logins and other writes.` : 'Every method, including POST, PUT, PATCH and DELETE.'}</p>
       <label className="toggle"><input type="checkbox" checked={st.mcpHostWorkspace} onChange={(e) => ws.setSettings({ mcpHostWorkspace: e.target.checked })} /> Give them their own workspace to build requests in</label>
-      <p className="muted small">Assistants can create, change, copy and delete requests in a workspace called “{ASSISTANT_SPACE.name}”, and nowhere else. Your workspaces stay as they are. To keep something they made, open that workspace and use Move to on the collection. To let them edit one of your workspaces too, tick “AI can edit” for it on the Workspaces page. To give them a request to work on, use Hand to AI assistant… in its menu: a copy goes to their Inbox with your note. Sending still follows the methods above.</p>
+      <p className="muted small">Assistants can create, change, copy and delete requests in a workspace called “{ASSISTANT_SPACE.name}”. Your workspaces stay as they are unless you tick “AI can edit” for one on the Workspaces page; then, while it’s open, they can change its requests, collection variables and scripts too. To keep something they made, open their workspace and use Move to on the collection. To give them a request to work on, use Hand to AI assistant… in its menu: a copy goes to their Inbox with your note. Sending still follows the methods above.</p>
       {status.state === 'on' && <p className="small"><span className="pill">Listening on {url}</span></p>}
       {status.state === 'error' && <p className="warnLine small">{status.message}</p>}
       {st.mcpHostToken && <>

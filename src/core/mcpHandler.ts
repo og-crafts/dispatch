@@ -12,7 +12,7 @@ import { type Execution, type Pipeline, type RunContext, execute, sendOptions } 
 import { collectItems, failed, runCollection, type RunItem, type RunSummary } from './runner'
 import { type Flow, type FlowRun, runFlow } from './flows'
 import type { ScriptEngine } from './scriptPipeline'
-import { ASSISTANT_PREFIX, type AssistantWorkspace, describeRequest, getRequestTool, INBOX, WORKSPACE_TOOL_NAMES, workspaceCall, workspaceTools } from './mcpWorkspace'
+import { ASSISTANT_PREFIX, type AssistantWorkspace, describeRequest, getRequestTool, hideInText, INBOX, WORKSPACE_TOOL_NAMES, workspaceCall, workspaceTools } from './mcpWorkspace'
 
 export interface McpServeOptions {
   ws: ImportResult
@@ -125,7 +125,7 @@ export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | nul
       const name = msg.params?.name
       const args = msg.params?.arguments ?? {}
       if (name === 'list_requests') {
-        const list = items().map((it) => `${it.request.method.padEnd(6)} ${pathOf(it)}  ${it.request.url}${it.request.handoff ? `  ← handed to you${it.request.handoff.note ? `: ${it.request.handoff.note}` : ''}` : ''}`)
+        const list = items().map((it) => `${it.request.method.padEnd(6)} ${pathOf(it)}  ${hideInText(it.request.url)}${it.request.handoff ? `  ← handed to you${it.request.handoff.note ? `: ${hideInText(it.request.handoff.note)}` : ''}` : ''}`)
         const n = handed().length
         const head = n ? `The user handed you ${n} request${n > 1 ? 's' : ''} to review (marked below): get_request, fix, then move_request to file ${n > 1 ? 'them' : 'it'}.\n\n` : ''
         return text(list.length ? head + list.join('\n') : 'No requests.')
@@ -144,11 +144,11 @@ export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | nul
         const ctx: RunContext = { collection: colOf(it), folders: o.ws.folders, environment: o.environment, globals: o.globals, locals }
         const x = await execute(it.request, ctx, o.transport, sendOptions(it.request, o.settings), o.pipeline)
         await o.hooks?.afterSend?.(x, ctx, it.request)
-        if (x.error && !x.response) return text(`Not sent: ${x.error}`, true)
+        if (x.error && !x.response) return text(`Not sent: ${hideInText(x.error)}`, true)
         const r = x.response!
         const body = r.binary ? `(binary, ${r.size} bytes)` : r.body.length > BODY_LIMIT ? `${r.body.slice(0, BODY_LIMIT)}\n… (cut at ${BODY_LIMIT} characters)` : r.body
         const tests = x.tests.length ? `\n\nTests:\n${x.tests.map((t) => `${t.passed ? '✓' : '✗'} ${t.name}${t.error ? ` — ${t.error}` : ''}`).join('\n')}` : ''
-        return text(`${x.sent.method} ${x.sent.url}\n→ ${r.status} ${r.statusText} (${r.timeMs} ms)\n${r.headers.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\n${body}${tests}`, r.status >= 400 || x.tests.some((t) => !t.passed))
+        return text(`${x.sent.method} ${hideInText(x.sent.url)}\n→ ${r.status} ${r.statusText} (${r.timeMs} ms)\n${r.headers.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\n${body}${tests}`, r.status >= 400 || x.tests.some((t) => !t.passed))
       }
       if (name === 'run_collection') {
         let list = items()
@@ -167,7 +167,7 @@ export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | nul
         const bad = s.results.filter(failed)
         return text([
           `${s.requests} requests in ${s.iterations} iteration(s): ${s.testsPassed} tests passed, ${s.testsFailed} failed, ${s.failedRequests} errors, avg ${s.avgTimeMs} ms.`,
-          ...bad.slice(0, 20).map((r) => `✗ ${r.name}: ${r.error ?? r.tests.filter((t) => !t.passed).map((t) => `${t.name}: ${t.error ?? 'failed'}`).join('; ')}`),
+          ...bad.slice(0, 20).map((r) => `✗ ${r.name}: ${r.error ? hideInText(r.error) : r.tests.filter((t) => !t.passed).map((t) => `${t.name}: ${t.error ?? 'failed'}`).join('; ')}`),
         ].join('\n'), bad.length > 0)
       }
       if (name === 'run_flow' && canFlow) {
@@ -181,8 +181,8 @@ export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | nul
           ? await o.hooks.runFlow(f)
           : await runFlow(f, { collections: o.ws.collections, folders: o.ws.folders, requests: o.ws.requests, environment: o.environment, globals: o.globals, settings: o.settings }, o.transport, o.pipeline, o.engine!)
         return text([
-          `${r.ok ? 'Passed' : `Failed: ${r.error}`} (${r.steps.length} steps, ${r.durationMs} ms)`,
-          ...r.steps.filter((x) => x.status !== 'running').slice(0, 100).map((x) => `${x.status === 'ok' ? '✓' : x.status === 'failed' ? '✗' : '·'} ${x.label}${x.status_code !== undefined ? ` ${x.status_code}` : ''}${x.port ? ` → ${x.port}` : ''} ${x.detail}`),
+          `${r.ok ? 'Passed' : `Failed: ${hideInText(String(r.error))}`} (${r.steps.length} steps, ${r.durationMs} ms)`,
+          ...r.steps.filter((x) => x.status !== 'running').slice(0, 100).map((x) => `${x.status === 'ok' ? '✓' : x.status === 'failed' ? '✗' : '·'} ${x.label}${x.status_code !== undefined ? ` ${x.status_code}` : ''}${x.port ? ` → ${x.port}` : ''} ${hideInText(String(x.detail ?? ''))}`),
         ].join('\n'), !r.ok)
       }
       if (WORKSPACE_TOOL_NAMES.includes(name) && multi && o.workspace) {

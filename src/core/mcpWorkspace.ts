@@ -176,8 +176,8 @@ const AUTH_FIELDS: Partial<Record<Auth['kind'], string[]>> = {
 }
 const JWT = /\beyJ[\w-]{5,}\.[\w-]{5,}\.[\w-]{5,}/g
 const AUTH_SCHEME = /\b((?:Bearer|Basic|Digest|Token)\s+)(?!\{\{)[A-Za-z0-9._~+/=-]{8,}/g
-/** Free text with secret-looking values hidden: JWTs, auth-scheme values, and "secret": "…" / secret=… pairs. */
-function hideInText(s: string): string {
+/** Free text with secret-looking values hidden: URL passwords, JWTs, auth-scheme values, and "secret": "…" / secret=… pairs. */
+export function hideInText(s: string): string {
   return s
     // user:password@host in URLs
     .replace(/(\/\/[^/\s:@{}]+:)(?!\{\{)([^@/\s]+)@/g, (_m, pre: string) => `${pre}${HIDDEN}@`)
@@ -385,10 +385,16 @@ export async function workspaceCall(name: string, args: any, x: WorkspaceCallCon
       const h = headersOf(args.headers)
       if (!h) return ['headers must be an object of names and values.', true]
       // Headers whose value was hidden stay unless the assistant names them: leaving one out must not delete it.
-      const named = new Set(h.map((y) => y.key.toLowerCase()))
-      const secret = r.headers.filter((y) => y.key && headerHidden(y) && !named.has(y.key.toLowerCase()))
-      kept.push(...secret.map((y) => y.key))
-      next.headers = [...h, ...secret]; changed.push('headers')
+      // The original order stays: each header keeps its place, replaced by the assistant's value when it names it;
+      // headers it leaves out go, except hidden ones; new ones go at the end.
+      const given = new Map(h.map((y) => [y.key.toLowerCase(), y]))
+      const merged: KV[] = []
+      for (const y of r.headers) {
+        const g = y.key ? given.get(y.key.toLowerCase()) : undefined
+        if (g) { merged.push(g); given.delete(y.key.toLowerCase()) }
+        else if (y.key && headerHidden(y)) { merged.push(y); kept.push(y.key) }
+      }
+      next.headers = [...merged, ...given.values()]; changed.push('headers')
     }
     if (args.body !== undefined || args.bodyType !== undefined) {
       if (bodyHasSecret(r.body)) return [keepsSecret('body'), true]
