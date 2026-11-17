@@ -306,6 +306,26 @@ describe('MCP assistant inbox and editable workspaces', () => {
     expect(c.requests[0].body.text).toContain('hunter2')
   })
 
+  it('never loses a secret it was shown as <hidden> when it rewrites a field', async () => {
+    const { call, saved } = setup(true)
+    // Headers: leaving out the hidden Authorization keeps it; naming it replaces it.
+    const h = txt(await call('update_request', { name: 'Shop/Orders/Items', headers: { 'X-Trace': '2' } }))
+    expect(h).toContain('Kept the hidden Authorization header')
+    expect(saved[0].requests[0].headers.map((y) => [y.key, y.value])).toEqual([['X-Trace', '2'], ['Authorization', 'Bearer abcdefghijkl']])
+    await call('update_request', { name: 'Shop/Orders/Items', headers: { authorization: 'Bearer {{token}}' } })
+    expect(saved[1].requests[0].headers.map((y) => [y.key, y.value])).toEqual([['authorization', 'Bearer {{token}}']])
+    // URL, body and scripts holding a hidden value can't be rewritten (they'd drop it).
+    const u = await call('update_request', { name: 'Shop/Orders/Items', url: '{{base}}/items/v2' })
+    expect(u.result.isError).toBe(true)
+    expect(txt(u)).toContain('The URL holds a secret')
+    const b = await call('update_request', { name: 'assistant/Inbox/Login', body: '{"user":"me"}' })
+    expect(b.result.isError).toBe(true)
+    expect(txt(b)).toContain('The body holds a secret')
+    expect(saved).toHaveLength(2)
+    // A URL with nothing hidden changes as before.
+    expect(txt(await call('update_request', { name: 'assistant/Inbox/Login', url: '{{base}}/login' }))).toContain('(URL)')
+  })
+
   it('update_request reviewed:true clears the flag in place', async () => {
     const { call, saved } = setup()
     expect(txt(await call('update_request', { name: 'assistant/Inbox/Login', reviewed: true }))).toContain('marked reviewed')
@@ -326,8 +346,8 @@ describe('MCP assistant inbox and editable workspaces', () => {
     await call('create_request', { folder: 'Shop/Orders', name: 'Add', url: '{{base}}/items' })
     expect(saved[0].collections).toEqual([])
     expect(saved[0].requests[0]).toMatchObject({ collectionId: shop.id, folderId: orders.id })
-    expect(txt(await call('update_request', { name: 'Shop/Orders/Items', url: '{{base}}/items/v2' }))).toContain('Updated Shop/Orders/Items (URL)')
-    expect(saved[1].requests[0]).toMatchObject({ id: items.id, url: '{{base}}/items/v2' })
+    expect(txt(await call('update_request', { name: 'Shop/Orders/Items', method: 'PUT' }))).toContain('Updated Shop/Orders/Items (method)')
+    expect(saved[1].requests[0]).toMatchObject({ id: items.id, method: 'PUT' })
     await call('create_request', { folder: 'Billing', name: 'Invoices', url: 'https://b.test' })
     expect(saved[2].collections[0]).toMatchObject({ name: 'Billing', workspaceId: 'w1' })
     expect(txt(await call('set_variables', { collection: 'Shop', variables: { base: 'https://v2.shop.test', region: 'eu' }, remove: ['apiToken'] }))).toContain('Collection Shop: set base, region; removed apiToken')
@@ -388,6 +408,10 @@ describe('MCP assistant scripts', () => {
     expect(saved[1].collections[0]).toMatchObject({ id: lab.id, scripts: { pre: 'console.log(2)', post: lab.scripts.post } })
     expect((await call('set_scripts', { path: 'assistant/Lab/Nope', testScript: 'x' })).result.isError).toBe(true)
     expect(txt(await call('set_scripts', { path: 'Shop', testScript: 'x' }))).toContain('can’t change')
+    // The folder's pre-request script holds a hidden token: rewriting it would lose it.
+    const keep = await call('set_scripts', { path: 'assistant/Lab/Admin', preRequestScript: 'console.log(3)' })
+    expect(keep.result.isError).toBe(true)
+    expect(txt(keep)).toContain('The script holds a secret')
     expect(saved).toHaveLength(2)
   })
 })

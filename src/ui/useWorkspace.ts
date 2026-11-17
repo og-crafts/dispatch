@@ -240,13 +240,18 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   const closeTabs = useCallback((ids: string[]) => {
     for (const id of ids) aborts.current.get(id)?.abort()
     setTabs((ts) => {
+      // Only the open workspace's tabs count, as in closeTab: other workspaces' tabs are neither shown nor picked.
+      const here = settingsRef.current.activeSpaceId
+      const mine = (t: Tab) => (t.space ?? here) === here
       const rest = ts.filter((t) => !ids.includes(t.id))
-      if (!rest.length) { const t = newTab(); setActiveId(t.id); return [t] }
+      const restHere = rest.filter(mine)
+      if (!restHere.length) { const t = { ...newTab(), space: here }; setActiveId(t.id); return [...rest, t] }
       if (ids.includes(activeId)) {
-        // The nearest tab to the left of the active one that stays, else the first.
-        const i = ts.findIndex((t) => t.id === activeId)
-        const left = ts.slice(0, i).reverse().find((t) => !ids.includes(t.id))
-        setActiveId((left ?? rest[0]).id)
+        // The nearest tab of this workspace to the left of the active one that stays, else its first.
+        const shown = ts.filter(mine)
+        const i = shown.findIndex((t) => t.id === activeId)
+        const left = shown.slice(0, Math.max(0, i)).reverse().find((t) => !ids.includes(t.id))
+        setActiveId((left ?? restHere[0]).id)
       }
       return rest
     })
@@ -580,6 +585,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
    * user lets it edit. Anything elsewhere is ignored.
    */
   const collectionsRef = useRef(collections); collectionsRef.current = collections
+  const requestsRef = useRef(requests); requestsRef.current = requests
   const saveAssistant = useCallback(async (c: { collections: Collection[]; folders: Folder[]; requests: RequestDef[] }) => {
     if (!spacesRef.current.some((x) => x.id === ASSISTANT_SPACE.id)) await saveSpaces([...spacesRef.current, ASSISTANT_SPACE])
     const allowed = aiSpaces()
@@ -593,11 +599,21 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     const rs = c.requests.filter((r) => r.collectionId && ok.has(r.collectionId))
     for (const x of cols) await db.putCollection(x)
     for (const f of fs) await db.putFolder(f)
+    const before = new Map(requestsRef.current.filter((r) => rs.some((y) => y.id === r.id)).map((r) => [r.id, r]))
     for (const r of rs) await db.putRequest(r)
     const upsert = <T extends { id: string }>(list: T[], add: T[]) => [...list.filter((x) => !add.some((y) => y.id === x.id)), ...add]
     if (cols.length) setCollections((xs) => upsert(xs, cols).sort(byName))
     if (fs.length) setFolders((xs) => upsert(xs, fs))
     if (rs.length) setRequests((xs) => upsert(xs, rs))
+    // Open tabs without unsaved edits show the assistant's version, so a later Save can't write the old one back.
+    // Tabs with the user's own unsaved edits keep them (and show as changed against the new version).
+    if (rs.length) {
+      setTabs((ts) => ts.map((t) => {
+        const n = rs.find((r) => r.id === t.draft.id)
+        const old = n && before.get(n.id)
+        return n && old && same(old, t.draft) ? { ...t, draft: structuredClone(n) } : t
+      }))
+    }
   }, [saveSpaces])
   /**
    * "Hand to AI assistant": a copy of a saved request goes to the assistant's Inbox with the user's note, for it to

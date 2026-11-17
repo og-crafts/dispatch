@@ -15,7 +15,7 @@ export function SpacesView({ ws, ask, confirm, notify }: { ws: WorkspaceApi; ask
   // MCP assistants run in the desktop app; the column shows once their own workspace is on (Settings → AI assistants).
   const showAi = desktop && ws.settings.mcpHostWorkspace
   const toggleAi = (x: Space) => run(async () => {
-    if (!x.aiEdit && !await confirm(`Let AI assistants create, change, move and remove requests in “${x.name}”? It applies while “${x.name}” is the open workspace. Anything they remove goes to the trash, so you can undo it.`)) return
+    if (!x.aiEdit && !await confirm(`Let AI assistants edit “${x.name}”? While it’s the open workspace they can create, change, move and remove requests, set collection variables, and change pre-request and test scripts on requests, folders and collections. Scripts run when you send, and can read your environment’s values, including secrets, so only allow assistants you trust. Removed requests go to the trash, so you can undo them; other changes can’t be undone.`)) return
     await ws.setSpaceAi(x.id, !x.aiEdit)
     return x.aiEdit ? `AI assistants can only list and send in “${x.name}” again.` : `AI assistants can now edit “${x.name}” while it’s open.`
   })
@@ -46,7 +46,7 @@ export function SpacesView({ ws, ask, confirm, notify }: { ws: WorkspaceApi; ask
       <h1 className="titleInput">Workspaces</h1>
       <p className="muted small">Group collections, environments and flows, e.g. one workspace per product or client. Switch from the top bar. Globals and history are shared by all workspaces. To move a collection or environment, use its ⋯ menu.</p>
       <table className="resultTable" aria-label="Workspaces list">
-        <thead><tr><th>Name</th><th>Collections</th><th>Environments</th><th>Flows</th><th>Folder</th>{showAi && <th title="MCP assistants may create, change and delete requests here">AI can edit</th>}<th /></tr></thead>
+        <thead><tr><th>Name</th><th>Collections</th><th>Environments</th><th>Flows</th><th>Folder</th>{showAi && <th title="MCP assistants may change requests, collection variables and scripts here">AI can edit</th>}<th /></tr></thead>
         <tbody>
           {ws.spaces.map((x) => {
             const cols = ws.allCollections.filter((c) => spaceOf(c) === x.id).length
@@ -104,7 +104,7 @@ export function SpacesView({ ws, ask, confirm, notify }: { ws: WorkspaceApi; ask
           return openSpaceFolder(ws, desktopFolders, dir, confirm)
         })}>Open a workspace folder…</button>}
       </div>
-      {showAi && <p className="muted small"><b>AI can edit</b>: besides their own “{ASSISTANT_SPACE.name}” workspace, AI assistants may create, change, move and delete requests in a ticked workspace while it’s the open one. Unticked workspaces stay list-and-send.</p>}
+      {showAi && <p className="muted small"><b>AI can edit</b>: besides their own “{ASSISTANT_SPACE.name}” workspace, AI assistants may create, change, move and delete requests, set collection variables, and change pre-request and test scripts in a ticked workspace while it’s the open one. Scripts run when you send and can read your environment, secrets included. Unticked workspaces stay list-and-send.</p>}
       <p className="muted small">
         {desktop
           ? <>A workspace linked to a folder is kept there as plain files, one per request, environment and flow, ready for git. Secret values, history and schedules stay on this device. If a file changes outside Dispatch (an editor, <code>git pull</code>), Dispatch leaves it alone and asks which version to keep.</>

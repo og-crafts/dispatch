@@ -185,6 +185,13 @@ function hideInText(s: string): string {
     .replace(/([?&;\s]|^)([\w.-]+)=([^&;\s]+)/g, (m, pre: string, k: string, v: string) => (!IS_VAR.test(v) && SECRET_NAME.test(k) ? `${pre}${k}=${HIDDEN}` : m))
 }
 const hasHidden = (...xs: unknown[]) => xs.some((x) => x !== undefined && x !== null && JSON.stringify(x).includes(HIDDEN))
+/** True when get_request showed part of this text as <hidden>, so the assistant can't rewrite it without losing that part. */
+const hasSecretText = (t: string) => hideInText(t) !== t
+const headerHidden = (h: KV) => hideInText(hide(h.key, h.value)) !== h.value
+const bodyHasSecret = (b: RequestDef['body']) =>
+  b.kind === 'urlencoded' || b.kind === 'formdata' ? b.fields.some((f) => hide(f.key, f.value) !== f.value) : b.kind !== 'none' && b.kind !== 'binary' && hasSecretText(b.text)
+/** Refusal when a change would overwrite a value the assistant was only shown as <hidden>. */
+const keepsSecret = (what: string) => `The ${what} holds a secret you were shown as ${HIDDEN}; rewriting it would lose that secret, so it was left as it is. Ask the user to move the secret into a {{variable}} first, then change it.`
 
 /** get_request: one request in full, secrets hidden. */
 export function describeRequest(found: { it: RunItem; path: string }, x: { allCollections: Collection[]; folders: Folder[] }): string {
@@ -348,24 +355,35 @@ export async function workspaceCall(name: string, args: any, x: WorkspaceCallCon
       if (!m) return [`Unknown method “${args.method}”; use one of ${METHODS.join(', ')}.`, true]
       next.method = m as RequestDef['method']; changed.push('method')
     }
-    if (args.url !== undefined) { next.url = String(args.url).trim(); next.params = paramsFromUrl(next.url, r.params); changed.push('URL') }
+    if (args.url !== undefined) {
+      const u = String(args.url).trim()
+      if (u !== r.url && hasSecretText(r.url)) return [keepsSecret('URL'), true]
+      next.url = u; next.params = paramsFromUrl(next.url, r.params); changed.push('URL')
+    }
+    const kept: string[] = []
     if (args.headers !== undefined) {
       const h = headersOf(args.headers)
       if (!h) return ['headers must be an object of names and values.', true]
-      next.headers = h; changed.push('headers')
+      // Headers whose value was hidden stay unless the assistant names them: leaving one out must not delete it.
+      const named = new Set(h.map((y) => y.key.toLowerCase()))
+      const secret = r.headers.filter((y) => y.key && headerHidden(y) && !named.has(y.key.toLowerCase()))
+      kept.push(...secret.map((y) => y.key))
+      next.headers = [...h, ...secret]; changed.push('headers')
     }
     if (args.body !== undefined || args.bodyType !== undefined) {
+      if (bodyHasSecret(r.body)) return [keepsSecret('body'), true]
       const b = bodyOf(args, r.body)
       if (typeof b === 'string') return [b, true]
       next.body = b; changed.push('body')
     }
     if (args.docs !== undefined) { next.docs = String(args.docs); changed.push('docs') }
+    if ((args.preRequestScript !== undefined && hasSecretText(r.scripts.pre)) || (args.testScript !== undefined && hasSecretText(r.scripts.post))) return [keepsSecret('script'), true]
     const sc = scriptsOf(args, r.scripts)
     if (sc.changed.length) { next.scripts = sc.scripts; changed.push(...sc.changed) }
     if (args.reviewed === true && r.handoff) { delete next.handoff; changed.push('marked reviewed') }
     if (!changed.length) return ['Nothing to change: give newName, method, url, headers, body, bodyType, docs, preRequestScript, testScript or reviewed.', true]
     await x.w.save({ ...made, requests: [next] })
-    return [`Updated ${label(next)} (${changed.join(', ')}).${sendNote(next.method)}`, false]
+    return [`Updated ${label(next)} (${changed.join(', ')}).${kept.length ? ` Kept the hidden ${kept.join(', ')} header${kept.length > 1 ? 's' : ''}; name ${kept.length > 1 ? 'them' : 'it'} with a {{variable}} value to replace ${kept.length > 1 ? 'them' : 'it'}.` : ''}${sendNote(next.method)}`, false]
   }
 
   if (name === 'copy_request') {
@@ -454,7 +472,9 @@ export async function workspaceCall(name: string, args: any, x: WorkspaceCallCon
       parent = folder.id
     }
     if (hasHidden(args.preRequestScript, args.testScript)) return [hiddenBack, true]
-    const sc = scriptsOf(args, (folder ?? c).scripts)
+    const cur = (folder ?? c).scripts
+    if ((args.preRequestScript !== undefined && hasSecretText(cur.pre)) || (args.testScript !== undefined && hasSecretText(cur.post))) return [keepsSecret('script'), true]
+    const sc = scriptsOf(args, cur)
     if (!sc.changed.length) return ['Give preRequestScript or testScript.', true]
     if (folder) await x.w.save({ collections: [], folders: [{ ...folder, scripts: sc.scripts, updatedAt: Date.now() }], requests: [] })
     else await x.w.save({ collections: [{ ...c, scripts: sc.scripts, updatedAt: Date.now() }], folders: [], requests: [] })

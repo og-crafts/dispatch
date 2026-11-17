@@ -65,7 +65,7 @@ describe('Hand to AI assistant', () => {
     expect((box as HTMLInputElement).checked).toBe(false)
     fireEvent.click(box)
     const dialog = await screen.findByRole('dialog')
-    expect(dialog.textContent).toContain('create, change, move and remove requests in “My workspace”')
+    expect(dialog.textContent).toContain('change pre-request and test scripts')
     await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: 'OK' })) })
     await screen.findByText(/AI assistants can now edit “My workspace”/)
     expect((screen.getByRole('checkbox', { name: 'AI assistants can edit My workspace' }) as HTMLInputElement).checked).toBe(true)
