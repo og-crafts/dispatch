@@ -12,6 +12,7 @@ import { type Execution, type Pipeline, type RunContext, execute, sendOptions } 
 import { collectItems, failed, runCollection, type RunItem, type RunSummary } from './runner'
 import { type Flow, type FlowRun, runFlow } from './flows'
 import type { ScriptEngine } from './scriptPipeline'
+import { knownSecrets, LOG_TOOL_NAMES, logCall, logTools, type McpLogSource, Redactor } from './mcpLogs'
 import { ASSISTANT_PREFIX, type AssistantWorkspace, describeRequest, getRequestTool, hideInText, INBOX, WORKSPACE_TOOL_NAMES, workspaceCall, workspaceTools } from './mcpWorkspace'
 
 export interface McpServeOptions {
@@ -30,6 +31,8 @@ export interface McpServeOptions {
   allCollections?: boolean
   /** The assistant's own workspace, where it may write (paths "assistant/…"). Needs allCollections. */
   workspace?: AssistantWorkspace
+  /** Read-only console, history and environments (Settings → AI assistants; mcpLogs.ts). */
+  logs?: McpLogSource
   /** The desktop app saves what a send or run changed (variables set by scripts, refreshed tokens). */
   hooks?: {
     /** `request` is what was sent; the desktop app adds it to History. */
@@ -41,7 +44,7 @@ export interface McpServeOptions {
 
 const BODY_LIMIT = 20_000
 
-export function mcpTools(flowNames: string[] = [], multi = false, ownWorkspace = false, editable?: string) {
+export function mcpTools(flowNames: string[] = [], multi = false, ownWorkspace = false, editable?: string, envNames?: string[]) {
   return [
     {
       name: 'list_requests',
@@ -79,6 +82,7 @@ export function mcpTools(flowNames: string[] = [], multi = false, ownWorkspace =
       inputSchema: { type: 'object', properties: { name: { type: 'string', enum: flowNames, description: 'The flow to run.' } }, required: ['name'] },
     }] : []),
     ...(ownWorkspace ? workspaceTools(editable) : []),
+    ...(envNames ? logTools(envNames) : []),
   ]
 }
 
@@ -117,10 +121,10 @@ export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | nul
         protocolVersion: msg.params?.protocolVersion ?? '2025-06-18',
         capabilities: { tools: {} },
         serverInfo: { name: 'dispatch', version: o.version },
-        instructions: `${multi ? `Requests from Dispatch (collections: ${cols.map((c) => `“${c.name}”`).join(', ') || 'none'})` : `Requests from the Dispatch collection “${col?.name ?? '(none)'}”`}${o.environment ? ` with environment “${o.environment.name}”` : ''}. Use list_requests to see what's there, and get_request to look at one in full.${multi && o.workspace ? ` You also have your own workspace (paths starting with "assistant/") where you can create, change, copy, move and delete requests; ${editable ? `you may also change the user\u2019s workspace \u201c${editable}\u201d (paths without a prefix), and the user\u2019s other requests can only be listed and sent` : 'the user\u2019s requests can only be listed and sent, and the user moves what they want to keep'}.${handed().length ? ` The user handed you ${handed().length} request${handed().length > 1 ? 's' : ''} in assistant/${INBOX} to review: look at each with get_request, fix it, and file it with move_request.` : ''}` : ''}`,
+        instructions: `${multi ? `Requests from Dispatch (collections: ${cols.map((c) => `“${c.name}”`).join(', ') || 'none'})` : `Requests from the Dispatch collection “${col?.name ?? '(none)'}”`}${o.environment ? ` with environment “${o.environment.name}”` : ''}. Use list_requests to see what's there, and get_request to look at one in full.${o.logs ? ' To see what happened, use get_logs (the console), list_history and get_history_entry (sends and their responses), and get_environment.' : ''}${multi && o.workspace ? ` You also have your own workspace (paths starting with "assistant/") where you can create, change, copy, move and delete requests; ${editable ? `you may also change the user\u2019s workspace \u201c${editable}\u201d (paths without a prefix), and the user\u2019s other requests can only be listed and sent` : 'the user\u2019s requests can only be listed and sent, and the user moves what they want to keep'}.${handed().length ? ` The user handed you ${handed().length} request${handed().length > 1 ? 's' : ''} in assistant/${INBOX} to review: look at each with get_request, fix it, and file it with move_request.` : ''}` : ''}`,
       })
     case 'ping': return reply({})
-    case 'tools/list': return reply({ tools: mcpTools(canFlow ? (o.ws.flows ?? []).map((f) => f.name) : [], multi, !!(multi && o.workspace), editable) })
+    case 'tools/list': return reply({ tools: mcpTools(canFlow ? (o.ws.flows ?? []).map((f) => f.name) : [], multi, !!(multi && o.workspace), editable, o.logs ? o.ws.environments.map((e) => e.name) : undefined) })
     case 'tools/call': {
       const name = msg.params?.name
       const args = msg.params?.arguments ?? {}
@@ -184,6 +188,15 @@ export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | nul
           `${r.ok ? 'Passed' : `Failed: ${hideInText(String(r.error))}`} (${r.steps.length} steps, ${r.durationMs} ms)`,
           ...r.steps.filter((x) => x.status !== 'running').slice(0, 100).map((x) => `${x.status === 'ok' ? '✓' : x.status === 'failed' ? '✗' : '·'} ${x.label}${x.status_code !== undefined ? ` ${x.status_code}` : ''}${x.port ? ` → ${x.port}` : ''} ${hideInText(String(x.detail ?? ''))}`),
         ].join('\n'), !r.ok)
+      }
+      if (LOG_TOOL_NAMES.includes(name) && o.logs) {
+        const shown = [...cols, ...own]
+        const redact = new Redactor(knownSecrets({
+          environments: o.ws.environments, globals: o.globals, collections: shown, folders: o.ws.folders, requests: o.ws.requests,
+          extra: [o.settings.mcpHostToken],
+        }))
+        const [t, isError] = logCall(name, args, { src: o.logs, redact, environment: o.environment, environments: o.ws.environments, collectionIds: new Set(shown.map((c) => c.id)) })
+        return text(t, isError)
       }
       if (WORKSPACE_TOOL_NAMES.includes(name) && multi && o.workspace) {
         const [t, isError] = await workspaceCall(name, args, { w: o.workspace, folders: o.ws.folders, requests: o.ws.requests, allCollections: [...cols, ...own], allowMethods: o.allowMethods, lookup })

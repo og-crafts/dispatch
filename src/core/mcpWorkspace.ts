@@ -162,12 +162,12 @@ export interface WorkspaceCallContext {
 }
 
 /** A named value, hidden when the name looks secret (an auth scheme in front stays). */
-const hide = (name: string, v: string) => {
+export const hide = (name: string, v: string) => {
   if (!v || IS_VAR.test(v) || !SECRET_NAME.test(name)) return v
   const scheme = /^(Bearer|Basic|Digest|Token)\s+(?!\{\{)/i.exec(v)
   return scheme ? `${scheme[0]}${HIDDEN}` : HIDDEN
 }
-const AUTH_SECRETS = new Set(['password', 'token', 'value', 'clientSecret', 'accessToken', 'secret', 'accessKey', 'secretKey'])
+export const AUTH_SECRETS = new Set(['password', 'token', 'value', 'clientSecret', 'accessToken', 'secret', 'accessKey', 'secretKey'])
 /** The auth fields that matter for each kind, in order. */
 const AUTH_FIELDS: Partial<Record<Auth['kind'], string[]>> = {
   basic: ['username', 'password'], digest: ['username', 'password'], bearer: ['token'], apikey: ['key', 'value', 'in'],
