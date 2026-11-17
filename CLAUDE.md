@@ -45,6 +45,10 @@ and an import format; never copy its name, branding, icons or UI.
   emails, IPs, server address → `{{baseUrl}}`, sampled lists; variables stay `{{name}}`), `core/shareHtml.ts`
   renders one self-contained page (CSP, data embedded as JSON, DOM built with textContent). `ui/ShareDialog.tsx`
   asks for title/version/author/contact/description. Entry points: request Share button, request/folder/collection menus.
+- Opt-in usage (Aptabase) and error reports (Sentry), feedback: `src/ui/telemetry.ts` (consent-gated `track()`,
+  `redact()`/`scrubEvent()`), `src/ui/PrivacyDialogs.tsx` (first-launch question, Send feedback). Keys come from
+  `VITE_APTABASE_APP_KEY` / `VITE_SENTRY_DSN` at build time; without them nothing is offered. Rules and set-up:
+  `docs/TELEMETRY.md`. Never put user content in an event.
 - `src/ui/FlowView.tsx` — the flow canvas (absolutely placed blocks, SVG wires, pointer drag; every wire can also
   be set from the side panel's “Then go to” selects, which is what keyboard users and tests use).
 - `src/cli/main.ts` — `dispatch-run` (run, `load`, `mock`, `mcp`, `flow`); bundled by `scripts/build-cli.mjs`.
@@ -121,13 +125,24 @@ unpack it from `apt-get download libasound2t64` with `dpkg-deb -x` and set `LD_L
 
 ## Where we left off
 
-Updated 2026-11-16. **Versioning restarted at v0.1.0** (see Releases below); until v0.1.0 is published, the old v0.5.1 numbers in these notes refer to deleted preview releases.
-`main` (52b2630) is ahead of it, untagged: PRs #6 (local MCP endpoint), #7 (drag and drop), #8 (docs), #10 (branded
-installers), the OGCrafts move (#12, #13, #14), and from 2026-11-16 #16 (MCP: the assistant's own workspace), #17
-(UX refresh: nav rail, resizable panels, Home, glass look, Settings tabs, Save as…) and #18 (Share as HTML). No PRs
-are open. **The 0.5.1 installers were built before the move: they still use bundle ID `com.onelifestack.dispatch`
-and publisher OneLifeStack.** The next release (0.5.2 or 0.6.0) is the first with `cloud.ogcrafts.dispatch`; it
-installs as a separate app, so 0.5.1 users reinstall once.
+Updated 2026-11-16 (end of day). **Pending work is tracked on the Kan board "Dispatch"**
+(https://kanban.gautamlabs.io/boards/mb7hut0k7z77; CLI: `KAN_BOARD=mb7hut0k7z77 ~/bin/kan show|card|move|note|desc`).
+Lists: Waiting on you (owner actions), To do, In progress, Testing, Done; labels Release, Feature, Bug, Testing,
+Infra. Keep the cards current at the end of each session (as with the Native Android Apps board).
+
+**State.** Versioning restarted at **0.1.0** (PR #24). Next release = tag **`v0.1.0-SNAPSHOT`** (a GitHub
+pre-release, not offered as an in-app update; app version stays 0.1.0 because MSI needs numeric versions) until real
+testing gives solid evidence; then a plain `v0.1.0` and the clean-up of the old v0.5.x releases/tags. `main` has,
+since the last published preview (0.5.1): local MCP endpoint, drag and drop, branded installers (art rebuilt with
+OGCrafts text), the OGCrafts move (bundle ID `cloud.ogcrafts.dispatch`), the MCP assistant workspace (#16), the UX
+refresh (#17) and its fixes (#20), Share as HTML (#18), in-app updates (#22; update key set by the owner), SignPath
+groundwork (#23) and opt-in usage/error reports + Send feedback (#26, `docs/TELEMETRY.md`).
+- **Blocking the snapshot tag:** the owner's Aptabase App Key and Sentry DSN → repo variables `APTABASE_APP_KEY`,
+  `SENTRY_DSN` (a build without them offers and sends nothing). Then tag, the owner publishes the pre-release,
+  Claude publishes the site from the tag (policy page + opt-in privacy policy + 0.1.0 changelog go live).
+- **Windows signing:** SignPath Foundation chosen; the owner applies once the policy page is live (`docs/SIGNING.md`).
+- Preview (0.5.x) installs can't update to 0.1.0 (different bundle ID, no updater): export backup, uninstall,
+  install, import (the download page says so).
 
 **Desktop check on Windows (2026-11-16, Claude over SSH, build of main 52b2630).** Run on the owner's Predator
 (Windows 11, WebView2 157) from the CI `dispatch-windows` artifact, MSI unpacked with `msiexec /a` (no install), so

@@ -5,6 +5,8 @@ import { CookieTransport } from '../core/transport'
 import type { StoredCookie } from '../core/cookies'
 import type { WorkspaceApi } from './useWorkspace'
 import { type McpHostStatus, mcpMethods, newMcpToken } from './mcpHost'
+import { telemetryAvailable, telemetryOffered } from './telemetry'
+import { ERRORS_TEXT, USAGE_TEXT } from './PrivacyDialogs'
 
 const readText = (file: File) => new Promise<string>((resolve, reject) => {
   const r = new FileReader(); r.onload = () => resolve(String(r.result)); r.onerror = () => reject(new Error('Couldn’t read that file.')); r.readAsText(file)
@@ -63,6 +65,12 @@ export function SettingsView({ ws, notify, mcpHost = { state: 'off' } }: { ws: W
           <label className="toggle"><input type="checkbox" checked={st.insecureTls} onChange={(e) => ws.setSettings({ insecureTls: e.target.checked })} /> Accept any TLS certificate (self-signed). Safer: add your CA under Certificates instead.</label>
           <label className="toggle"><input type="checkbox" checked={st.updateCheckOnStart} onChange={(e) => ws.setSettings({ updateCheckOnStart: e.target.checked })} /> Check for updates when Dispatch starts (asks GitHub for the newest release; nothing is installed without asking)</label>
         </>}
+      </div>
+      <h2>Privacy</h2>
+      <div className="auth">
+        {telemetryAvailable.usage && <label className="toggle"><input type="checkbox" checked={st.shareUsage} onChange={(e) => ws.setSettings({ shareUsage: e.target.checked, telemetryAsked: true })} /> <span>Share anonymous usage. {USAGE_TEXT}</span></label>}
+        {telemetryAvailable.errors && <label className="toggle"><input type="checkbox" checked={st.shareErrors} onChange={(e) => ws.setSettings({ shareErrors: e.target.checked, telemetryAsked: true })} /> <span>Send error reports. {ERRORS_TEXT}</span></label>}
+        {!telemetryOffered() && <p className="muted small">This build of Dispatch doesn’t send usage or error reports.</p>}
       </div>
       {!desktop && <p className="warnLine small">Proxy and certificate settings are for the desktop app; in the browser, the browser’s own settings apply.</p>}
       </>}
