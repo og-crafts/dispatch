@@ -22,7 +22,7 @@ const lines: LogLine[] = [
 const entry = (id: string, collectionId: string | null, status: number | null, extra: Partial<HistoryEntry> = {}): HistoryEntry => ({
   id, at: Date.UTC(2026, 10, 17, 10, 0, 0), request: { ...items, collectionId },
   sent: { method: 'GET', url: 'https://shop.test/items?api_key=q-secret-55555', headers: [['Authorization', 'Bearer coll-token-ABCDEF'], ['X-Api-Key', 'hdr-key-123456'], ['Accept', '*/*']], body: null, unresolved: [] },
-  response: status === null ? null : { status, statusText: status === 200 ? 'OK' : 'Error', headers: [['Set-Cookie', 'sid=abc123456789'], ['Content-Type', 'application/json']], body: '{"access_token":"resp-tok-99999","user":"me"}', binary: false, size: 40, timeMs: 12 },
+  response: status === null ? null : { status, statusText: status === 200 ? 'OK' : 'Error', headers: [['Set-Cookie', 'sid=abc123456789'], ['Content-Type', 'application/json'], ['Access-Control-Allow-Credentials', 'true']], body: '{"access_token":"resp-tok-99999","user":"me","url":"https://shop.test/items?api_key=q-secret-55555","n":1}', binary: false, size: 40, timeMs: 12 },
   error: status === null ? 'connect refused' : null,
   ...extra,
 })
@@ -98,7 +98,10 @@ describe('MCP log tools', () => {
     expect(t).toContain('Accept: */*')
     expect(t).toContain('→ 500 Error (12 ms, 40 bytes)')
     expect(t).toContain('Set-Cookie: <hidden>')
-    expect(t).toContain('"access_token":"<hidden>","user":"me"')
+    // The echoed URL keeps its closing quote: the body is still JSON. CORS headers show as they are.
+    const body = t.split('Response body:\n')[1].split('\nTests:')[0]
+    expect(JSON.parse(body)).toEqual({ access_token: '<hidden>', user: 'me', url: 'https://shop.test/items?api_key=<hidden>', n: 1 })
+    expect(t).toContain('Access-Control-Allow-Credentials: true')
     expect(t).toContain('✗ is ok — expected 500 to be 200')
     noSecrets(t)
     expect((await call('get_history_entry', { id: 'dddd' })).isError).toBe(true)

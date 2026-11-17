@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { handleMcp } from '../src/core/mcpHandler'
 import type { Transport } from '../src/core/transport'
 import { ASSISTANT_SPACE, type Collection, type RequestDef, defaultSettings, kv, newCollection, newFolder, newRequest } from '../src/core/types'
-import type { AssistantChanges } from '../src/core/mcpWorkspace'
+import { type AssistantChanges, hide, hideInText } from '../src/core/mcpWorkspace'
 
 /** The desktop app's MCP endpoint serves every collection in the workspace and saves what a send changed. */
 describe('MCP handler for the desktop app', () => {
@@ -472,5 +472,25 @@ describe('MCP assistant scripts', () => {
     expect(keep.result.isError).toBe(true)
     expect(txt(keep)).toContain('The script holds a secret')
     expect(saved).toHaveLength(2)
+  })
+})
+
+/** The hiding every MCP tool uses: secrets go, the text around them stays intact. */
+describe('hiding secrets in text', () => {
+  it('keeps JSON intact around a hidden name=value secret', () => {
+    const json = '{\n  "url": "https://httpbin.org/anything?api_key=QS555",\n  "n": 1\n}'
+    const out = hideInText(json)
+    expect(out).toBe('{\n  "url": "https://httpbin.org/anything?api_key=<hidden>",\n  "n": 1\n}')
+    expect(() => JSON.parse(out)).not.toThrow()
+    expect(hideInText("curl 'https://x.test/?token=abc123'")).toBe("curl 'https://x.test/?token=<hidden>'")
+    expect(hideInText('<a href=https://x.test/?password=pw99>')).toBe('<a href=https://x.test/?password=<hidden>>')
+    expect(hideInText('a=1&secret=s3cr3t&b=2')).toBe('a=1&secret=<hidden>&b=2')
+  })
+
+  it('leaves CORS headers alone even though they mention credentials', () => {
+    expect(hide('access-control-allow-credentials', 'true')).toBe('true')
+    expect(hide('Access-Control-Allow-Headers', 'Authorization, X-Api-Key')).toBe('Authorization, X-Api-Key')
+    expect(hide('Authorization', 'Bearer abc123456')).toBe('Bearer <hidden>')
+    expect(hide('X-Credentials', 'abc')).toBe('<hidden>')
   })
 })
