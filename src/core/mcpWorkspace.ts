@@ -162,8 +162,9 @@ export interface WorkspaceCallContext {
 }
 
 /** A named value, hidden when the name looks secret (an auth scheme in front stays). */
-const hide = (name: string, v: string) => {
-  if (!v || IS_VAR.test(v) || !SECRET_NAME.test(name)) return v
+export const hide = (name: string, v: string) => {
+  // CORS headers (access-control-allow-credentials…) name secrets without holding any.
+  if (!v || IS_VAR.test(v) || !SECRET_NAME.test(name) || /^access-control-/i.test(name)) return v
   const scheme = /^(Bearer|Basic|Digest|Token)\s+(?!\{\{)/i.exec(v)
   return scheme ? `${scheme[0]}${HIDDEN}` : HIDDEN
 }
@@ -184,7 +185,7 @@ export function hideInText(s: string): string {
     .replace(JWT, HIDDEN)
     .replace(AUTH_SCHEME, (_m, pre: string) => `${pre}${HIDDEN}`)
     .replace(/("([^"\\]+)"\s*:\s*)"((?:[^"\\]|\\.)*)"/g, (m, pre: string, k: string, v: string) => (v && !IS_VAR.test(v) && SECRET_NAME.test(k) ? `${pre}"${HIDDEN}"` : m))
-    .replace(/([?&;\s]|^)([\w.-]+)=([^&;\s]+)/g, (m, pre: string, k: string, v: string) => (!IS_VAR.test(v) && SECRET_NAME.test(k) ? `${pre}${k}=${HIDDEN}` : m))
+    .replace(/([?&;\s]|^)([\w.-]+)=([^&;?\s"'<>,]+)/g, (m, pre: string, k: string, v: string) => (!IS_VAR.test(v) && SECRET_NAME.test(k) ? `${pre}${k}=${HIDDEN}` : m))
 }
 const hasHidden = (...xs: unknown[]) => xs.some((x) => x !== undefined && x !== null && JSON.stringify(x).includes(HIDDEN))
 /** True when get_request showed part of this text as <hidden>, so the assistant can't rewrite it without losing that part. */

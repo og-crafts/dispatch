@@ -325,7 +325,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
         <span className="grow" />
         <label className="envPick">
           <span className="sr">Environment</span>
-          <select value={ws.settings.activeEnvId ?? ''} onChange={(e) => ws.setSettings({ activeEnvId: e.target.value || null })}>
+          <select aria-label="Environment" value={ws.settings.activeEnvId ?? ''} onChange={(e) => ws.setSettings({ activeEnvId: e.target.value || null })}>
             <option value="">No environment</option>
             {ws.environments.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
           </select>
