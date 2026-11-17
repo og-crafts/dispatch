@@ -114,6 +114,8 @@ unpack it from `apt-get download libasound2t64` with `dpkg-deb -x` and set `LD_L
 - Browser-login tests use Playwright's Chromium with `DISPATCH_BROWSER_ARGS=--no-sandbox` (AppArmor blocks its
   sandbox here). Never add `--no-sandbox` by default.
 - A `<select>` inside a `<label>` gets its options in its accessible name; give it an `aria-label`.
+- Stacked PRs: merge the bottom one **without** deleting its branch (or retarget the next PR to `main` first);
+  deleting the base branch auto-closes the PR on top (that closed #25, 2026-11-16).
 - Never push to `main` without `npm run typecheck`: vitest passes code that the CI typecheck rejects (this happened
   once with a readonly tuple in a test).
 - Desktop webview ↔ Chrome DevTools: Chrome refuses WebSocket connections that send an `Origin` header unless that
@@ -126,7 +128,7 @@ unpack it from `apt-get download libasound2t64` with `dpkg-deb -x` and set `LD_L
 
 ## Where we left off
 
-Updated 2026-11-16 (end of day). **Pending work is tracked on the Kan board "Dispatch"**
+Updated 2026-11-17 (end of day). **Pending work is tracked on the Kan board "Dispatch"**
 (https://kanban.gautamlabs.io/boards/mb7hut0k7z77; CLI: `KAN_BOARD=mb7hut0k7z77 ~/bin/kan show|card|move|note|desc`).
 Lists: Waiting on you (owner actions), To do, In progress, Testing, Done; labels Release, Feature, Bug, Testing,
 Infra. Keep the cards current at the end of each session (as with the Native Android Apps board).
@@ -137,13 +139,35 @@ testing gives solid evidence; then a plain `v0.1.0` and the clean-up of the old 
 since the last published preview (0.5.1): local MCP endpoint, drag and drop, branded installers (art rebuilt with
 OGCrafts text), the OGCrafts move (bundle ID `cloud.ogcrafts.dispatch`), the MCP assistant workspace (#16), the UX
 refresh (#17) and its fixes (#20), Share as HTML (#18), in-app updates (#22; update key set by the owner), SignPath
-groundwork (#23) and opt-in usage/error reports + Send feedback (#26, `docs/TELEMETRY.md`).
+groundwork (#23) and opt-in usage/error reports + Send feedback (#26, `docs/TELEMETRY.md`); since 2026-11-17 also
+the AI hand-off, "AI can edit" and right-click menus (#27) and the MCP log tools (#28), see "AI assistants" below.
+**No PRs are open** (2026-11-17: #26, #29 docs, #27 and #28 merged in that order; `main` = 98a5e01).
 - **Blocking the snapshot tag:** the owner's Aptabase App Key and Sentry DSN → repo variables `APTABASE_APP_KEY`,
   `SENTRY_DSN` (a build without them offers and sends nothing). Then tag, the owner publishes the pre-release,
   Claude publishes the site from the tag (policy page + opt-in privacy policy + 0.1.0 changelog go live).
 - **Windows signing:** SignPath Foundation chosen; the owner applies once the policy page is live (`docs/SIGNING.md`).
 - Preview (0.5.x) installs can't update to 0.1.0 (different bundle ID, no updater): export backup, uninstall,
   install, import (the download page says so).
+
+**AI assistants (MCP), 2026-11-17.** On `main`, all behind Settings → AI assistants:
+- #27: Hand to AI assistant… (request menu, right-click) puts a copy in `assistant/Inbox` with the user's note, the
+  auth and the collection/folder scripts it ran with (marked `// From the …`), and the original collection's
+  variables (it resolves them until `move_request` files it). Workspaces page → "AI can edit" lets assistants change
+  the open workspace's requests, collection variables and scripts (the consent dialog says scripts run on Send and
+  can read secrets). New MCP tools get_request, set_variables, set_scripts, move_request. Right-click menus on tabs
+  and sidebar rows (`src/ui/ContextMenu.tsx`).
+- #28: read-only get_logs, list_history, get_history_entry, get_environment (`src/core/mcpLogs.ts`), behind
+  "Let them read the console, history and environments" (`mcpHostLogs`, off by default).
+- Secret hiding: everything assistants see goes through `hideInText`/`hide` (`mcpWorkspace.ts`: URL passwords, JWTs,
+  auth-scheme values, secret-named fields and `name=value` pairs; `access-control-*` headers exempt) and, for the log
+  tools, `Redactor` (every known secret value wherever it appears). Writes never drop a hidden value: update_request
+  keeps hidden headers it isn't given and refuses to rewrite a URL, body, docs or script that holds one.
+- Both PRs had a review (10 findings) and two Windows desktop checks on the Predator (method below); every finding
+  was fixed before merging. Planted-secret scan of the log tools: 0 leaks.
+- Next ideas (owner chose the log tools first, 2026-11-17): a one-click Claude Desktop extension that talks to the
+  local endpoint; a "Copy Codex command" (check Codex CLI's local MCP support first); keep collection-run results so
+  a run-results tool can show them (today only the console summary line). ChatGPT itself would need a public relay:
+  deferred. Users bring their own Claude/ChatGPT app; a subscription can't be used inside Dispatch directly.
 
 **Desktop check on Windows (2026-11-16, Claude over SSH, build of main 52b2630).** Run on the owner's Predator
 (Windows 11, WebView2 157) from the CI `dispatch-windows` artifact, MSI unpacked with `msiexec /a` (no install), so
@@ -154,7 +178,7 @@ reset; rail folds and reopens the library; Settings tabs; MCP endpoint starts, r
 foreign Host (403), GET (401); all #16 tools (create, update, send, copy, delete own; update/delete of a user
 request refused with the copy_request hint; POST refused under GET,HEAD); the "AI assistant" workspace shows what
 the assistant made; Share dialog opens with `{{baseUrl}}` and the secret check. Not covered: the native save dialog
-behind "Save HTML file", drag and drop, installers, scaling/monitors. Small findings (not filed):
+behind "Save HTML file", drag and drop, installers, scaling/monitors. Small findings (all fixed in #20):
 - The rail label "Environments" is cut off ("Environm…").
 - Home's "Pick up where you left off" says no open requests while a blank New request tab is open.
 - Opening a request from the tree closes the Settings page tab (maybe intended: pages are one transient tab).
@@ -167,7 +191,13 @@ How it was driven, for next time: run the exe in the owner's desktop session via
 be logged in), `ssh -L 19222:127.0.0.1:9222` and drive it over CDP (`Runtime.evaluate`, `Input.dispatchMouseEvent`,
 `Input.insertText`, `Page.captureScreenshot`); MCP via `ssh -L 14320:127.0.0.1:4320` with `Host: 127.0.0.1:4320`.
 Afterwards stop the exe, unregister the task, and delete `%LOCALAPPDATA%\cloud.ogcrafts.dispatch` so a later real
-install starts clean.
+install starts clean. **Wait until no `msedgewebview2.exe` with `cloud.ogcrafts.dispatch` in its command line is left
+before deleting** (they outlive a `taskkill` of the exe for a few seconds). On 2026-11-17 the first launch after such
+a cleanup started WebView2 40 s late and a minute later ran on an empty database (data imported meanwhile was gone);
+a clean cold start did not repeat it. Unexplained; watch for it.
+Tips from 2026-11-17: Node's `fetch` won't send a custom `Host` header, so call MCP with `node:http`; dialogs are
+native `<dialog>` elements; picking the open library section folds the panel; import test data by setting a
+`DataTransfer` file on `input[aria-label="Import file"]` and dispatching `change`.
 
 **Moved to OGCrafts (2026-11-14).** Dispatch is no longer an OneLifeStack app. Home: GitHub org
 `og-crafts` (a free org; admin login `og-crafterr`). Repo `og-crafts/dispatch` (transferred, so issues, PRs and the
@@ -178,8 +208,8 @@ imports (`LEGACY_FORMATS` in `src/core/backup.ts`). Contact: hello@ogcrafts.clou
 `og-crafterr` noreply address (`356532942+og-crafterr@users.noreply.github.com`), not the OneLifeStack one.
 `gh` has three logins: use `gh auth switch` or `GH_TOKEN=$(gh auth token --user NAME)` for the right one.
 The old `onelifestack/dispatch-site` is left unpublished (custom domain removed); the archive repo stays under
-`onelifestack`. Dispatch was removed from developer.onelifestack.com. The next release (0.5.2 or 0.6.0) is the first
-under the new bundle ID. The installer art was rebuilt with the OGCrafts text on 2026-11-16 (`scripts/make-installer-art.mjs`; it needs
+`onelifestack`. Dispatch was removed from developer.onelifestack.com. The next release is the first
+under the new bundle ID (now `v0.1.0-SNAPSHOT`, see Releases). The installer art was rebuilt with the OGCrafts text on 2026-11-16 (`scripts/make-installer-art.mjs`; it needs
 `CHROMIUM=~/.cache/ms-playwright/chromium_headless_shell-1148/chrome-linux/headless_shell` and libasound, see
 "Visual check without a desktop").
 
@@ -231,7 +261,7 @@ in the private archive repo (drafts up to v0.4.4) and in the notes below. Versio
   blocks named "End" can't be told apart in flow selects; importing a
   backup into the same workspace duplicates everything; error texts include Rust internals (`os error 10061`).
 - Issue #2: the Windows test (rounds 1–3 done; round 4 moved into #9). Issue #9: the next Windows round.
-- No PRs open (2026-11-16). PR #10, branded installers (`src-tauri/installer/`, `scripts/make-installer-art.mjs`),
+- No PRs open (2026-11-17). PR #10, branded installers (`src-tauri/installer/`, `scripts/make-installer-art.mjs`),
   is merged; its look has only been seen as images on Linux.
 - Merged 2026-11-10, in `main` but not in any tag: the desktop app's local MCP endpoint (#6; Settings → AI
   assistants; `src-tauri/src/mcp_host.rs`, `src/core/mcpHandler.ts`, `src/ui/mcpHost.ts`; the port applies on
@@ -239,6 +269,8 @@ in the private archive repo (drafts up to v0.4.4) and in the notes below. Versio
   sidebar, tabs onto collections, requests onto flow canvases and the Runner; `src/ui/dnd.ts`).
 - Flaky CI: `tests/browser.test.ts` ("The browser didn't start in time") and the Linux `linuxdeploy` step each
   failed once and passed on `gh run rerun --failed`. The browser test failed again on PR #18 (2026-11-16).
+- The macOS job (universal build) hits its 15-minute limit on every run since 2026-11-16 (#26, #27, #28, `main`), so
+  no `.dmg` is built. Not caused by those PRs; not investigated yet. Windows and Linux builds pass.
 
 **Sites.** dispatch.ogcrafts.cloud shows 0.5.1 (published 2026-11-14 from a branch off the v0.5.1 tag plus the
 rebranded site files; `site/release.json` on `main` points at 0.5.1). The OGCrafts home site, https://ogcrafts.cloud
@@ -248,11 +280,10 @@ rebranded site files; `site/release.json` on `main` points at 0.5.1). The OGCraf
 `og-crafts` gh token), and bump the version on the home site.
 
 **Waiting on the owner.**
-- Deciding whether to tag 0.5.2 soon so the old bundle ID is short-lived.
-- **Updater key:** in-app updates are built (☰ → Check for updates…, opt-in check on start, signed `latest.json`
-  on release tags; `docs/RELEASING.md` "Auto-updates"). They switch on when the owner runs
-  `scripts/setup-updater.sh` (key in `~/keys`, public key into `tauri.conf.json`, GitHub secrets) and that
-  `tauri.conf.json` change is merged. Claude's auto mode refused to make the key itself (2026-11-16).
+- **Aptabase App Key and Sentry DSN** as repo variables `APTABASE_APP_KEY` / `SENTRY_DSN`: the only thing blocking
+  the `v0.1.0-SNAPSHOT` tag.
+- Updater key: done by the owner 2026-11-16 (key in `~/keys`, secrets set, public key in `tauri.conf.json`); in-app
+  updates work from the first signed release (`docs/RELEASING.md` "Auto-updates").
 - **Windows code signing: SignPath Foundation** (owner, 2026-11-16). Code signing policy page, privacy wording and
   the CI step (gated on the `SIGNPATH_API_TOKEN` secret) are built; the owner turns on MFA, applies, and after
   approval sets up the SignPath project and token, then approves each release in SignPath. All in `docs/SIGNING.md`.
