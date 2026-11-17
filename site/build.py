@@ -88,7 +88,7 @@ def shell(path, title, desc, body, current="", noindex=False):
 </main>
 <footer class="site"><div class="wrap">
 <div><a class="brand" href="/"><img src="/assets/icon-32.png" width="32" height="32" alt="">Dispatch</a>
-<p>A local-first API client. No account, no cloud, no telemetry.</p></div>
+<p>A local-first API client. No account, no cloud, nothing shared unless you say yes.</p></div>
 <div><h2>Dispatch</h2><ul><li><a href="/#features">Features</a></li><li><a href="/download/">Download</a></li><li><a href="/cli/">Command line</a></li><li>{app or '<a href="/download/">Web app</a>'}</li><li><a href="/changelog/">Changelog</a></li><li><a href="https://github.com/og-crafts/dispatch">Source code</a></li></ul></div>
 <div><h2>Fine print</h2><ul><li><a href="/privacy/">Privacy policy</a></li><li><a href="/terms/">Terms of use</a></li><li><a href="/code-signing/">Code signing policy</a></li><li><a href="/support/">Support</a></li><li><a href="mailto:{EMAIL}">{EMAIL}</a></li></ul></div>
 <small>&copy; {DAY[:4]} OGCrafts. Dispatch is made by <a href="https://ogcrafts.cloud">OGCrafts</a>. Other product and format names that appear on this site are used only to say what Dispatch can import or export; they belong to their owners, and Dispatch is independent of and not affiliated with them.</small>
@@ -138,7 +138,7 @@ FAQ = [
  ("Is Dispatch free?", "Yes. There are no accounts, ads or paid tiers."),
  ("Is Dispatch open source?", "Yes, under the MIT licence. The source code is on <a href=\"https://github.com/og-crafts/dispatch\">GitHub</a>, so you can read it, build it yourself and report issues there."),
  ("Where is my data stored?", "On your device. The desktop app and the web app both keep collections, environments and history in local storage (IndexedDB). If you link a workspace or collection to a folder on desktop, that folder holds them too. We run no server that receives your data."),
- ("Does it send anything besides my requests?", "No. Dispatch has no analytics, no crash reporting, no update check and no fonts or scripts from other sites. The only network traffic is the requests you send."),
+ ("Does it send anything besides my requests?", "Only if you agree. On first launch Dispatch asks whether to share anonymous usage (which features are used) and reports of its own errors; both are off unless you tick them, and you can change them in Settings. It never sends your URLs, requests, responses or variables. The desktop app checks for updates only when you ask. See the privacy policy."),
  ("What happens to my secrets?", "Secret variables, passwords, tokens, keys and Authorization or Cookie headers are encrypted before they are stored, using a key that stays on the device and cannot be exported. A copy of the database moved to another device cannot read them. Exports and backups leave secrets out."),
  ("What if I clear my browser data?", "The web app keeps its data in that browser, so clearing site data erases it. Use Menu, Export backup now and then. The desktop app is not affected by browser data."),
  ("Why does the web app say servers must allow CORS?", "A web page can only read responses from servers that permit it. If a server does not, use the desktop app, which has no such rule."),
@@ -149,7 +149,7 @@ FAQ = [
  ("How do I get help or report a problem?", f"Write to <a href=\"mailto:{EMAIL}\">{EMAIL}</a>."),
 ]
 PRIVACY_KEEP = ["Collections, requests, environments, history and settings", "Secret values, encrypted with a key that stays on the device", "Daily local backups", "Everything the app saves, in local storage or in the folder you pick"]
-PRIVACY_NEVER = ["No account or sign-in", "No analytics, telemetry or crash reports", "No update checks or other calls home", "No fonts, scripts or images from other sites", "No server that receives your collections"]
+PRIVACY_NEVER = ["No account or sign-in", "No analytics or error reports unless you opt in", "No update checks unless you ask or turn them on", "No fonts, scripts or images from other sites", "No server that receives your collections"]
 NEXT = [
  ("Live folder updates", "A workspace folder reloads as its files change, for example after a git pull, instead of the next time Dispatch saves or you click Reload."),
  ("Workspace folders in the CLI", "Run a workspace folder with `dispatch-run`, choosing its environment and flows, with secret values from environment variables in CI."),
@@ -173,11 +173,11 @@ def home():
 <section class="hero"><div class="wrap"><div>
 <p class="eyebrow">Dispatch by OGCrafts</p>
 <h1>A local-first API client.</h1>
-<p class="lead">Build, send, test and document APIs. No account, no cloud, no telemetry. Your collections stay on your device.</p>
+<p class="lead">Build, send, test and document APIs. No account, no cloud. Your collections stay on your device.</p>
 <div class="cta-row">{app_buttons()}</div>
 <p class="note">Version {e(VERSION)}. Desktop for Windows, macOS and Linux, the same app in your browser, and a command-line runner for CI. Free and open source.</p></div>
 {figure("request", lazy=False, dark="request-dark")}</div></section>
-<div class="promise"><div class="wrap"><ul><li>No account</li><li>No cloud</li><li>No telemetry</li><li>Workspaces as files for git</li><li>Open source (MIT)</li><li>CLI for CI</li></ul></div></div>
+<div class="promise"><div class="wrap"><ul><li>No account</li><li>No cloud</li><li>Opt-in only analytics</li><li>Workspaces as files for git</li><li>Open source (MIT)</li><li>CLI for CI</li></ul></div></div>
 <section id="features"><div class="wrap"><div class="section-head"><p class="eyebrow">What it does</p><h2>Everything you need to work with an API.</h2><p class="lead">One app for sending requests, checking responses, running them in bulk and documenting the result.</p></div>
 <div class="grid">{feats}</div></div></section>
 <section class="tint" id="tour"><div class="wrap">
@@ -297,7 +297,7 @@ def support():
 # ---------- legal ----------
 def privacy():
     return f"""<h1>Privacy policy</h1><p class="updated">Last updated {DAY}.</p>
-<p>Dispatch is built so that we never receive your data. This page says what that means.</p>
+<p>Dispatch is built so that we never receive your data: your collections, requests and responses stay with you. If you agree, it sends us a little anonymous information about how it is used and about its own errors. This page says exactly what.</p>
 <h2>What Dispatch stores</h2>
 <p>Your collections, requests, environments, variables, history, cookies, settings and backups. They stay on your device: in your browser&rsquo;s local storage (IndexedDB) for the web app, in the app&rsquo;s local storage for the desktop app, and in a folder you choose if you link a workspace or collection to one. We have no server that receives any of it.</p>
 <h2>Secrets</h2>
@@ -306,7 +306,14 @@ def privacy():
 <p>When you press Send, Dispatch sends that request to the address you typed, with the headers and body you set. That is the only network traffic Dispatch makes. What the other server does with it is up to that server. Scripts you write can send requests too (<code>pm.sendRequest</code>), to the places you tell them to.</p>
 <p>A Browser login request opens your installed Chrome or Edge with a new, empty profile that is deleted afterwards, with sync and background networking turned off. It visits the pages in your steps. The values it keeps, such as cookies or a token, are stored as secret variables on this device.</p>
 <h2>What Dispatch does not do</h2>
-<ul><li>No account, sign-in or sync.</li><li>No analytics, telemetry or crash reporting.</li><li>No update check unless you turn it on. The desktop app looks for a new version only when you choose <strong>Menu, Check for updates</strong>, or turn on <strong>Check for updates when Dispatch starts</strong> in Settings (off by default). The check asks GitHub, where the releases are published, for a small file that names the newest version; GitHub sees your IP address, as with any download. Nothing about you or your data is sent, and nothing is installed unless you agree.</li><li>No advertising and no trackers.</li><li>No fonts, scripts or images loaded from other sites, in the app or on this website.</li></ul>
+<ul><li>No account, sign-in or sync.</li><li>No analytics or error reports unless you opt in (below).</li><li>No update check unless you turn it on. The desktop app looks for a new version only when you choose <strong>Menu, Check for updates</strong>, or turn on <strong>Check for updates when Dispatch starts</strong> in Settings (off by default). The check asks GitHub, where the releases are published, for a small file that names the newest version; GitHub sees your IP address, as with any download. Nothing about you or your data is sent, and nothing is installed unless you agree.</li><li>No advertising and no trackers.</li><li>No fonts, scripts or images loaded from other sites, in the app or on this website.</li></ul>
+<h2 id="opt-in">Usage and error reports (only if you agree)</h2>
+<p>The first time you open Dispatch it asks whether to share two things. Both are off unless you tick them, and you can change them any time in <strong>Settings, General, Privacy</strong>.</p>
+<ul><li><strong>Anonymous usage</strong>, sent to <a href="https://aptabase.com">Aptabase</a> (an analytics service built for privacy, EU or US hosting): the name of an action, such as &ldquo;sent a request&rdquo;, &ldquo;imported a file&rdquo; or &ldquo;checked for updates&rdquo;, with fixed labels like the request type (HTTP, gRPC&hellip;) or the import format; the Dispatch version, desktop or web, operating system and language; and a random session number that changes every time Dispatch starts. No user id, no cookies, and never your URLs, requests, responses, names, variables or files. See <a href="https://aptabase.com/legal/privacy">Aptabase&rsquo;s privacy policy</a>.</li>
+<li><strong>Error reports</strong>, sent to <a href="https://sentry.io">Sentry</a> (error tracking): when Dispatch itself fails, the error message and where in Dispatch&rsquo;s code it happened, plus the version, operating system and browser engine. Before it leaves your device, Dispatch blanks out web addresses, e-mail and IP addresses, tokens and other long values, and leaves out what led up to the error. See <a href="https://sentry.io/privacy/">Sentry&rsquo;s privacy policy</a>.</li></ul>
+<p>We use this only to find bugs and decide what to improve, keep it no longer than the services&rsquo; standard retention (about 90 days for error reports), and never sell or share it. The services see your IP address when they receive the data, as any server does; we don&rsquo;t store it.</p>
+<h2>Feedback</h2>
+<p><strong>Menu, Send feedback</strong> fills in a GitHub issue (public) or an e-mail to us for you to check and send yourself. Dispatch doesn&rsquo;t send it.</p>
 <h2>The web app and this website</h2>
 <p>This website and the web app at <a href="/app/">dispatch.ogcrafts.cloud/app/</a> are static files hosted on GitHub Pages. When you open them, GitHub&rsquo;s servers receive the request for the files and, like any web host, may log your IP address and browser details under <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub&rsquo;s privacy statement</a>. We do not receive those logs for individual visitors and we do not add cookies or tracking. After the files load, the web app does its work in your browser.</p>
 <h2>Your control</h2>
@@ -328,7 +335,7 @@ def code_signing():
 <li>Approvers: <a href="https://github.com/orgs/og-crafts/people?query=role%3Aowner">owners of the og-crafts organization</a>. Every release is approved by hand in SignPath before it is signed.</li></ul>
 <p>Everyone in these roles uses multi-factor authentication for GitHub and SignPath.</p>
 <h2>Privacy</h2>
-<p>This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. Requests go only to the addresses you send them to, and the optional update check is off until you turn it on. The <a href="/privacy/">privacy policy</a> has the details.</p>
+<p>This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. Requests go only to the addresses you send them to. Anonymous usage and error reports are sent only if you agree when Dispatch first starts (both unticked; changeable in Settings), and the update check runs only when you ask or turn it on. The <a href="/privacy/">privacy policy</a> has the details.</p>
 <h2>Report a problem</h2>
 <p>If you think a signed Dispatch file is harmful or was not built from this project&rsquo;s source, write to <a href="mailto:{EMAIL}">{EMAIL}</a>. You can also report it to SignPath at <a href="mailto:support@signpath.io">support@signpath.io</a>.</p>"""
 
@@ -388,11 +395,11 @@ def main():
     if WEB: shutil.copytree(WEB_DIST, DIST / "app")
     if CLI: (DIST / "downloads").mkdir(); shutil.copy(CLI_FILE, DIST / "downloads/dispatch-run.mjs")
 
-    pages = {"/": shell("/", "Dispatch: a local-first API client", "Build, send, test and document APIs. No account, no cloud, no telemetry; your collections stay on your device. Desktop, web and CLI.", home(), current="/")}
+    pages = {"/": shell("/", "Dispatch: a local-first API client", "Build, send, test and document APIs. No account, no cloud; your collections stay on your device. Desktop, web and CLI.", home(), current="/")}
     pages["/download/"] = article("/download/", "Download", "Download Dispatch for Windows, macOS and Linux, open the web app, or get the command-line runner.", download(), "Download")
     pages["/cli/"] = article("/cli/", "Command line", "dispatch-run runs Dispatch collections, load tests and mock servers from the command line and in CI.", cli_page(), "Command line")
     pages["/changelog/"] = article("/changelog/", "Changelog", "What changed in each Dispatch release.", changelog(), "Changelog")
-    pages["/privacy/"] = article("/privacy/", "Privacy policy", "Dispatch keeps your data on your device and sends nothing to us. Read the privacy policy in plain words.", privacy(), "Privacy policy")
+    pages["/privacy/"] = article("/privacy/", "Privacy policy", "Dispatch keeps your data on your device. Usage and error reports are opt-in. Read the privacy policy in plain words.", privacy(), "Privacy policy")
     pages["/terms/"] = article("/terms/", "Terms of use", "The terms for using Dispatch.", terms(), "Terms of use")
     pages["/code-signing/"] = article("/code-signing/", "Code signing policy", "How Dispatch's Windows releases are built and signed, and who approves them.", code_signing(), "Code signing policy")
     pages["/support/"] = article("/support/", "Support", "Get help with Dispatch.", support(), "Support")

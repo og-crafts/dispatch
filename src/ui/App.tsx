@@ -5,6 +5,8 @@ import { HomeView } from './HomeView'
 import { ShareDialog } from './ShareDialog'
 import { SplitPane } from './SplitPane'
 import { runUpdateCheck, updatesAvailable } from './updates'
+import { applyTelemetry, telemetryOffered, track } from './telemetry'
+import { ConsentDialog, FeedbackDialog } from './PrivacyDialogs'
 import type { ShareTarget } from '../core/share'
 import { Sidebar } from './Sidebar'
 import { RequestPane } from './RequestPane'
@@ -129,6 +131,9 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
   const brunoInput = useRef<HTMLInputElement>(null)
   const [consoleOpen, setConsoleOpen] = useState(false)
   const [sharing, setSharing] = useState<ShareTarget | null>(null)
+  const [feedback, setFeedback] = useState(false)
+  // Usage and error reports follow the person's choice (asked once, changeable in Settings).
+  useEffect(() => { if (ws.ready) applyTelemetry({ shareUsage: ws.settings.shareUsage, shareErrors: ws.settings.shareErrors }) }, [ws.ready, ws.settings.shareUsage, ws.settings.shareErrors])
   // The last page shown (Settings, a collection…), kept as a tab while a request is open.
   const [lastPage, setLastPage] = useState<View | null>(null)
   useEffect(() => { if (ws.view.kind !== 'request') setLastPage(ws.view) }, [ws.view])
@@ -223,6 +228,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
       await ws.importWorkspace(r)
       const n = (x: number, w: string) => x && `${x} ${w}${x > 1 ? 's' : ''}`
       const what = [n(r.collections.length, 'collection'), n(r.folders.length, 'folder'), n(r.requests.length, 'request'), n(r.environments.length, 'environment'), n(r.flows?.length ?? 0, 'flow')].filter(Boolean).join(', ')
+      track('imported', { format: r.source })
       notify(`Imported ${what || 'nothing'}.${r.warnings.length ? ` ${r.warnings.length} note${r.warnings.length > 1 ? 's' : ''}: ${r.warnings.slice(0, 3).join(' ')}${r.warnings.length > 3 ? ' …' : ''}` : ''}`)
     } catch (e) {
       notify(e instanceof Error ? e.message : String(e))
@@ -330,7 +336,8 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
             <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); ws.setView({ kind: 'backups' }) }}>Local backups…</button>
             <hr />
             <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); ws.setView({ kind: 'settings' }) }}>Settings…</button>
-            {updatesAvailable() && <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); void runUpdateCheck(notify, confirm) }}>Check for updates…</button>}
+            {updatesAvailable() && <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); track('update_check'); void runUpdateCheck(notify, confirm) }}>Check for updates…</button>}
+            <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setFeedback(true) }}>Send feedback…</button>
             {ws.transport.unrestricted && <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); ws.setView({ kind: 'cookies' }) }}>Cookies…</button>}
           </div>
         </details>
@@ -410,6 +417,8 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
       )}
       {dialog}
       {sharing && <ShareDialog ws={ws} target={sharing} onClose={() => setSharing(null)} notify={notify} />}
+      {feedback && <FeedbackDialog onClose={() => setFeedback(false)} />}
+      {!ws.settings.telemetryAsked && telemetryOffered() && <ConsentDialog onDone={(c) => ws.setSettings({ telemetryAsked: true, ...c })} />}
     </div>
   )
 }

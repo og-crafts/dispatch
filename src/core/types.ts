@@ -259,6 +259,12 @@ export interface Settings {
   mcpHostWorkspace: boolean
   /** Desktop: look for a newer release when Dispatch starts (it contacts GitHub, so it's off until turned on). */
   updateCheckOnStart: boolean
+  /** The first-launch privacy question was answered (shown only in builds that can send usage or errors). */
+  telemetryAsked: boolean
+  /** Opt-in: anonymous usage events (Aptabase). */
+  shareUsage: boolean
+  /** Opt-in: reports of Dispatch's own errors (Sentry). */
+  shareErrors: boolean
 }
 
 export interface ClientCert {
@@ -276,6 +282,7 @@ export const defaultSettings: Settings = {
   proxyUrl: '', proxyBypass: 'localhost, 127.0.0.1', clientCerts: [], caCerts: [], activeSpaceId: 'default', spaceEnv: {},
   mcpHostEnabled: false, mcpHostPort: 4320, mcpHostToken: '', mcpHostMethods: 'GET,HEAD', mcpHostWorkspace: false,
   updateCheckOnStart: false,
+  telemetryAsked: false, shareUsage: false, shareErrors: false,
 }
 
 let counter = 0

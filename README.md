@@ -3,8 +3,9 @@
 A local-first API client for building, sending, testing and documenting APIs. It runs as a desktop app (Tauri, for
 Linux, Windows and macOS), as a web app built from the same code, and as a command-line runner for CI.
 
-No account, no sync, no telemetry. Collections, environments and history stay in this device's storage. The only
-network traffic is the requests you send.
+No account, no sync. Collections, environments and history stay in this device's storage. Besides the requests you
+send, Dispatch sends nothing unless you opt in to anonymous usage and error reports (asked on first launch; see
+docs/TELEMETRY.md) or check for updates.
 
 ## Features
 

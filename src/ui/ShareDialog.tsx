@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { track } from './telemetry'
 import { type ShareMeta, type ShareOptions, type ShareTarget, buildShare, defaultShareOptions } from '../core/share'
 import { renderShareHtml } from '../core/shareHtml'
 import { saveTextFile } from './files'
@@ -29,7 +30,7 @@ export function ShareDialog({ ws, target, onClose, notify }: { ws: WorkspaceApi;
     remember(AUTHOR_KEY, meta.author.trim())
     const name = `${slug(doc.meta.title)}${doc.meta.version ? `-${slug(doc.meta.version)}` : ''}.html`
     try {
-      if (await saveTextFile(name, renderShareHtml(doc), 'text/html')) { notify(`Saved ${name}. Open it in any browser; it works offline.`); onClose() }
+      if (await saveTextFile(name, renderShareHtml(doc), 'text/html')) { track('shared_html', { what: target.kind, requests: doc.requests.length }); notify(`Saved ${name}. Open it in any browser; it works offline.`); onClose() }
     } catch (e) { notify(`Couldn’t save: ${String(e)}`) }
   }
 
