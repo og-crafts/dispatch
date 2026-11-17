@@ -107,6 +107,8 @@ function options(ws: WorkspaceApi) {
     transport: ws.transport, pipeline: ws.pipeline.current,
     allowMethods: mcpMethods(ws.settings.mcpHostMethods),
     version, allCollections: true,
+    // Read-only: the console and History as they are when the assistant asks (Settings → AI assistants).
+    logs: ws.settings.mcpHostLogs ? { logs: () => ws.logs, history: () => ws.history } : undefined,
     workspace: ws.settings.mcpHostWorkspace ? {
       collections: ownCols,
       editable,

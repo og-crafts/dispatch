@@ -224,6 +224,10 @@ describe('MCP assistant workspace setting', () => {
     if (aiTab) fireEvent.click(aiTab)
     fireEvent.click(screen.getByRole('checkbox', { name: /their own workspace/ }))
     expect(setSettings).toHaveBeenCalledWith({ mcpHostWorkspace: true })
+    // Reading the console, history and environments: its own switch, off by default.
+    expect(defaultSettings.mcpHostLogs).toBe(false)
+    fireEvent.click(screen.getByRole('checkbox', { name: /read the console, history and environments/ }))
+    expect(setSettings).toHaveBeenCalledWith({ mcpHostLogs: true })
   })
 })
 
