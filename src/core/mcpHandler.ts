@@ -100,13 +100,17 @@ export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | nul
   const lookup = (want: string): { it: RunItem; path: string } | { error: string } => {
     const all = items()
     const named = all.filter((x) => x.request.name === want)
-    const it = all.find((x) => pathOf(x) === want) ?? (named.length === 1 || !multi ? named[0] : undefined)
+    const exact = all.filter((x) => pathOf(x) === want)
+    // A user collection named "assistant" can give two requests the same path: say so rather than pick one.
+    if (exact.length > 1) return { error: `“${want}” names a request in your own workspace and one in the user’s collection “assistant”; ask the user to rename one of them.` }
+    const it = exact[0] ?? (named.length === 1 || !multi ? named[0] : undefined)
     if (!it) return { error: named.length > 1 ? `Several requests are named “${want}”: ${named.map(pathOf).join(', ')}. Use the full path.` : `No request named “${want}”. Use list_requests.` }
     return { it, path: pathOf(it) }
   }
   const canFlow = !!(o.engine || o.hooks?.runFlow)
   const editable = multi ? o.workspace?.editable?.name : undefined
-  const handed = () => items().filter((it) => it.request.handoff)
+  let handedList: RunItem[] | null = null
+  const handed = () => (handedList ??= items().filter((it) => it.request.handoff))
   switch (msg.method) {
     case 'initialize':
       return reply({

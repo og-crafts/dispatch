@@ -179,6 +179,8 @@ const AUTH_SCHEME = /\b((?:Bearer|Basic|Digest|Token)\s+)(?!\{\{)[A-Za-z0-9._~+/
 /** Free text with secret-looking values hidden: JWTs, auth-scheme values, and "secret": "…" / secret=… pairs. */
 function hideInText(s: string): string {
   return s
+    // user:password@host in URLs
+    .replace(/(\/\/[^/\s:@{}]+:)(?!\{\{)([^@/\s]+)@/g, (_m, pre: string) => `${pre}${HIDDEN}@`)
     .replace(JWT, HIDDEN)
     .replace(AUTH_SCHEME, (_m, pre: string) => `${pre}${HIDDEN}`)
     .replace(/("([^"\\]+)"\s*:\s*)"((?:[^"\\]|\\.)*)"/g, (m, pre: string, k: string, v: string) => (v && !IS_VAR.test(v) && SECRET_NAME.test(k) ? `${pre}"${HIDDEN}"` : m))
@@ -222,12 +224,13 @@ export function describeRequest(found: { it: RunItem; path: string }, x: { allCo
     if (sc.pre.trim()) lines.push(`${owner} pre-request script (runs too):\n${hideInText(sc.pre)}`)
     if (sc.post.trim()) lines.push(`${owner} tests script (runs too):\n${hideInText(sc.post)}`)
   }
-  if (r.docs.trim()) lines.push(`Docs:\n${r.docs}`)
+  if (r.docs.trim()) lines.push(`Docs:\n${hideInText(r.docs)}`)
   if (col?.variables.length) lines.push(`Collection “${col.name}” variables: ${col.variables.map((v) => `${v.key} = ${hide(v.key, v.value)}`).join(', ')}`)
   if (r.handoff) {
     const h = r.handoff
-    lines.push(`Handed to you by the user (${new Date(h.at).toISOString().slice(0, 16).replace('T', ' ')}) from “${h.from}”${h.note ? `, asking: ${h.note}` : ''}.`)
+    lines.push(`Handed to you by the user (${new Date(h.at).toISOString().slice(0, 16).replace('T', ' ')}) from “${h.from}”${h.note ? `, asking: ${hideInText(h.note)}` : ''}.`)
     if (h.variables?.length) lines.push(`Its original collection’s variables: ${h.variables.map((v) => `${v.key} = ${hide(v.key, v.value)}`).join(', ')} (given to a new collection you move it into).`)
+    if (/^\/\/ From the (collection|folder) “/m.test(r.scripts.pre + '\n' + r.scripts.post)) lines.push('Its scripts include the collection and folder scripts it ran with (each marked “// From the …”): remove those parts if you file it back under that collection or folder, or they run twice.')
     lines.push('Review it, fix what needs fixing (update_request, set_variables), then file it with move_request.')
   }
   return lines.join('\n')
@@ -256,9 +259,23 @@ export async function workspaceCall(name: string, args: any, x: WorkspaceCallCon
   /** Which workspace a path means, and its segments. Without "assistant/" it's the user's when they allow edits. */
   const rootOf = (path: unknown): { assistant: boolean; segs: string[] } => {
     const p = String(path ?? '').trim().replace(/^\/+|\/+$/g, '')
-    const assistant = p === 'assistant' || p.startsWith(ASSISTANT_PREFIX) || !ed
-    const rest = p === 'assistant' ? '' : p.startsWith(ASSISTANT_PREFIX) ? p.slice(ASSISTANT_PREFIX.length) : p
-    return { assistant, segs: rest.split('/').map((s) => s.trim()).filter(Boolean) }
+    const prefixed = p === 'assistant' || p.startsWith(ASSISTANT_PREFIX)
+    const split = (t: string) => t.split('/').map((y) => y.trim()).filter(Boolean)
+    const segs = split(prefixed ? p.slice(ASSISTANT_PREFIX.length) : p)
+    if (!ed) return { assistant: true, segs }
+    const ownHas = (name: string | undefined) => !!name && assistantCols().some((c) => c.name === name)
+    const userHas = (name: string | undefined) => !!name && userCols().some((c) => c.name === name)
+    if (!prefixed) {
+      // Before edit access, bare paths meant the assistant's own workspace: a bare name of one of its collections that
+      // the user's workspace doesn't have still means that one, so the old habit never writes into the user's.
+      return { assistant: ownHas(segs[0]) && !userHas(segs[0]), segs }
+    }
+    // A user collection really named "assistant" is reachable when the assistant's workspace has no such collection.
+    const userAssistant = userCols().find((c) => c.name === 'assistant')
+    if (userAssistant && !ownHas(segs[0]) && (!segs.length || folders().some((f) => f.collectionId === userAssistant.id && f.parentId === null && f.name === segs[0]))) {
+      return { assistant: false, segs: split(p) }
+    }
+    return { assistant: true, segs }
   }
   /** The parent for a path, making the collection and folders it needs. */
   const placeAt = (path: unknown): { collection: Collection; folderId: string | null; fresh: boolean } | string => {
@@ -309,9 +326,12 @@ export async function workspaceCall(name: string, args: any, x: WorkspaceCallCon
   /** Auth to carry when a request leaves its collection or folders: what it inherited, made its own. */
   const carryAuth = (r: RequestDef, to: { collectionId: string; folderId: string | null }, notes: string[]) => {
     if (r.auth.kind !== 'inherit' || (r.collectionId === to.collectionId && r.folderId === to.folderId)) return r.auth
-    const src = [...x.allCollections, ...assistantCols(), ...userCols()].find((c) => c.id === r.collectionId) ?? null
-    const auth = effectiveAuth(r, src, folderChain(x.folders, r.folderId))
+    const colById = (id: string | null) => [...x.allCollections, ...assistantCols(), ...userCols()].find((c) => c.id === id) ?? null
+    const auth = effectiveAuth(r, colById(r.collectionId), folderChain(folders(), r.folderId))
     if (!auth) return r.auth
+    // Where it lands gives it the same auth: it keeps inheriting, so later changes up the tree still reach it.
+    const there = effectiveAuth({ ...r, collectionId: to.collectionId, folderId: to.folderId }, colById(to.collectionId), folderChain(folders(), to.folderId))
+    if (there && JSON.stringify(there) === JSON.stringify(auth)) return r.auth
     // "No auth" needs no mention.
     if (auth.kind !== 'none') notes.push(`the ${auth.kind} auth it inherited was copied onto it`)
     return structuredClone(auth)
@@ -376,7 +396,10 @@ export async function workspaceCall(name: string, args: any, x: WorkspaceCallCon
       if (typeof b === 'string') return [b, true]
       next.body = b; changed.push('body')
     }
-    if (args.docs !== undefined) { next.docs = String(args.docs); changed.push('docs') }
+    if (args.docs !== undefined) {
+      if (String(args.docs) !== r.docs && hasSecretText(r.docs)) return [keepsSecret('docs text'), true]
+      next.docs = String(args.docs); changed.push('docs')
+    }
     if ((args.preRequestScript !== undefined && hasSecretText(r.scripts.pre)) || (args.testScript !== undefined && hasSecretText(r.scripts.post))) return [keepsSecret('script'), true]
     const sc = scriptsOf(args, r.scripts)
     if (sc.changed.length) { next.scripts = sc.scripts; changed.push(...sc.changed) }

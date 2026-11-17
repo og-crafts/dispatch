@@ -69,3 +69,34 @@ describe('assistant edits and open tabs', () => {
     expect(h.result.current.isDirty(tabOf(b.id).draft)).toBe(true)
   })
 })
+
+describe('handing requests to the assistant', () => {
+  it('carries the collection’s and folders’ scripts onto the copy, and two quick hand-offs share one Inbox', async () => {
+    const h = await mount()
+    let colId = ''
+    let folderId = ''
+    await act(async () => { colId = (await h.result.current.addCollection('Shop')).id })
+    await act(async () => {
+      const c = h.result.current.allCollections.find((x) => x.id === colId)!
+      await h.result.current.updateCollection({ ...c, scripts: { pre: 'pm.variables.set("tok", "1")', post: '' } })
+    })
+    await act(async () => { folderId = (await h.result.current.addFolder(colId, 'Box')).id })
+    await act(async () => {
+      const f = h.result.current.folders.find((x) => x.id === folderId)!
+      await h.result.current.updateFolder({ ...f, scripts: { pre: '', post: 'pm.test("box", () => {})' } })
+    })
+    await act(async () => { await h.result.current.setSpaceAi(h.result.current.activeSpaceId, true) })
+    await act(async () => {
+      const r = newRequest({ name: 'Items', url: 'https://s.test/items', collectionId: colId, folderId, scripts: { pre: 'console.log("own")', post: '' } })
+      await h.result.current.saveAssistant({ collections: [], folders: [], requests: [r] })
+    })
+    const r = h.result.current.requests.find((x) => x.name === 'Items')!
+    let copies: Awaited<ReturnType<typeof h.result.current.handToAssistant>>[] = []
+    await act(async () => { copies = await Promise.all([h.result.current.handToAssistant(r, 'one'), h.result.current.handToAssistant(r, 'two')]) })
+    expect(copies[0].scripts.pre).toBe('// From the collection “Shop” (it ran for this request there)\npm.variables.set("tok", "1")\n\n// The request’s own\nconsole.log("own")')
+    expect(copies[0].scripts.post).toBe('// From the folder “Box” (it ran for this request there)\npm.test("box", () => {})')
+    expect(copies.map((x) => x.name)).toEqual(['Items', 'Items (2)'])
+    expect(copies[0].collectionId).toBe(copies[1].collectionId)
+    expect(h.result.current.allCollections.filter((c) => c.name === 'Inbox')).toHaveLength(1)
+  })
+})

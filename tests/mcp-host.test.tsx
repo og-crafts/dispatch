@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { handleMcp } from '../src/core/mcpHandler'
 import type { Transport } from '../src/core/transport'
-import { ASSISTANT_SPACE, type Collection, defaultSettings, kv, newCollection, newFolder, newRequest } from '../src/core/types'
+import { ASSISTANT_SPACE, type Collection, type RequestDef, defaultSettings, kv, newCollection, newFolder, newRequest } from '../src/core/types'
 import type { AssistantChanges } from '../src/core/mcpWorkspace'
 
 /** The desktop app's MCP endpoint serves every collection in the workspace and saves what a send changed. */
@@ -240,15 +240,15 @@ describe('MCP assistant inbox and editable workspaces', () => {
     handoff: { note: 'make the host a variable', from: 'Shop/Login', at: Date.UTC(2026, 10, 17, 9, 30), variables: [kv('base', 'https://shop.test')] },
   })
   const transport: Transport = { label: 'test', unrestricted: true, send: async () => ({ status: 200, statusText: 'OK', headers: [], body: '{}', binary: false, size: 2, timeMs: 1 }) }
-  const setup = (editable = false) => {
+  const setup = (editable = false, extraRequests: RequestDef[] = [], extraCollections: Collection[] = []) => {
     const saved: AssistantChanges[] = []
     const removed: string[][] = []
     const o = {
-      ws: { source: 'dispatch' as const, collections: [shop], folders: [orders], requests: [items, handed], environments: [], flows: [], warnings: [] },
+      ws: { source: 'dispatch' as const, collections: [shop, ...extraCollections], folders: [orders], requests: [items, handed, ...extraRequests], environments: [], flows: [], warnings: [] },
       environment: null, globals: [], settings: defaultSettings, transport, pipeline: {}, allowMethods: [], version: 'test', allCollections: true,
       workspace: {
         collections: [inbox], save: async (c: AssistantChanges) => { saved.push(c) }, remove: async (ids: string[]) => { removed.push(ids) },
-        ...(editable ? { editable: { name: 'Work', workspaceId: 'w1', collections: [shop] } } : {}),
+        ...(editable ? { editable: { name: 'Work', workspaceId: 'w1', collections: [shop, ...extraCollections] } } : {}),
       },
     }
     const call = (name: string, args: object) => handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, o)
@@ -324,6 +324,40 @@ describe('MCP assistant inbox and editable workspaces', () => {
     expect(saved).toHaveLength(2)
     // A URL with nothing hidden changes as before.
     expect(txt(await call('update_request', { name: 'assistant/Inbox/Login', url: '{{base}}/login' }))).toContain('(URL)')
+  })
+
+  it('hides secrets in docs, URL passwords and the hand-off note too', async () => {
+    const docs = { ...items, id: 'docs1', name: 'Docs', url: 'https://bob:pa55word@shop.test/x', docs: 'Call with Authorization: Bearer abcdefghijkl0', handoff: { note: 'token=qq77secret is wrong', from: 'x', at: 0 } }
+    const { call } = setup(true, [docs])
+    const t = txt(await call('get_request', { name: 'Shop/Orders/Docs' }))
+    expect(t).toContain('https://bob:<hidden>@shop.test/x')
+    expect(t).toContain('Bearer <hidden>')
+    expect(t).toContain('token=<hidden>')
+    for (const secret of ['pa55word', 'abcdefghijkl0', 'qq77secret']) expect(t).not.toContain(secret)
+    expect(txt(await call('update_request', { name: 'Shop/Orders/Docs', docs: 'new' }))).toContain('The docs text holds a secret')
+  })
+
+  it('bare paths: the assistant’s own collection stays its own, a user collection called “assistant” is reachable', async () => {
+    const { call, saved } = setup(true)
+    // "Inbox" exists only in the assistant's workspace: a bare path still means that one.
+    await call('create_request', { folder: 'Inbox', name: 'Bare', url: 'https://x.test' })
+    expect(saved[0].collections).toEqual([])
+    expect(saved[0].requests[0].collectionId).toBe(inbox.id)
+    // A user collection named "assistant" (the assistant has none called that).
+    const theirs = { ...newCollection('assistant'), workspaceId: 'w1' }
+    const two = setup(true, [], [theirs])
+    expect(txt(await two.call('set_variables', { collection: 'assistant', variables: { a: '1' } }))).toContain('Collection assistant: set a')
+    expect(two.saved[0].collections[0].id).toBe(theirs.id)
+  })
+
+  it('moving within a collection keeps inheriting when the auth there is the same', async () => {
+    const { call, saved } = setup(true)
+    const r = txt(await call('move_request', { name: 'Shop/Orders/Items', to: 'Shop/Archive' }))
+    expect(r).not.toContain('auth it inherited')
+    expect(saved[0].requests[0].auth.kind).toBe('inherit')
+    // Out of the collection, into one with other auth: the inherited auth is copied on.
+    const r2 = txt(await call('move_request', { name: 'Shop/Orders/Items', to: 'assistant/Lab' }))
+    expect(r2).toContain('the bearer auth it inherited was copied onto it')
   })
 
   it('update_request reviewed:true clears the flag in place', async () => {

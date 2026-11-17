@@ -59,6 +59,19 @@ export interface Tab {
 
 const same = (a: RequestDef, b: RequestDef) => JSON.stringify({ ...a, updatedAt: 0 }) === JSON.stringify({ ...b, updatedAt: 0 })
 const byName = <T extends { name: string }>(a: T, b: T) => a.name.localeCompare(b.name)
+/**
+ * A handed-over copy's scripts: the collection's and folders' scripts it ran with (outermost first), then its own,
+ * each marked with where it came from, so the copy in the Inbox behaves like the original.
+ */
+function carriedScripts(r: RequestDef, col: Collection | null, chain: Folder[]): RequestDef['scripts'] {
+  const owners = [...(col ? [[`collection “${col.name}”`, col.scripts] as const] : []), ...[...chain].reverse().map((f) => [`folder “${f.name}”`, f.scripts] as const)]
+  const join = (pick: (x: RequestDef['scripts']) => string) => {
+    const parts = owners.filter(([, sc]) => pick(sc).trim()).map(([who, sc]) => `// From the ${who} (it ran for this request there)\n${pick(sc)}`)
+    if (!parts.length) return pick(r.scripts)
+    return [...parts, ...(pick(r.scripts).trim() ? [`// The request’s own\n${pick(r.scripts)}`] : [])].join('\n\n')
+  }
+  return { ...r.scripts, pre: join((x) => x.pre), post: join((x) => x.post) }
+}
 const LOG_LIMIT = 500
 const newTab = (draft: RequestDef = newRequest()): Tab => ({ id: uid(), draft, result: null, sending: false })
 
@@ -89,6 +102,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   const [tabs, setTabs] = useState<Tab[]>(() => [newTab()])
   const [activeId, setActiveId] = useState<string>(() => tabs[0].id)
   const activeIdRef = useRef(activeId); activeIdRef.current = activeId
+  const tabsRef = useRef(tabs); tabsRef.current = tabs
   /** The tab last used in each workspace, to come back to it. */
   const lastTab = useRef<Record<string, string>>({})
   const [view, setView] = useState<View>({ kind: 'request' })
@@ -221,41 +235,34 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     setTabs((ts) => [...ts, tab]); setActiveId(tab.id); setView({ kind: 'request' })
   }, [])
 
-  const closeTab = useCallback((id: string) => {
-    aborts.current.get(id)?.abort()
-    setTabs((ts) => {
-      const here = settingsRef.current.activeSpaceId
-      const mine = (t: Tab) => (t.space ?? here) === here
-      const i = ts.filter(mine).findIndex((t) => t.id === id)
-      const rest = ts.filter((t) => t.id !== id)
-      const restHere = rest.filter(mine)
-      if (!restHere.length) { const t = { ...newTab(), space: here }; setActiveId(t.id); return [...rest, t] }
-      if (id === activeId) setActiveId(restHere[Math.max(0, i - 1)].id)
-      return rest
-    })
-  }, [activeId])
-
+  const closeTab = useCallback((id: string) => { closeTabsRef.current([id]) }, [])
   const selectTab = useCallback((id: string) => { setActiveId(id); setView({ kind: 'request' }) }, [])
-  /** Closes several tabs at once (the tab menu's Close others / to the right / all); keeps one tab open. */
+  /**
+   * Closes tabs (the tab menu's Close others / to the left / to the right / all, and closeTab). Only the open
+   * workspace's tabs count: if none of them is left it gets a fresh one, and the active tab moves to the nearest one
+   * on the left that stays. Worked out from the current tabs first, so the state updater stays pure.
+   */
   const closeTabs = useCallback((ids: string[]) => {
     for (const id of ids) aborts.current.get(id)?.abort()
-    setTabs((ts) => {
-      // Only the open workspace's tabs count, as in closeTab: other workspaces' tabs are neither shown nor picked.
-      const here = settingsRef.current.activeSpaceId
-      const mine = (t: Tab) => (t.space ?? here) === here
-      const rest = ts.filter((t) => !ids.includes(t.id))
-      const restHere = rest.filter(mine)
-      if (!restHere.length) { const t = { ...newTab(), space: here }; setActiveId(t.id); return [...rest, t] }
-      if (ids.includes(activeId)) {
-        // The nearest tab of this workspace to the left of the active one that stays, else its first.
-        const shown = ts.filter(mine)
-        const i = shown.findIndex((t) => t.id === activeId)
-        const left = shown.slice(0, Math.max(0, i)).reverse().find((t) => !ids.includes(t.id))
-        setActiveId((left ?? restHere[0]).id)
-      }
-      return rest
-    })
-  }, [activeId])
+    const ts = tabsRef.current
+    const here = settingsRef.current.activeSpaceId
+    const mine = (t: Tab) => (t.space ?? here) === here
+    const restHere = ts.filter((t) => mine(t) && !ids.includes(t.id))
+    const fresh = restHere.length ? null : { ...newTab(), space: here }
+    const active = activeIdRef.current
+    let next = active
+    if (fresh) next = fresh.id
+    else if (ids.includes(active)) {
+      const shown = ts.filter(mine)
+      const i = shown.findIndex((t) => t.id === active)
+      next = (shown.slice(0, Math.max(0, i)).reverse().find((t) => !ids.includes(t.id)) ?? restHere[0]).id
+    }
+    const after = [...ts.filter((t) => !ids.includes(t.id)), ...(fresh ? [fresh] : [])]
+    tabsRef.current = after
+    setTabs((cur) => [...cur.filter((t) => !ids.includes(t.id)), ...(fresh ? [fresh] : [])])
+    if (next !== active) { activeIdRef.current = next; setActiveId(next) }
+  }, [])
+  const closeTabsRef = useRef(closeTabs); closeTabsRef.current = closeTabs
   /** Opens a copy of a tab's request, with its unsaved edits, as a new unsaved request right after it. */
   const duplicateTab = useCallback((id: string) => {
     setTabs((ts) => {
@@ -602,6 +609,9 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     const before = new Map(requestsRef.current.filter((r) => rs.some((y) => y.id === r.id)).map((r) => [r.id, r]))
     for (const r of rs) await db.putRequest(r)
     const upsert = <T extends { id: string }>(list: T[], add: T[]) => [...list.filter((x) => !add.some((y) => y.id === x.id)), ...add]
+    // The refs move at once, so a second call before the next render (e.g. two quick hand-offs) sees these.
+    collectionsRef.current = upsert(collectionsRef.current, cols)
+    requestsRef.current = upsert(requestsRef.current, rs)
     if (cols.length) setCollections((xs) => upsert(xs, cols).sort(byName))
     if (fs.length) setFolders((xs) => upsert(xs, fs))
     if (rs.length) setRequests((xs) => upsert(xs, rs))
@@ -619,24 +629,33 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
    * "Hand to AI assistant": a copy of a saved request goes to the assistant's Inbox with the user's note, for it to
    * review and file (core/mcpWorkspace.ts). The copy takes the auth it inherited; the original stays as it is.
    */
-  const handToAssistant = useCallback(async (r: RequestDef, note: string) => {
-    const col = collectionsRef.current.find((x) => x.id === r.collectionId) ?? null
-    const chain = folderChain(folders, r.folderId)
-    let inbox = collectionsRef.current.find((x) => spaceOf(x) === ASSISTANT_SPACE.id && x.name === INBOX)
-    const made = inbox ? [] : [inbox = { ...newCollection(INBOX), workspaceId: ASSISTANT_SPACE.id }]
-    const taken = new Set(requests.filter((x) => x.collectionId === inbox!.id).map((x) => x.name))
-    let name = r.name
-    for (let i = 2; taken.has(name); i++) name = `${r.name} (${i})`
-    const auth = r.auth.kind === 'inherit' ? effectiveAuth(r, col, chain) : null
-    const copy: RequestDef = {
-      ...structuredClone(r), id: uid(), name, collectionId: inbox.id, folderId: null, updatedAt: Date.now(),
-      sort: Math.max(0, ...requests.filter((x) => x.collectionId === inbox!.id).map((x) => x.sort)) + 1,
-      auth: auth ? structuredClone(auth) : r.auth,
-      handoff: { note: note.trim(), from: [col?.name ?? 'Unsaved', ...[...chain].reverse().map((f) => f.name), r.name].join('/'), at: Date.now(), variables: col?.variables.length ? structuredClone(col.variables) : undefined },
+  const handQueue = useRef<Promise<unknown>>(Promise.resolve())
+  const handToAssistant = useCallback((r: RequestDef, note: string): Promise<RequestDef> => {
+    // One at a time, so two quick hand-offs share one Inbox and get distinct names.
+    const run = async () => {
+      const col = collectionsRef.current.find((x) => x.id === r.collectionId) ?? null
+      const chain = folderChain(folders, r.folderId) // innermost first
+      let inbox = collectionsRef.current.find((x) => spaceOf(x) === ASSISTANT_SPACE.id && x.name === INBOX)
+      const made = inbox ? [] : [inbox = { ...newCollection(INBOX), workspaceId: ASSISTANT_SPACE.id }]
+      const inInbox = requestsRef.current.filter((x) => x.collectionId === inbox!.id)
+      const taken = new Set(inInbox.map((x) => x.name))
+      let name = r.name
+      for (let i = 2; taken.has(name); i++) name = `${r.name} (${i})`
+      const auth = r.auth.kind === 'inherit' ? effectiveAuth(r, col, chain) : null
+      const copy: RequestDef = {
+        ...structuredClone(r), id: uid(), name, collectionId: inbox.id, folderId: null, updatedAt: Date.now(),
+        sort: Math.max(0, ...inInbox.map((x) => x.sort)) + 1,
+        auth: auth ? structuredClone(auth) : r.auth,
+        scripts: carriedScripts(r, col, chain),
+        handoff: { note: note.trim(), from: [col?.name ?? 'Unsaved', ...[...chain].reverse().map((f) => f.name), r.name].join('/'), at: Date.now(), variables: col?.variables.length ? structuredClone(col.variables) : undefined },
+      }
+      await saveAssistant({ collections: made, folders: [], requests: [copy] })
+      return copy
     }
-    await saveAssistant({ collections: made, folders: [], requests: [copy] })
-    return copy
-  }, [folders, requests, saveAssistant])
+    const p = handQueue.current.then(run, run)
+    handQueue.current = p.catch(() => {})
+    return p
+  }, [folders, saveAssistant])
 
   /**
    * Moves requests and folders under a parent (a collection's top level, or a folder), placed before `beforeId`
