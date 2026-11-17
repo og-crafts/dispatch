@@ -96,6 +96,10 @@ async function answerOne(body: string, ws: WorkspaceApi): Promise<string | null>
 function options(ws: WorkspaceApi) {
   const ownCols = ws.allCollections.filter((c) => spaceOf(c) === ASSISTANT_SPACE.id)
   const ownIds = new Set(ownCols.map((c) => c.id))
+  // The open workspace, when the user lets assistants edit it (Workspaces page).
+  const open = ws.spaces.find((x) => x.id === ws.activeSpaceId)
+  const editable = open?.aiEdit && open.id !== ASSISTANT_SPACE.id
+    ? { name: open.name, workspaceId: open.id, collections: ws.collections.filter((c) => !ownIds.has(c.id)) } : undefined
   return {
     // The user's collections: the workspace on screen, never the assistant's own (that one is served as "assistant/…").
     ws: { source: 'dispatch' as const, collections: ws.collections.filter((c) => !ownIds.has(c.id)), folders: ws.folders, requests: ws.requests, environments: ws.environments, flows: ws.flows, warnings: [] },
@@ -105,9 +109,10 @@ function options(ws: WorkspaceApi) {
     version, allCollections: true,
     workspace: ws.settings.mcpHostWorkspace ? {
       collections: ownCols,
+      editable,
       save: ws.saveAssistant,
-      // Only requests in the assistant workspace; they go to the trash like any delete, so the user can undo.
-      remove: (ids: string[]) => ws.removeRequests(ids.filter((id) => ws.requests.some((r) => r.id === id && r.collectionId && ownIds.has(r.collectionId)))),
+      // Only where assistants may write; deletes go to the trash like any delete, so the user can undo.
+      remove: ws.removeForAssistant,
     } : undefined,
     hooks: {
       afterSend: async (x: Parameters<WorkspaceApi['applyChanges']>[0], ctx: Parameters<WorkspaceApi['applyChanges']>[1], request?: Parameters<WorkspaceApi['recordHistory']>[0]) => {

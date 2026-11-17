@@ -7,6 +7,7 @@ export interface SaveChoice extends Place { name: string; newCollection: string 
 type Pending =
   | { kind: 'ask'; title: string; initial: string; resolve: (v: string | null) => void }
   | { kind: 'confirm'; message: string; resolve: (v: boolean) => void }
+  | { kind: 'note'; title: string; hint: string; label: string; ok: string; resolve: (v: string | null) => void }
   | { kind: 'save'; title: string; name: string | null; collections: Collection[]; folders: Folder[]; place: Place; resolve: (v: SaveChoice | null) => void }
 
 /** Promise-based dialogs on a native <dialog>, so focus and Escape are handled by the browser. */
@@ -14,6 +15,9 @@ export function useDialogs() {
   const [pending, setPending] = useState<Pending | null>(null)
   const ask = useCallback((title: string, initial = '') => new Promise<string | null>((resolve) => setPending({ kind: 'ask', title, initial, resolve })), [])
   const confirm = useCallback((message: string) => new Promise<boolean>((resolve) => setPending({ kind: 'confirm', message, resolve })), [])
+  /** Optional multi-line text: '' when left empty, null when cancelled. */
+  const askNote = useCallback((title: string, hint: string, label: string, ok = 'OK') =>
+    new Promise<string | null>((resolve) => setPending({ kind: 'note', title, hint, label, ok, resolve })), [])
   const askSave = useCallback((name: string, collections: Collection[], folders: Folder[], place: Place, title = 'Save request') =>
     new Promise<SaveChoice | null>((resolve) => setPending({ kind: 'save', title, name, collections, folders, place, resolve })), [])
   /** Choose a collection + folder (no name). */
@@ -21,7 +25,7 @@ export function useDialogs() {
     new Promise<Place | null>((resolve) => setPending({ kind: 'save', title, name: null, collections, folders, place,
       resolve: (v) => resolve(v ? { collectionId: v.collectionId, folderId: v.folderId } : null) })), [])
   const node = pending ? <Dialog pending={pending} close={() => setPending(null)} /> : null
-  return { ask, confirm, askSave, askPlace, node }
+  return { ask, confirm, askNote, askSave, askPlace, node }
 }
 
 /** Folders of a collection in tree order, with their depth. */
@@ -50,6 +54,7 @@ function Dialog({ pending, close }: { pending: Pending; close: () => void }) {
   const finish = (ok: boolean) => {
     if (pending.kind === 'ask') pending.resolve(ok && text.trim() ? text.trim() : null)
     else if (pending.kind === 'confirm') pending.resolve(ok)
+    else if (pending.kind === 'note') pending.resolve(ok ? text.trim() : null)
     else {
       const named = pending.name === null || text.trim()
       pending.resolve(ok && named ? {
@@ -68,6 +73,12 @@ function Dialog({ pending, close }: { pending: Pending; close: () => void }) {
     <dialog ref={ref} className="dialog" onCancel={(e) => { e.preventDefault(); finish(false) }}>
       <form method="dialog" onSubmit={(e) => { e.preventDefault(); finish(true) }}>
         {pending.kind === 'confirm' && <p>{pending.message}</p>}
+        {pending.kind === 'note' && <>
+          <h2>{pending.title}</h2>
+          <p className="muted small">{pending.hint}</p>
+          <label className="field"><span>{pending.label}</span><textarea autoFocus rows={4} value={text} onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); finish(true) } }} /></label>
+        </>}
         {pending.kind === 'ask' && <label className="field"><span>{pending.title}</span><input autoFocus value={text} onChange={(e) => setText(e.target.value)} /></label>}
         {pending.kind === 'save' && <>
           <h2>{pending.title}</h2>
@@ -94,7 +105,7 @@ function Dialog({ pending, close }: { pending: Pending; close: () => void }) {
           <button type="submit" className={`btn ${danger ? 'danger' : 'primary'}`}>
             {pending.kind === 'confirm'
               ? (/delete/i.test(pending.message) ? 'Delete' : /clear/i.test(pending.message) ? 'Clear' : /discard/i.test(pending.message) ? 'Discard' : 'OK')
-              : pending.kind === 'save' ? (pending.name === null ? 'Move' : 'Save') : 'OK'}
+              : pending.kind === 'save' ? (pending.name === null ? 'Move' : 'Save') : pending.kind === 'note' ? pending.ok : 'OK'}
           </button>
         </div>
       </form>

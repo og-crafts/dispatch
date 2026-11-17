@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useWorkspace, type View, type WorkspaceApi } from './useWorkspace'
 import { useDialogs } from './Dialogs'
+import { useContextMenu } from './ContextMenu'
 import { HomeView } from './HomeView'
 import { ShareDialog } from './ShareDialog'
 import { SplitPane } from './SplitPane'
@@ -81,14 +82,14 @@ export type Importer = (text: string, fileName: string) => ImportResult | null
  *  It stays in the tab bar while you work in a request, so the page is one click away too. */
 type PageTab = { title: string; on: boolean; onOpen: () => void; onClose: () => void }
 
-function TabBar({ ws, onClose, page }: { ws: WorkspaceApi; onClose: (id: string) => void; page?: PageTab }) {
+function TabBar({ ws, onClose, onMenu, page }: { ws: WorkspaceApi; onClose: (id: string) => void; onMenu: (e: React.MouseEvent, tabId: string) => void; page?: PageTab }) {
   return (
     <div className="tabBar" role="tablist" aria-label="Open requests">
       {ws.tabs.map((t) => {
         const on = t.id === ws.activeId && ws.view.kind === 'request'
         const dirty = ws.isDirty(t.draft)
         return (
-          <div key={t.id} className={`reqTab ${on ? 'on' : ''}`} draggable title="Drag onto a collection or folder to save it there"
+          <div key={t.id} className={`reqTab ${on ? 'on' : ''}`} draggable title="Drag onto a collection or folder to save it there" onContextMenu={(e) => onMenu(e, t.id)}
             onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData(DND_TAB, t.id); e.dataTransfer.setData('text/plain', t.draft.name) }}>
             <button type="button" role="tab" aria-selected={on} className="reqTabMain" onClick={() => ws.selectTab(t.id)} title={t.draft.url || t.draft.name}
               onAuxClick={(e) => { if (e.button === 1) onClose(t.id) }}>
@@ -124,7 +125,7 @@ export interface AppExtras {
 export function App({ transport, engine, browserLauncher, extras = {} }: { transport?: Transport; engine?: ScriptEngine; browserLauncher?: BrowserLauncher; extras?: AppExtras }) {
   const ws = useWorkspace({ transport, engine, browserLauncher, extend: extras.extend })
   const mcpHost = useMcpHost(ws)
-  const { ask, confirm, askSave, askPlace, node: dialog } = useDialogs()
+  const { ask, confirm, askNote, askSave, askPlace, node: dialog } = useDialogs()
   const [toast, setToast] = useState<{ text: string; action?: { label: string; run: () => void } } | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout>>()
   const fileInput = useRef<HTMLInputElement>(null)
@@ -204,6 +205,34 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
     if (t && ws.isDirty(t.draft) && !(await confirm(`Discard unsaved changes to “${t.draft.name}”?`))) return
     ws.closeTab(id)
   }, [ws, confirm])
+  /** Closes several tabs, asking once about unsaved changes unless forced. */
+  const closeTabs = useCallback(async (ids: string[], force = false) => {
+    const dirty = ws.tabs.filter((t) => ids.includes(t.id) && ws.isDirty(t.draft))
+    if (!force && dirty.length && !(await confirm(dirty.length === 1 ? `Discard unsaved changes to “${dirty[0].draft.name}”?` : `Discard unsaved changes in ${dirty.length} tabs (${dirty.map((t) => `“${t.draft.name}”`).join(', ')})?`))) return
+    ws.closeTabs(ids)
+  }, [ws, confirm])
+  const ctx = useContextMenu()
+  /** Right-click on a tab: Postman's tab menu. */
+  const tabMenu = useCallback((e: React.MouseEvent, id: string) => {
+    const i = ws.tabs.findIndex((t) => t.id === id)
+    if (i < 0) return
+    const t = ws.tabs[i]
+    const ids = ws.tabs.map((x) => x.id)
+    const others = ids.filter((x) => x !== id)
+    const anyDirty = ws.tabs.some((x) => ws.isDirty(x.draft))
+    ctx.open(e, [
+      { label: 'Duplicate tab', run: () => ws.duplicateTab(id) },
+      '-',
+      { label: 'Close tab', hint: 'Ctrl+W', run: () => void closeTab(id) },
+      ...(ws.isDirty(t.draft) ? [{ label: 'Force close tab', run: () => ws.closeTab(id) }] : []),
+      { label: 'Close other tabs', run: () => void closeTabs(others), disabled: !others.length },
+      { label: 'Close tabs to the left', run: () => void closeTabs(ids.slice(0, i)), disabled: i === 0 },
+      { label: 'Close tabs to the right', run: () => void closeTabs(ids.slice(i + 1)), disabled: i === ids.length - 1 },
+      '-',
+      { label: 'Close all tabs', run: () => void closeTabs(ids) },
+      ...(anyDirty ? [{ label: 'Force close all tabs', run: () => ws.closeTabs(ids), tone: 'danger' as const }] : []),
+    ], `Tab actions for ${t.draft.name}`)
+  }, [ws, ctx, closeTab, closeTabs])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -285,7 +314,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
     onClose: () => { setLastPage(null); ws.setView({ kind: 'request' }) },
   } : undefined
   const newFlow = async () => { const n = await ask('New flow', 'New flow'); if (n) { const f = await ws.addFlow(n); ws.setView({ kind: 'flow', id: f.id }) } }
-  const dialogs = { ask, confirm, pickPlace: (title: string, cur: { collectionId: string | null; folderId: string | null }) => askPlace(title, ws.collections, ws.folders, cur) }
+  const dialogs = { ask, confirm, askNote, notify, pickPlace: (title: string, cur: { collectionId: string | null; folderId: string | null }) => askPlace(title, ws.collections, ws.folders, cur) }
 
   return (
     <div className="app">
@@ -302,7 +331,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
         <span className="grow" />
         <label className="envPick">
           <span className="sr">Environment</span>
-          <select value={ws.settings.activeEnvId ?? ''} onChange={(e) => ws.setSettings({ activeEnvId: e.target.value || null })}>
+          <select aria-label="Environment" value={ws.settings.activeEnvId ?? ''} onChange={(e) => ws.setSettings({ activeEnvId: e.target.value || null })}>
             <option value="">No environment</option>
             {ws.environments.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
           </select>
@@ -355,7 +384,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
       </header>
       <Sidebar ws={ws} dialogs={dialogs} onExportCollection={(c) => void onExportCollection(c)} onExportPostman={(c) => void onExportPostman(c)} onShare={setSharing} />
       <main className="work">
-        <TabBar ws={ws} onClose={(id) => void closeTab(id)} page={page} />
+        <TabBar ws={ws} onClose={(id) => void closeTab(id)} onMenu={tabMenu} page={page} />
         <div className="workBody">
         {viewed.kind === 'home' ? <HomeView ws={ws} onImport={() => fileInput.current?.click()} onNewFlow={() => void newFlow()} />
           : col ? <CollectionEditor key={col.id} ws={ws} confirm={confirm} collection={col} authActions={authActions} renderDocs={renderDocs} />
@@ -416,6 +445,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
         </div>
       )}
       {dialog}
+      {ctx.node}
       {sharing && <ShareDialog ws={ws} target={sharing} onClose={() => setSharing(null)} notify={notify} />}
       {feedback && <FeedbackDialog onClose={() => setFeedback(false)} />}
       {!ws.settings.telemetryAsked && telemetryOffered() && <ConsentDialog onDone={(c) => ws.setSettings({ telemetryAsked: true, ...c })} />}

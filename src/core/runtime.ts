@@ -71,6 +71,8 @@ export function prepareContext(ctx: RunContext, req: RequestDef): PrepareContext
   return {
     collection: ctx.collection, environment: ctx.environment, globals: ctx.globals,
     folders: folderChain(ctx.folders, req.folderId), data: ctx.data ?? null, locals: ctx.locals ?? null,
+    // Until it's filed (move_request gives the new collection these), a handed copy still resolves its {{variables}}.
+    handoff: req.handoff?.variables ?? null,
   }
 }
 

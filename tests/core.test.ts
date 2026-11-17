@@ -4,7 +4,7 @@ import { interpolate, namesIn, scopeOf } from '../src/core/vars'
 import { FAKE } from '../src/core/fake'
 import { paramsFromUrl, parseQuery, splitUrl, urlWithParams, withScheme } from '../src/core/url'
 import { effectiveAuth, jsonProblem, pathVarNames, pathVarsFromUrl, prepare } from '../src/core/prepare'
-import { folderChain } from '../src/core/runtime'
+import { folderChain, prepareContext } from '../src/core/runtime'
 import { fromCurl, shellWords, toCurl } from '../src/core/curl'
 import { exportWorkspace, importFile } from '../src/core/backup'
 import { decodeBody, FetchTransport, SendError } from '../src/core/transport'
@@ -370,5 +370,15 @@ describe('diff', () => {
     const c = withContext(diffLines(a, b), 1)
     expect(c[0]).toEqual({ type: 'gap', count: 9 })
     expect(c.filter((x) => x.type !== 'gap').map((x) => (x as { text: string }).text)).toEqual(['l9', 'l10', 'L10', 'l11'])
+  })
+})
+
+describe('a request handed to the AI assistant', () => {
+  it('resolves its original collection’s variables until it is filed; its own collection’s win', () => {
+    const inbox = { ...newCollection('Inbox'), variables: [kv('region', 'eu')] }
+    const req = newRequest({ url: '{{base}}/items?r={{region}}', collectionId: inbox.id, handoff: { note: '', from: 'Shop/Items', at: 0, variables: [kv('base', 'https://shop.test'), kv('region', 'us')] } })
+    const sent = prepare(req, prepareContext({ collection: inbox, folders: [], environment: null, globals: [] }, req))
+    expect(sent.url).toBe('https://shop.test/items?r=eu')
+    expect(sent.unresolved).toEqual([])
   })
 })

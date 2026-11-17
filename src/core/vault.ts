@@ -80,6 +80,8 @@ export const secretsOf = {
   request: async (r: RequestDef, f: Fn): Promise<RequestDef> => ({
     ...r, auth: await auth(r.auth, f),
     headers: await Promise.all(r.headers.map(async (h) => (SENSITIVE_HEADER.test(h.key) ? { ...h, value: await f(h.value) } : h))),
+    // A request handed to the AI assistant carries its collection's variables, sealed like the collection's own.
+    ...(r.handoff?.variables ? { handoff: { ...r.handoff, variables: await vars(r.handoff.variables, f) } } : {}),
   }),
   globals: (g: KV[], f: Fn) => vars(g, f),
   history: async (h: HistoryEntry, f: Fn): Promise<HistoryEntry> => ({

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Collection, Folder, RequestDef } from '../core/types'
-import { bySort } from '../core/types'
+import { ASSISTANT_SPACE, bySort, spaceOf } from '../core/types'
+import { INBOX } from '../core/mcpWorkspace'
 import { statusTone, timeAgo } from '../core/format'
 import type { WorkspaceApi } from './useWorkspace'
 import { DND_TAB, type DragItem, carries, putItems, wantsCopy } from './dnd'
 import { Icon, type IconName } from './Icons'
+import { rowMenuItems, useContextMenu } from './ContextMenu'
 import type { ShareTarget } from '../core/share'
 
 type Tab = 'collections' | 'flows' | 'history' | 'environments'
@@ -12,6 +14,9 @@ type Tab = 'collections' | 'flows' | 'history' | 'environments'
 export interface SidebarDialogs {
   ask: (title: string, initial?: string) => Promise<string | null>
   confirm: (msg: string) => Promise<boolean>
+  /** Optional multi-line note ('' when empty, null when cancelled). */
+  askNote?: (title: string, hint: string, label: string, ok?: string) => Promise<string | null>
+  notify?: (msg: string) => void
   pickPlace: (title: string, current: { collectionId: string | null; folderId: string | null }) => Promise<{ collectionId: string | null; folderId: string | null } | null>
 }
 
@@ -52,6 +57,12 @@ function Menu({ label, items }: { label: string; items: [string, () => void, ('d
 
 export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman, onShare }: Props) {
   const { ask, confirm, pickPlace } = dialogs
+  const ctx = useContextMenu()
+  /** Right-click on a row opens that row's ⋯ menu at the pointer. */
+  const rowMenu = (e: React.MouseEvent) => {
+    const m = rowMenuItems(e.target)
+    if (m) ctx.open(e, m.items, m.label)
+  }
   const [tab, setTab] = useState<Tab>('collections')
   const [collapsed, setCollapsed] = useState(false)
   const [width, setWidth] = useState(savedWidth)
@@ -112,6 +123,17 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman, onSh
   })
   const toggle = (id: string) => setClosed((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
   const openTabIds = new Set(ws.tabs.map((t) => t.draft.id))
+  /** "Hand to AI assistant": desktop with the assistant's workspace on, for the user's own HTTP requests. */
+  const canHand = (r: RequestDef) => ws.settings.mcpHostWorkspace && r.protocol === 'http' && !!r.collectionId
+    && ws.allCollections.some((c) => c.id === r.collectionId && spaceOf(c) !== ASSISTANT_SPACE.id)
+  const handOver = async (r: RequestDef) => {
+    const note = dialogs.askNote
+      ? await dialogs.askNote(`Hand “${r.name}” to the AI assistant`, `A copy goes to the “${INBOX}” collection in the ${ASSISTANT_SPACE.name} workspace, with the auth it uses. Your request stays as it is. The assistant reviews the copy, fixes it up and files it in its workspace${ws.spaces.find((x) => x.id === ws.activeSpaceId)?.aiEdit ? ' (or this one)' : ''}.`, 'What should it do? (optional)', 'Hand over')
+      : ''
+    if (note === null) return
+    await ws.handToAssistant(r, note)
+    dialogs.notify?.(`Handed “${r.name}” to the AI assistant (${ASSISTANT_SPACE.name} → ${INBOX}). Ask it to review its inbox.`)
+  }
 
   const reqRow = (r: RequestDef) => (
     <li key={r.id} className={`row ${ws.draft.id === r.id && ws.view.kind === 'request' ? 'on' : ''} ${selected.has(r.id) ? 'selected' : ''} ${dropAt === `before:${r.id}` ? 'dropBefore' : ''}`}
@@ -120,6 +142,7 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman, onSh
       <button type="button" className="rowMain" title={`${r.name}\n${r.url}`} aria-pressed={selected.has(r.id) || undefined}
         onClick={(e) => { if (e.ctrlKey || e.metaKey) toggleSelect(r.id); else { setSelected(new Set()); ws.openRequest(r) } }}>
         {r.protocol === 'http' ? <Method m={r.method} /> : <span className="mtag m-proto">{({ ws: 'WS', mqtt: 'MQTT', grpc: 'gRPC', sse: 'SSE', socketio: 'SIO', mcp: 'MCP', browser: 'WEB' } as Record<string, string>)[r.protocol]}</span>}<span className="rowName">{r.name}</span>
+        {r.handoff && <span className="pill handoff" title={`Handed to the AI assistant${r.handoff.note ? `: ${r.handoff.note}` : ''}`}>to review</span>}
         {openTabIds.has(r.id) && ws.draft.id !== r.id && <span className="openDot" aria-label="open in a tab" />}
       </button>
       <Menu label={`More for ${r.name}`} items={[
@@ -127,6 +150,7 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman, onSh
         ['Duplicate', async () => ws.openRequest(await ws.duplicateRequest(r))],
         ['Move to…', async () => { const to = await pickPlace(`Move “${r.name}”`, r); if (to) await ws.moveRequest(r, to.collectionId, to.folderId) }],
         ['Load test…', () => ws.setView({ kind: 'load', requestId: r.id })],
+        ...(canHand(r) ? [['Hand to AI assistant…', () => void handOver(r)] as [string, () => void]] : []),
         ...(onShare && r.protocol === 'http' ? [['Share as HTML…', () => onShare({ kind: 'request', requestId: r.id })] as [string, () => void]] : []),
         ['Select', () => toggleSelect(r.id)],
         ['Delete', async () => { if (await confirm(`Delete “${r.name}”?`)) await ws.removeRequest(r.id) }, 'danger'],
@@ -171,7 +195,7 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman, onSh
   const loose = ws.requests.filter((r) => !r.collectionId && match(r)).sort(byName)
 
   return (
-    <aside className={`side ${collapsed ? 'collapsed' : ''}`} aria-label="Library" style={{ ['--side-w' as string]: `${width}px` }}>
+    <aside className={`side ${collapsed ? 'collapsed' : ''}`} aria-label="Library" style={{ ['--side-w' as string]: `${width}px` }} onContextMenu={rowMenu}>
       <nav className="rail" aria-label="Sections">
         <button type="button" className={`railBtn ${ws.view.kind === 'home' ? 'on' : ''}`} aria-current={ws.view.kind === 'home' ? 'page' : undefined} onClick={() => ws.setView({ kind: 'home' })}>
           <Icon name="home" /><span>Home</span>
@@ -345,6 +369,7 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman, onSh
             else if (e.key === 'End') { e.preventDefault(); setW(MAX_W) }
           }} />
       )}
+      {ctx.node}
     </aside>
   )
 }

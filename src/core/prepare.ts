@@ -13,11 +13,13 @@ export interface PrepareContext {
   data?: Record<string, string> | null
   /** Variables set by scripts for this run only. */
   locals?: Map<string, string> | null
+  /** A request handed to the AI assistant: its original collection's variables, under its current collection's. */
+  handoff?: KV[] | null
 }
 
-/** Variable lookup for a request, lowest priority first: globals, collection, environment, data row, locals. */
+/** Variable lookup for a request, lowest priority first: globals, hand-off, collection, environment, data row, locals. */
 export function scopeFor(ctx: PrepareContext): Map<string, string> {
-  const scope = scopeOf(ctx.globals, ctx.collection?.variables, ctx.environment?.variables)
+  const scope = scopeOf(ctx.globals, ctx.handoff ?? undefined, ctx.collection?.variables, ctx.environment?.variables)
   if (ctx.data) for (const [k, v] of Object.entries(ctx.data)) scope.set(k, v)
   if (ctx.locals) for (const [k, v] of ctx.locals) scope.set(k, v)
   return scope
