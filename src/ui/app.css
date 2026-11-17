@@ -110,6 +110,7 @@ button.icon:hover { color: var(--ink); background: var(--primary-soft); }
 .hstat { font: 700 11px var(--mono); }
 .hstat.good { color: var(--good); } .hstat.info { color: var(--info); } .hstat.warn { color: var(--warn); } .hstat.bad { color: var(--danger); }
 .pill { font-size: 10.5px; padding: 0 .45rem; border-radius: 99px; background: var(--good-soft); color: var(--good); }
+.pill.handoff { margin-left: auto; flex: none; background: var(--info-soft); color: var(--info); }
 
 /* Menus (details/summary) */
 .menu { position: relative; }
@@ -729,3 +730,15 @@ pre.out, .diff, .markdown pre { background: var(--sunken); border: 1px solid var
 .splitter:focus-visible { outline: none; }
 body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: none; }
 @media (prefers-reduced-motion: reduce) { .splitter::after { transition: none; } }
+
+/* Right-click menus (tabs, sidebar rows): on <body>, above everything. */
+.ctxMenu { position: fixed; z-index: 1000; min-width: 210px; padding: .3rem; border-radius: 12px; display: flex; flex-direction: column;
+  background: var(--surface-solid); border: 1px solid var(--outline); box-shadow: var(--shadow); font-size: 13px; }
+.ctxMenu button { display: flex; align-items: center; gap: 1rem; justify-content: space-between; text-align: left; padding: .38rem .6rem;
+  border: 0; border-radius: 7px; background: none; color: var(--ink); cursor: pointer; }
+.ctxMenu button:hover:not(:disabled), .ctxMenu button:focus-visible { background: var(--primary-soft); outline: none; }
+.ctxMenu button:disabled { color: var(--muted); cursor: default; opacity: .6; }
+.ctxMenu button.danger { color: var(--danger); }
+.ctxMenu button.danger:hover, .ctxMenu button.danger:focus-visible { background: var(--danger-soft); }
+.ctxMenu kbd { font: inherit; font-size: 11px; color: var(--muted); }
+.ctxSep { height: 1px; margin: .25rem .35rem; background: var(--outline); }

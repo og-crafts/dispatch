@@ -146,7 +146,7 @@ function McpHostSettings({ ws, notify, status }: { ws: WorkspaceApi; notify: (m:
       </label>
       <p className="muted small">{allowed.length ? `Only ${allowed.join(', ')} requests. Add POST to allow logins and other writes.` : 'Every method, including POST, PUT, PATCH and DELETE.'}</p>
       <label className="toggle"><input type="checkbox" checked={st.mcpHostWorkspace} onChange={(e) => ws.setSettings({ mcpHostWorkspace: e.target.checked })} /> Give them their own workspace to build requests in</label>
-      <p className="muted small">Assistants can create, change, copy and delete requests in a workspace called “{ASSISTANT_SPACE.name}”, and nowhere else. Your workspaces stay as they are. To keep something they made, open that workspace and use Move to on the collection. Sending still follows the methods above.</p>
+      <p className="muted small">Assistants can create, change, copy and delete requests in a workspace called “{ASSISTANT_SPACE.name}”, and nowhere else. Your workspaces stay as they are. To keep something they made, open that workspace and use Move to on the collection. To let them edit one of your workspaces too, tick “AI can edit” for it on the Workspaces page. To give them a request to work on, use Hand to AI assistant… in its menu: a copy goes to their Inbox with your note. Sending still follows the methods above.</p>
       {status.state === 'on' && <p className="small"><span className="pill">Listening on {url}</span></p>}
       {status.state === 'error' && <p className="warnLine small">{status.message}</p>}
       {st.mcpHostToken && <>

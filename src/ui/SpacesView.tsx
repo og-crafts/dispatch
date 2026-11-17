@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { DEFAULT_SPACE, type Space, spaceOf } from '../core/types'
+import { ASSISTANT_SPACE, DEFAULT_SPACE, type Space, spaceOf } from '../core/types'
 import type { WorkspaceApi } from './useWorkspace'
 
 /** Add, rename and remove workspaces (groups of collections, environments and flows), and link them to folders. */
@@ -12,6 +12,13 @@ export function SpacesView({ ws, ask, confirm, notify }: { ws: WorkspaceApi; ask
     try { const m = await fn(); if (m) notify(m) } catch (e) { notify(String(e)) } finally { setBusy(false) }
   }
   const dirs = () => import('./linkedDirs')
+  // MCP assistants run in the desktop app; the column shows once their own workspace is on (Settings → AI assistants).
+  const showAi = desktop && ws.settings.mcpHostWorkspace
+  const toggleAi = (x: Space) => run(async () => {
+    if (!x.aiEdit && !await confirm(`Let AI assistants create, change, move and remove requests in “${x.name}”? It applies while “${x.name}” is the open workspace. Anything they remove goes to the trash, so you can undo it.`)) return
+    await ws.setSpaceAi(x.id, !x.aiEdit)
+    return x.aiEdit ? `AI assistants can only list and send in “${x.name}” again.` : `AI assistants can now edit “${x.name}” while it’s open.`
+  })
   const link = (x: Space) => run(async () => {
     const { desktopFolders, linkSpace } = await dirs()
     const dir = await desktopFolders.pick(); if (!dir) return
@@ -39,7 +46,7 @@ export function SpacesView({ ws, ask, confirm, notify }: { ws: WorkspaceApi; ask
       <h1 className="titleInput">Workspaces</h1>
       <p className="muted small">Group collections, environments and flows, e.g. one workspace per product or client. Switch from the top bar. Globals and history are shared by all workspaces. To move a collection or environment, use its ⋯ menu.</p>
       <table className="resultTable" aria-label="Workspaces list">
-        <thead><tr><th>Name</th><th>Collections</th><th>Environments</th><th>Flows</th><th>Folder</th><th /></tr></thead>
+        <thead><tr><th>Name</th><th>Collections</th><th>Environments</th><th>Flows</th><th>Folder</th>{showAi && <th title="MCP assistants may create, change and delete requests here">AI can edit</th>}<th /></tr></thead>
         <tbody>
           {ws.spaces.map((x) => {
             const cols = ws.allCollections.filter((c) => spaceOf(c) === x.id).length
@@ -66,6 +73,11 @@ export function SpacesView({ ws, ask, confirm, notify }: { ws: WorkspaceApi; ask
                       : st ? <p className="muted">In step with the folder.</p> : null}
                   </> : <span className="muted">—</span>}
                 </td>
+                {showAi && <td>
+                  {x.id === ASSISTANT_SPACE.id
+                    ? <span className="muted small">Its own</span>
+                    : <label className="check"><input type="checkbox" checked={!!x.aiEdit} disabled={busy} onChange={toggleAi(x)} aria-label={`AI assistants can edit ${x.name}`} /></label>}
+                </td>}
                 <td className="rowActions">
                   {x.id !== ws.activeSpaceId && <button type="button" className="btn small" onClick={() => ws.switchSpace(x.id)}>Open</button>}
                   <button type="button" className="btn small ghost" onClick={async () => { const n = await ask('Rename workspace', x.name); if (n) await ws.renameSpace(x.id, n) }}>Rename</button>
@@ -92,6 +104,7 @@ export function SpacesView({ ws, ask, confirm, notify }: { ws: WorkspaceApi; ask
           return openSpaceFolder(ws, desktopFolders, dir, confirm)
         })}>Open a workspace folder…</button>}
       </div>
+      {showAi && <p className="muted small"><b>AI can edit</b>: besides their own “{ASSISTANT_SPACE.name}” workspace, AI assistants may create, change, move and delete requests in a ticked workspace while it’s the open one. Unticked workspaces stay list-and-send.</p>}
       <p className="muted small">
         {desktop
           ? <>A workspace linked to a folder is kept there as plain files, one per request, environment and flow, ready for git. Secret values, history and schedules stay on this device. If a file changes outside Dispatch (an editor, <code>git pull</code>), Dispatch leaves it alone and asks which version to keep.</>

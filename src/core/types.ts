@@ -133,6 +133,18 @@ export interface RequestDef {
   /** Position among its siblings (requests and folders share one order); ties sort by name. */
   sort: number
   updatedAt: number
+  /** Handed to the AI assistant from the app ("Hand to AI assistant…"): waiting for it to review and file. */
+  handoff?: Handoff
+}
+
+/** A request the user handed to the AI assistant, with what they asked for and where it came from. */
+export interface Handoff {
+  note: string
+  /** The original's path, like "Shop/Orders/Items". */
+  from: string
+  at: number
+  /** The original collection's variables, given to the collection the assistant files it in when that is new. */
+  variables?: KV[]
 }
 
 export interface Folder {
@@ -167,6 +179,8 @@ export interface Space {
    * unique id for its folder; other workspaces use their own id.
    */
   folderId?: string
+  /** MCP assistants may create, change and delete requests here too, not just in ASSISTANT_SPACE (desktop Settings). */
+  aiEdit?: boolean
 }
 export const folderIdOf = (s: Space) => s.folderId ?? s.id
 export const DEFAULT_SPACE: Space = { id: 'default', name: 'My workspace' }

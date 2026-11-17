@@ -226,3 +226,168 @@ describe('MCP assistant workspace setting', () => {
     expect(setSettings).toHaveBeenCalledWith({ mcpHostWorkspace: true })
   })
 })
+
+/** Requests the user hands over, get_request, filing with move_request, and workspaces the user lets it edit. */
+describe('MCP assistant inbox and editable workspaces', () => {
+  const shop = { ...newCollection('Shop'), workspaceId: 'w1', auth: { ...newCollection().auth, kind: 'bearer' as const, token: 'sk-live-123456789' }, variables: [kv('base', 'https://shop.test'), kv('apiToken', 'abc123secret')] }
+  const orders = newFolder(shop.id, 'Orders')
+  const items = newRequest({ name: 'Items', url: '{{base}}/items?api_key=zzz999', collectionId: shop.id, folderId: orders.id, headers: [kv('Authorization', 'Bearer abcdefghijkl'), kv('X-Trace', '1')] })
+  const inbox = { ...newCollection('Inbox'), workspaceId: ASSISTANT_SPACE.id }
+  const handed = newRequest({
+    name: 'Login', method: 'POST', url: 'https://qa.shop.test/login', collectionId: inbox.id,
+    auth: { ...newCollection().auth, kind: 'bearer' as const, token: '{{tok}}' },
+    body: { ...newRequest().body, kind: 'json', text: '{"user":"me","password":"hunter2"}' },
+    handoff: { note: 'make the host a variable', from: 'Shop/Login', at: Date.UTC(2026, 10, 17, 9, 30), variables: [kv('base', 'https://shop.test')] },
+  })
+  const transport: Transport = { label: 'test', unrestricted: true, send: async () => ({ status: 200, statusText: 'OK', headers: [], body: '{}', binary: false, size: 2, timeMs: 1 }) }
+  const setup = (editable = false) => {
+    const saved: AssistantChanges[] = []
+    const removed: string[][] = []
+    const o = {
+      ws: { source: 'dispatch' as const, collections: [shop], folders: [orders], requests: [items, handed], environments: [], flows: [], warnings: [] },
+      environment: null, globals: [], settings: defaultSettings, transport, pipeline: {}, allowMethods: [], version: 'test', allCollections: true,
+      workspace: {
+        collections: [inbox], save: async (c: AssistantChanges) => { saved.push(c) }, remove: async (ids: string[]) => { removed.push(ids) },
+        ...(editable ? { editable: { name: 'Work', workspaceId: 'w1', collections: [shop] } } : {}),
+      },
+    }
+    const call = (name: string, args: object) => handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, o)
+    const tools = async () => (await handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, o)).result.tools as { name: string; description: string }[]
+    const init = async () => (await handleMcp({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }, o)).result.instructions as string
+    return { call, tools, init, saved, removed }
+  }
+  const txt = (r: any) => r.result.content[0].text as string
+
+  it('flags handed-over requests in list_requests and the instructions', async () => {
+    const { call, init } = setup()
+    const list = txt(await call('list_requests', {}))
+    expect(list.split('\n')[0]).toContain('handed you 1 request')
+    expect(list).toContain('POST   assistant/Inbox/Login  https://qa.shop.test/login  ← handed to you: make the host a variable')
+    expect(list).not.toMatch(/Items.*handed/)
+    expect(await init()).toContain('handed you 1 request in assistant/Inbox')
+  })
+
+  it('get_request shows a request in full with secrets hidden', async () => {
+    const { call } = setup()
+    const user = txt(await call('get_request', { name: 'Shop/Orders/Items' }))
+    expect(user).toContain('GET Shop/Orders/Items')
+    expect(user).toContain('Auth: bearer (inherited) — token: <hidden>')
+    expect(user).toContain('Authorization: Bearer <hidden>')
+    expect(user).toContain('X-Trace: 1')
+    expect(user).toContain('api_key=<hidden>')
+    expect(user).toContain('base = https://shop.test, apiToken = <hidden>')
+    for (const secret of ['sk-live', 'abcdefghijkl', 'zzz999', 'abc123secret']) expect(user).not.toContain(secret)
+    const mine = txt(await call('get_request', { name: 'assistant/Inbox/Login' }))
+    expect(mine).toContain('"password":"<hidden>"')
+    expect(mine).not.toContain('hunter2')
+    expect(mine).toContain('token: {{tok}}')
+    expect(mine).toContain('from “Shop/Login”, asking: make the host a variable')
+  })
+
+  it('refuses to write a hidden value back', async () => {
+    const { call, saved } = setup()
+    const r = await call('update_request', { name: 'assistant/Inbox/Login', body: '{"user":"me","password":"<hidden>"}' })
+    expect(r.result.isError).toBe(true)
+    expect(txt(r)).toContain('can’t be saved')
+    expect(saved).toEqual([])
+  })
+
+  it('files a handed-over request with move_request: new collection gets the variables, flag cleared', async () => {
+    const { call, saved } = setup()
+    await call('update_request', { name: 'assistant/Inbox/Login', url: '{{base}}/login' })
+    expect(saved[0].requests[0].handoff).toBeDefined()
+    const r = await call('move_request', { name: 'assistant/Inbox/Login', to: 'assistant/Shop/Auth', newName: 'Sign in' })
+    expect(txt(r)).toContain('Moved assistant/Inbox/Login to assistant/Shop/Auth/Sign in')
+    const c = saved[1]
+    expect(c.collections[0]).toMatchObject({ name: 'Shop', workspaceId: ASSISTANT_SPACE.id })
+    expect(c.collections[0].variables.map((v) => v.key)).toEqual(['base'])
+    expect(c.requests[0]).toMatchObject({ id: handed.id, name: 'Sign in', collectionId: c.collections[0].id, folderId: c.folders[0].id })
+    expect(c.requests[0].handoff).toBeUndefined()
+    expect(c.requests[0].body.text).toContain('hunter2')
+  })
+
+  it('update_request reviewed:true clears the flag in place', async () => {
+    const { call, saved } = setup()
+    expect(txt(await call('update_request', { name: 'assistant/Inbox/Login', reviewed: true }))).toContain('marked reviewed')
+    expect(saved[0].requests[0].handoff).toBeUndefined()
+  })
+
+  it('without edit access the user’s workspace stays list-and-send', async () => {
+    const { call, saved } = setup()
+    expect((await call('move_request', { name: 'Shop/Orders/Items', to: 'assistant/X' })).result.isError).toBe(true)
+    expect(txt(await call('set_variables', { collection: 'Shop', variables: { a: '1' } }))).toContain('can’t change')
+    expect(saved).toEqual([])
+  })
+
+  it('with edit access it writes to the open workspace by plain paths, and says so', async () => {
+    const { call, tools, init, saved, removed } = setup(true)
+    expect((await tools()).find((t) => t.name === 'create_request')!.description).toContain('the user’s workspace “Work”')
+    expect(await init()).toContain('you may also change the user’s workspace “Work”')
+    await call('create_request', { folder: 'Shop/Orders', name: 'Add', url: '{{base}}/items' })
+    expect(saved[0].collections).toEqual([])
+    expect(saved[0].requests[0]).toMatchObject({ collectionId: shop.id, folderId: orders.id })
+    expect(txt(await call('update_request', { name: 'Shop/Orders/Items', url: '{{base}}/items/v2' }))).toContain('Updated Shop/Orders/Items (URL)')
+    expect(saved[1].requests[0]).toMatchObject({ id: items.id, url: '{{base}}/items/v2' })
+    await call('create_request', { folder: 'Billing', name: 'Invoices', url: 'https://b.test' })
+    expect(saved[2].collections[0]).toMatchObject({ name: 'Billing', workspaceId: 'w1' })
+    expect(txt(await call('set_variables', { collection: 'Shop', variables: { base: 'https://v2.shop.test', region: 'eu' }, remove: ['apiToken'] }))).toContain('Collection Shop: set base, region; removed apiToken')
+    expect(saved[3].collections[0].variables.map((v) => [v.key, v.value])).toEqual([['base', 'https://v2.shop.test'], ['region', 'eu']])
+    // Filing a handed-over request into the user's workspace.
+    expect(txt(await call('move_request', { name: 'assistant/Inbox/Login', to: 'Shop/Orders' }))).toContain('to Shop/Orders/Login')
+    expect(saved[4].requests[0]).toMatchObject({ collectionId: shop.id, folderId: orders.id })
+    await call('delete_request', { name: 'Shop/Orders/Items' })
+    expect(removed).toEqual([[items.id]])
+    // The assistant workspace still works by its prefix.
+    await call('create_request', { folder: 'assistant/Lab', name: 'Ping', url: 'https://lab.test' })
+    expect(saved[5].collections[0]).toMatchObject({ name: 'Lab', workspaceId: ASSISTANT_SPACE.id })
+  })
+})
+
+/** Scripts: a request's own with update_request, a folder's or collection's with set_scripts. */
+describe('MCP assistant scripts', () => {
+  const lab = { ...newCollection('Lab'), workspaceId: ASSISTANT_SPACE.id, scripts: { pre: '', post: 'pm.test("ok", () => {})' } }
+  const admin = { ...newFolder(lab.id, 'Admin'), scripts: { pre: 'pm.variables.set("t", "Bearer abcdefghijkl")', post: '' } }
+  const probe = newRequest({ name: 'Probe', url: 'https://lab.test/p', collectionId: lab.id, folderId: admin.id, scripts: { pre: 'console.log(1)', post: '' } })
+  const shop = newCollection('Shop')
+  const setup = () => {
+    const saved: AssistantChanges[] = []
+    const transport: Transport = { label: 'test', unrestricted: true, send: async () => ({ status: 200, statusText: 'OK', headers: [], body: '{}', binary: false, size: 2, timeMs: 1 }) }
+    const o = {
+      ws: { source: 'dispatch' as const, collections: [shop], folders: [admin], requests: [probe], environments: [], flows: [], warnings: [] },
+      environment: null, globals: [], settings: defaultSettings, transport, pipeline: {}, allowMethods: [], version: 'test', allCollections: true,
+      workspace: { collections: [lab], save: async (c: AssistantChanges) => { saved.push(c) }, remove: async () => {} },
+    }
+    const call = (name: string, args: object) => handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, o)
+    return { call, saved }
+  }
+  const txt = (r: any) => r.result.content[0].text as string
+
+  it('get_request shows its own scripts and the ones its folder and collection add', async () => {
+    const t = txt(await setup().call('get_request', { name: 'assistant/Lab/Admin/Probe' }))
+    expect(t).toContain('Pre-request script:\nconsole.log(1)')
+    expect(t).toContain('Folder “Admin” pre-request script (runs too):\npm.variables.set("t", "Bearer <hidden>")')
+    expect(t).toContain('Collection “Lab” tests script (runs too):\npm.test("ok", () => {})')
+  })
+
+  it('update_request and create_request set a request’s scripts', async () => {
+    const { call, saved } = setup()
+    expect(txt(await call('update_request', { name: 'assistant/Lab/Admin/Probe', testScript: 'pm.test("200", () => pm.response.to.have.status(200))' }))).toContain('(tests script)')
+    expect(saved[0].requests[0].scripts).toEqual({ pre: 'console.log(1)', post: 'pm.test("200", () => pm.response.to.have.status(200))' })
+    await call('update_request', { name: 'assistant/Lab/Admin/Probe', preRequestScript: '' })
+    expect(saved[1].requests[0].scripts.pre).toBe('')
+    await call('create_request', { folder: 'assistant/Lab', name: 'New', url: 'https://lab.test/n', preRequestScript: 'pm.variables.set("a", 1)' })
+    expect(saved[2].requests[0].scripts).toEqual({ pre: 'pm.variables.set("a", 1)', post: '' })
+    expect((await call('update_request', { name: 'assistant/Lab/Admin/Probe', preRequestScript: 'x("<hidden>")' })).result.isError).toBe(true)
+  })
+
+  it('set_scripts changes a folder’s or collection’s scripts, never the user’s', async () => {
+    const { call, saved } = setup()
+    expect(txt(await call('set_scripts', { path: 'assistant/Lab/Admin', testScript: 'pm.test("a", () => {})' }))).toContain('Folder assistant/Lab/Admin: updated the tests script')
+    expect(saved[0].folders[0]).toMatchObject({ id: admin.id, scripts: { pre: admin.scripts.pre, post: 'pm.test("a", () => {})' } })
+    expect(txt(await call('set_scripts', { path: 'assistant/Lab', preRequestScript: 'console.log(2)' }))).toContain('Collection assistant/Lab: updated the pre-request script')
+    expect(saved[1].collections[0]).toMatchObject({ id: lab.id, scripts: { pre: 'console.log(2)', post: lab.scripts.post } })
+    expect((await call('set_scripts', { path: 'assistant/Lab/Nope', testScript: 'x' })).result.isError).toBe(true)
+    expect(txt(await call('set_scripts', { path: 'Shop', testScript: 'x' }))).toContain('can’t change')
+    expect(saved).toHaveLength(2)
+  })
+})

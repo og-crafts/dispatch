@@ -88,7 +88,7 @@ describe('dispatch-run', () => {
     const c = new McpClient(wire)
     await c.initialize()
     expect(c.serverInfo.name).toBe('dispatch')
-    expect((await c.listTools()).map((t) => t.name)).toEqual(['list_requests', 'send_request', 'run_collection'])
+    expect((await c.listTools()).map((t) => t.name)).toEqual(['list_requests', 'get_request', 'send_request', 'run_collection'])
     expect((await c.callTool('list_requests', {})).content[0].text).toMatch(/GET\s+ok\s+\{\{base\}\}\/ok/)
     const sent = await c.callTool('send_request', { name: 'ok' })
     expect(sent.isError).toBeUndefined()

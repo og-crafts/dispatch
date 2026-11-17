@@ -15,6 +15,8 @@ import { WorkerEngine } from '../core/workerEngine'
 import { type Flow, type FlowRun, type FlowStep, newFlow, runFlow } from '../core/flows'
 import { FAKE } from '../core/fake'
 import { authPipeline } from '../core/auth'
+import { effectiveAuth } from '../core/prepare'
+import { INBOX } from '../core/mcpWorkspace'
 
 /** A linked folder's last sync: files changed outside the app that it left alone, or an error. */
 export interface FolderStatus { conflicts: string[]; error?: string; at: number }
@@ -234,6 +236,31 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   }, [activeId])
 
   const selectTab = useCallback((id: string) => { setActiveId(id); setView({ kind: 'request' }) }, [])
+  /** Closes several tabs at once (the tab menu's Close others / to the right / all); keeps one tab open. */
+  const closeTabs = useCallback((ids: string[]) => {
+    for (const id of ids) aborts.current.get(id)?.abort()
+    setTabs((ts) => {
+      const rest = ts.filter((t) => !ids.includes(t.id))
+      if (!rest.length) { const t = newTab(); setActiveId(t.id); return [t] }
+      if (ids.includes(activeId)) {
+        // The nearest tab to the left of the active one that stays, else the first.
+        const i = ts.findIndex((t) => t.id === activeId)
+        const left = ts.slice(0, i).reverse().find((t) => !ids.includes(t.id))
+        setActiveId((left ?? rest[0]).id)
+      }
+      return rest
+    })
+  }, [activeId])
+  /** Opens a copy of a tab's request, with its unsaved edits, as a new unsaved request right after it. */
+  const duplicateTab = useCallback((id: string) => {
+    setTabs((ts) => {
+      const i = ts.findIndex((t) => t.id === id)
+      if (i < 0) return ts
+      const tab = newTab({ ...structuredClone(ts[i].draft), id: uid(), name: `${ts[i].draft.name} copy`, updatedAt: Date.now() })
+      setActiveId(tab.id); setView({ kind: 'request' })
+      return [...ts.slice(0, i + 1), tab, ...ts.slice(i + 1)]
+    })
+  }, [])
 
   const persistRequest = useCallback(async (r: RequestDef) => {
     await db.putRequest(r)
@@ -542,15 +569,26 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
       if (settingsRef.current.activeEnvId === id) setSettings({ activeEnvId: null })
     }
   }, [collections, environments, updateCollection, updateEnvironment, setSettings])
+  /** Lets MCP assistants create, change and delete requests in a workspace of the user's too (or stops it). */
+  const setSpaceAi = useCallback(async (id: string, on: boolean) => {
+    await saveSpaces(spacesRef.current.map((x) => (x.id === id ? { ...x, aiEdit: on || undefined } : x)))
+  }, [saveSpaces])
+  /** Workspaces MCP assistants may write to: their own, and the user's that allow it. */
+  const aiSpaces = () => new Set([ASSISTANT_SPACE.id, ...spacesRef.current.filter((x) => x.aiEdit).map((x) => x.id)])
   /**
-   * Saves what an MCP assistant made or changed in its own workspace, adding that workspace the first time.
-   * Only items in the assistant workspace are written; anything else is ignored.
+   * Saves what an MCP assistant made or changed in its own workspace (added the first time) or in a workspace the
+   * user lets it edit. Anything elsewhere is ignored.
    */
   const collectionsRef = useRef(collections); collectionsRef.current = collections
   const saveAssistant = useCallback(async (c: { collections: Collection[]; folders: Folder[]; requests: RequestDef[] }) => {
     if (!spacesRef.current.some((x) => x.id === ASSISTANT_SPACE.id)) await saveSpaces([...spacesRef.current, ASSISTANT_SPACE])
-    const cols = c.collections.filter((x) => x.workspaceId === ASSISTANT_SPACE.id)
-    const ok = new Set([...collectionsRef.current.filter((x) => spaceOf(x) === ASSISTANT_SPACE.id).map((x) => x.id), ...cols.map((x) => x.id)])
+    const allowed = aiSpaces()
+    // An existing collection keeps its workspace whatever the assistant sends.
+    const cols = c.collections.filter((x) => {
+      const cur = collectionsRef.current.find((y) => y.id === x.id)
+      return cur ? allowed.has(spaceOf(cur)) && spaceOf(x) === spaceOf(cur) : allowed.has(spaceOf(x))
+    })
+    const ok = new Set([...collectionsRef.current.filter((x) => allowed.has(spaceOf(x))).map((x) => x.id), ...cols.map((x) => x.id)])
     const fs = c.folders.filter((f) => ok.has(f.collectionId))
     const rs = c.requests.filter((r) => r.collectionId && ok.has(r.collectionId))
     for (const x of cols) await db.putCollection(x)
@@ -561,6 +599,28 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     if (fs.length) setFolders((xs) => upsert(xs, fs))
     if (rs.length) setRequests((xs) => upsert(xs, rs))
   }, [saveSpaces])
+  /**
+   * "Hand to AI assistant": a copy of a saved request goes to the assistant's Inbox with the user's note, for it to
+   * review and file (core/mcpWorkspace.ts). The copy takes the auth it inherited; the original stays as it is.
+   */
+  const handToAssistant = useCallback(async (r: RequestDef, note: string) => {
+    const col = collectionsRef.current.find((x) => x.id === r.collectionId) ?? null
+    const chain = folderChain(folders, r.folderId)
+    let inbox = collectionsRef.current.find((x) => spaceOf(x) === ASSISTANT_SPACE.id && x.name === INBOX)
+    const made = inbox ? [] : [inbox = { ...newCollection(INBOX), workspaceId: ASSISTANT_SPACE.id }]
+    const taken = new Set(requests.filter((x) => x.collectionId === inbox!.id).map((x) => x.name))
+    let name = r.name
+    for (let i = 2; taken.has(name); i++) name = `${r.name} (${i})`
+    const auth = r.auth.kind === 'inherit' ? effectiveAuth(r, col, chain) : null
+    const copy: RequestDef = {
+      ...structuredClone(r), id: uid(), name, collectionId: inbox.id, folderId: null, updatedAt: Date.now(),
+      sort: Math.max(0, ...requests.filter((x) => x.collectionId === inbox!.id).map((x) => x.sort)) + 1,
+      auth: auth ? structuredClone(auth) : r.auth,
+      handoff: { note: note.trim(), from: [col?.name ?? 'Unsaved', ...[...chain].reverse().map((f) => f.name), r.name].join('/'), at: Date.now(), variables: col?.variables.length ? structuredClone(col.variables) : undefined },
+    }
+    await saveAssistant({ collections: made, folders: [], requests: [copy] })
+    return copy
+  }, [folders, requests, saveAssistant])
 
   /**
    * Moves requests and folders under a parent (a collection's top level, or a folder), placed before `beforeId`
@@ -704,6 +764,12 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     if (gone.length) toTrash(gone.length === 1 ? `“${gone[0].name}”` : `${gone.length} requests`, { requests: gone })
   }, [requests, toTrash])
 
+  /** Deletes requests for an MCP assistant, only where it may write; they go to the trash so the user can undo. */
+  const removeForAssistant = useCallback(async (ids: string[]) => {
+    const allowed = aiSpaces()
+    const ok = new Set(collectionsRef.current.filter((x) => allowed.has(spaceOf(x))).map((x) => x.id))
+    await removeRequests(ids.filter((id) => requests.some((r) => r.id === id && r.collectionId && ok.has(r.collectionId))))
+  }, [requests, removeRequests])
   /** Puts back the most recent delete. */
   const undoDelete = useCallback(async () => {
     const last = trash[trash.length - 1]
@@ -733,7 +799,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   return {
     trash, undoDelete, backups, backupNow, restoreBackup, placeItems, copyItems, saveTabTo, removeRequests, replaceCollection,
     flows: visibleFlows, allFlows: flows, addFlow, updateFlow, duplicateFlow, removeFlow, runFlowNow,
-    spaces, activeSpaceId, switchSpace, addSpace, addSpaceFrom, setSpaceFolder, setSpaceFolderId, renameSpace, removeSpace, moveToSpace,
+    spaces, activeSpaceId, switchSpace, addSpace, addSpaceFrom, setSpaceFolder, setSpaceFolderId, renameSpace, removeSpace, moveToSpace, setSpaceAi,
     replaceSpaceContents, folderStatus, setFolderStatus,
     /** Everything, across workspaces (exports, backups, file sync). The plain lists below are this workspace's. */
     allCollections: collections, allEnvironments: environments,
@@ -741,8 +807,8 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     recordHistory,
     tabs: shownTabs, activeId: active.id, active, draft, view, result: active.result, sending: active.sending, saved, dirty, isDirty,
     collection, environment, prepared, chain, runContext, pipeline: pipelineRef, variableNames,
-    setDraft, setView, setSettings, setLogs, log, openRequest, startNew, closeTab, selectTab, saveDraft, saveDraftAs, renameRequest,
-    moveRequest, removeRequest, duplicateRequest, saveAssistant, send, cancel, applyChanges, applyAuthUpdate, openHistory, clearHistory,
+    setDraft, setView, setSettings, setLogs, log, openRequest, startNew, closeTab, closeTabs, duplicateTab, selectTab, saveDraft, saveDraftAs, renameRequest,
+    moveRequest, removeRequest, duplicateRequest, saveAssistant, removeForAssistant, handToAssistant, send, cancel, applyChanges, applyAuthUpdate, openHistory, clearHistory,
     addCollection, updateCollection, removeCollection, addFolder, updateFolder, removeFolder,
     addEnvironment, updateEnvironment, removeEnvironment, duplicateEnvironment, setGlobals, importWorkspace,
   }

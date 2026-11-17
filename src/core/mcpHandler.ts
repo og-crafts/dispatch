@@ -1,6 +1,7 @@
 /**
  * The MCP tools Dispatch offers to AI assistants: list_requests, send_request, run_collection, and run_flow when
- * there are flows; with the assistant's own workspace on (desktop), also create/update/copy/delete_request there
+ * there are flows, and get_request; with the assistant's own workspace on (desktop), also create/update/copy/move/
+ * delete_request and set_variables there, and in the open workspace when the user lets assistants edit it
  * (mcpWorkspace.ts). Transport-free (one JSON-RPC message in, one reply out), so the same handler serves
  * `dispatch-run mcp` over stdio and the desktop app's local MCP endpoint over HTTP.
  */
@@ -11,7 +12,7 @@ import { type Execution, type Pipeline, type RunContext, execute, sendOptions } 
 import { collectItems, failed, runCollection, type RunItem, type RunSummary } from './runner'
 import { type Flow, type FlowRun, runFlow } from './flows'
 import type { ScriptEngine } from './scriptPipeline'
-import { ASSISTANT_PREFIX, type AssistantWorkspace, WORKSPACE_TOOL_NAMES, workspaceCall, workspaceTools } from './mcpWorkspace'
+import { ASSISTANT_PREFIX, type AssistantWorkspace, describeRequest, getRequestTool, INBOX, WORKSPACE_TOOL_NAMES, workspaceCall, workspaceTools } from './mcpWorkspace'
 
 export interface McpServeOptions {
   ws: ImportResult
@@ -40,13 +41,14 @@ export interface McpServeOptions {
 
 const BODY_LIMIT = 20_000
 
-export function mcpTools(flowNames: string[] = [], multi = false, ownWorkspace = false) {
+export function mcpTools(flowNames: string[] = [], multi = false, ownWorkspace = false, editable?: string) {
   return [
     {
       name: 'list_requests',
-      description: `List the saved requests${multi ? ' in every collection' : ' in this collection'}: their names, folders, methods and URLs (with {{variables}}).${ownWorkspace ? ' Paths starting with "assistant/" are in your own workspace, where you can create, change and delete; the rest are the user\u2019s, which you can only send.' : ''}`,
+      description: `List the saved requests${multi ? ' in every collection' : ' in this collection'}: their names, folders, methods and URLs (with {{variables}}).${ownWorkspace ? ` Paths starting with "assistant/" are in your own workspace, where you can create, change and delete; ${editable ? `the rest are in the user\u2019s workspace \u201c${editable}\u201d, which they let you edit too` : 'the rest are the user\u2019s, which you can only send'}. Requests marked \u201chanded to you\u201d are ones the user gave you to review and file.` : ''}`,
       inputSchema: { type: 'object', properties: {} },
     },
+    getRequestTool(),
     {
       name: 'send_request',
       description: 'Send one saved request (with its auth, scripts and tests) and return the status, headers, body and test results.',
@@ -76,7 +78,7 @@ export function mcpTools(flowNames: string[] = [], multi = false, ownWorkspace =
       description: `Run a flow (requests chained with conditions and loops) and return each step. Flows: ${flowNames.join(', ')}.`,
       inputSchema: { type: 'object', properties: { name: { type: 'string', enum: flowNames, description: 'The flow to run.' } }, required: ['name'] },
     }] : []),
-    ...(ownWorkspace ? workspaceTools() : []),
+    ...(ownWorkspace ? workspaceTools(editable) : []),
   ]
 }
 
@@ -103,22 +105,31 @@ export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | nul
     return { it, path: pathOf(it) }
   }
   const canFlow = !!(o.engine || o.hooks?.runFlow)
+  const editable = multi ? o.workspace?.editable?.name : undefined
+  const handed = () => items().filter((it) => it.request.handoff)
   switch (msg.method) {
     case 'initialize':
       return reply({
         protocolVersion: msg.params?.protocolVersion ?? '2025-06-18',
         capabilities: { tools: {} },
         serverInfo: { name: 'dispatch', version: o.version },
-        instructions: `${multi ? `Requests from Dispatch (collections: ${cols.map((c) => `“${c.name}”`).join(', ') || 'none'})` : `Requests from the Dispatch collection “${col?.name ?? '(none)'}”`}${o.environment ? ` with environment “${o.environment.name}”` : ''}. Use list_requests to see what's there.${own.length || (multi && o.workspace) ? ' You also have your own workspace (paths starting with "assistant/") where you can create, change, copy and delete requests; the user\u2019s requests can only be listed and sent, and the user moves what they want to keep.' : ''}`,
+        instructions: `${multi ? `Requests from Dispatch (collections: ${cols.map((c) => `“${c.name}”`).join(', ') || 'none'})` : `Requests from the Dispatch collection “${col?.name ?? '(none)'}”`}${o.environment ? ` with environment “${o.environment.name}”` : ''}. Use list_requests to see what's there, and get_request to look at one in full.${multi && o.workspace ? ` You also have your own workspace (paths starting with "assistant/") where you can create, change, copy, move and delete requests; ${editable ? `you may also change the user\u2019s workspace \u201c${editable}\u201d (paths without a prefix), and the user\u2019s other requests can only be listed and sent` : 'the user\u2019s requests can only be listed and sent, and the user moves what they want to keep'}.${handed().length ? ` The user handed you ${handed().length} request${handed().length > 1 ? 's' : ''} in assistant/${INBOX} to review: look at each with get_request, fix it, and file it with move_request.` : ''}` : ''}`,
       })
     case 'ping': return reply({})
-    case 'tools/list': return reply({ tools: mcpTools(canFlow ? (o.ws.flows ?? []).map((f) => f.name) : [], multi, !!(multi && o.workspace)) })
+    case 'tools/list': return reply({ tools: mcpTools(canFlow ? (o.ws.flows ?? []).map((f) => f.name) : [], multi, !!(multi && o.workspace), editable) })
     case 'tools/call': {
       const name = msg.params?.name
       const args = msg.params?.arguments ?? {}
       if (name === 'list_requests') {
-        const list = items().map((it) => `${it.request.method.padEnd(6)} ${pathOf(it)}  ${it.request.url}`)
-        return text(list.length ? list.join('\n') : 'No requests.')
+        const list = items().map((it) => `${it.request.method.padEnd(6)} ${pathOf(it)}  ${it.request.url}${it.request.handoff ? `  ← handed to you${it.request.handoff.note ? `: ${it.request.handoff.note}` : ''}` : ''}`)
+        const n = handed().length
+        const head = n ? `The user handed you ${n} request${n > 1 ? 's' : ''} to review (marked below): get_request, fix, then move_request to file ${n > 1 ? 'them' : 'it'}.\n\n` : ''
+        return text(list.length ? head + list.join('\n') : 'No requests.')
+      }
+      if (name === 'get_request') {
+        const found = lookup(String(args.name ?? ''))
+        if ('error' in found) return text(found.error, true)
+        return text(describeRequest(found, { allCollections: [...cols, ...own], folders: o.ws.folders }))
       }
       if (name === 'send_request') {
         const found = lookup(String(args.name ?? ''))
