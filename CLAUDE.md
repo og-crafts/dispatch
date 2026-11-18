@@ -197,7 +197,12 @@ Afterwards stop the exe, unregister the task, and delete `%LOCALAPPDATA%\cloud.o
 install starts clean. **Wait until no `msedgewebview2.exe` with `cloud.ogcrafts.dispatch` in its command line is left
 before deleting** (they outlive a `taskkill` of the exe for a few seconds). On 2026-11-17 the first launch after such
 a cleanup started WebView2 40 s late and a minute later ran on an empty database (data imported meanwhile was gone);
-a clean cold start did not repeat it. Unexplained; watch for it.
+a clean cold start did not repeat it. Seen again 2026-11-18: the first launch of a freshly unpacked build started
+two `dispatch.exe` 5–6 s apart, both stalled about 40 s, and one exited as the other came up. It happened once with
+and once without the single-instance guard (PR #32), and not with a third fresh build (one parent, the task's
+`cmd.exe`). Cause unknown; so far only seen with this check's way of launching a just-unpacked exe. Since #32 a
+deliberate second launch can't run a second copy: it focuses the open window and quits within 0.2 s (the lock is
+released before an update restart).
 Tips from 2026-11-17: Node's `fetch` won't send a custom `Host` header, so call MCP with `node:http`; dialogs are
 native `<dialog>` elements; picking the open library section folds the panel; import test data by setting a
 `DataTransfer` file on `input[aria-label="Import file"]` and dispatching `change`.
