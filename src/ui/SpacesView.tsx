@@ -42,7 +42,6 @@ export function SpacesView({ ws, ask, confirm, notify }: { ws: WorkspaceApi; ask
 
   return (
     <section className="editor" aria-label="Workspaces">
-      <p className="eyebrow">Workspaces</p>
       <h1 className="titleInput">Workspaces</h1>
       <p className="muted small">Group collections, environments and flows, e.g. one workspace per product or client. Switch from the top bar. Globals and history are shared by all workspaces. To move a collection or environment, use its ⋯ menu.</p>
       <table className="resultTable" aria-label="Workspaces list">

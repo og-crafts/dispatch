@@ -38,7 +38,6 @@ export function SettingsView({ ws, notify, mcpHost = { state: 'off' } }: { ws: W
   const setCert = (id: string, patch: Partial<ClientCert>) => ws.setSettings({ clientCerts: st.clientCerts.map((c) => (c.id === id ? { ...c, ...patch } : c)) })
   return (
     <section className="editor" aria-label="Settings">
-      <p className="eyebrow">Settings</p>
       <h1 className="titleInput">Settings</h1>
       {desktop && (
         <div className="tabs settingsTabs" role="tablist" aria-label="Settings sections">

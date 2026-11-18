@@ -639,6 +639,11 @@ pre.out, .diff, .markdown pre { background: var(--sunken); border: 1px solid var
 .settingsTabs { margin: 8px 0 4px; }
 .settingsPanel > h2:first-child { margin-top: 16px; }
 
+/* A page title is a heading, not a field: no inset, so it lines up with the label above it. */
+h1.titleInput { padding-inline: 0; }
+/* A checkbox keeps its size when its label wraps onto two lines. */
+.toggle > input[type="checkbox"], .toggle > input[type="radio"] { flex: none; }
+
 /* The postmark: status, time and size of a response, stamped in one hairline frame in the status colour. */
 .postmark { display: inline-flex; align-items: center; gap: 8px; font: 500 12px var(--mono); font-variant-numeric: tabular-nums; color: var(--muted);
   padding: 2px 10px 2px 2px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--pm, var(--outline)) 45%, transparent); }
@@ -647,6 +652,8 @@ pre.out, .diff, .markdown pre { background: var(--sunken); border: 1px solid var
 .postmark .metric { font: inherit; color: inherit; }
 .postmark .metric + .metric::before { content: "·"; margin-right: 8px; color: var(--faint); }
 .metric { font-weight: 500; font-variant-numeric: tabular-nums; }
+/* The first-byte time stays in the tooltip on narrower windows, so the response actions fit on one line. */
+@media (max-width: 1400px) { .postmark .metric .muted { display: none; } }
 
 /* Popovers, dialogs and toasts: solid, with a soft neutral shadow */
 .menuList, .dialog, .toast, .tip { background: var(--surface-solid); color: var(--ink); border: 1px solid var(--outline); box-shadow: var(--shadow); }
