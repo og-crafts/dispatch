@@ -40,8 +40,11 @@ and an import format; never copy its name, branding, icons or UI.
   Workspaces, Settings) plus a library panel that folds (pick the open section again) and resizes (edge handle in
   the gap, arrow keys; width in localStorage `dispatch.sideWidth`). Pages open as one extra tab in the tab bar
   (`TabBar` `page`), so requests are one click away. `HomeView.tsx` is the Home page; `Icons.tsx` the line icons.
-  Look: tokens at the top of `app.css` (light + dark), the aurora is `body::before`, panels are frosted glass
-  (`--surface` + backdrop-filter); the "Look" section at the end of `app.css` overrides the older rules.
+  Look (since the unslop redesign, 2026-11-18): tokens at the top of `app.css` (light + dark), graphite surfaces with
+  hairlines, no glass, glows or gradients; one accent, the logo violet (`--primary-strong` #5b2ee0 for fills, `--primary`
+  for marks and focus); spacing on a 4px grid; weights 400–600, sentence-case labels; the response "postmark" (status ·
+  time · size, `.postmark` in ResponsePane) is the signature. The "Look" section at the end of `app.css` overrides the
+  older rules.
 - Share as HTML: `core/share.ts` builds sanitized data (Sanitizer: secret-named values, JWT/bearer/AWS keys,
   emails, IPs, server address → `{{baseUrl}}`, sampled lists; variables stay `{{name}}`), `core/shareHtml.ts`
   renders one self-contained page (CSP, data embedded as JSON, DOM built with textContent). `ui/ShareDialog.tsx`
