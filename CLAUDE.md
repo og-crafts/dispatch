@@ -131,7 +131,7 @@ unpack it from `apt-get download libasound2t64` with `dpkg-deb -x` and set `LD_L
 
 ## Where we left off
 
-Updated 2026-11-17 (end of day). **Pending work is tracked on the Kan board "Dispatch"**
+Updated 2026-11-18. **Pending work is tracked on the Kan board "Dispatch"**
 (https://kanban.gautamlabs.io/boards/mb7hut0k7z77; CLI: `KAN_BOARD=mb7hut0k7z77 ~/bin/kan show|card|move|note|desc`).
 Lists: Waiting on you (owner actions), To do, In progress, Testing, Done; labels Release, Feature, Bug, Testing,
 Infra. Keep the cards current at the end of each session (as with the Native Android Apps board).
@@ -143,8 +143,10 @@ since the last published preview (0.5.1): local MCP endpoint, drag and drop, bra
 OGCrafts text), the OGCrafts move (bundle ID `cloud.ogcrafts.dispatch`), the MCP assistant workspace (#16), the UX
 refresh (#17) and its fixes (#20), Share as HTML (#18), in-app updates (#22; update key set by the owner), SignPath
 groundwork (#23) and opt-in usage/error reports + Send feedback (#26, `docs/TELEMETRY.md`); since 2026-11-17 also
-the AI hand-off, "AI can edit" and right-click menus (#27) and the MCP log tools (#28), see "AI assistants" below.
-**No PRs are open** (2026-11-17: #26, #29 docs, #27 and #28 merged in that order; `main` = 98a5e01).
+the AI hand-off, "AI can edit" and right-click menus (#27) and the MCP log tools (#28), see "AI assistants" below;
+since 2026-11-18 the unslop redesign (#31, see "Look" above) and the single-instance guard (#32: a second launch
+focuses the open window and quits; `tauri-plugin-single-instance`, first plugin in `src-tauri/src/lib.rs`).
+**No PRs are open** (2026-11-18: #31 then #32 merged, branches deleted; `main` = 46560a1).
 - **Blocking the snapshot tag:** the owner's Aptabase App Key and Sentry DSN → repo variables `APTABASE_APP_KEY`,
   `SENTRY_DSN` (a build without them offers and sends nothing). Then tag, the owner publishes the pre-release,
   Claude publishes the site from the tag (policy page + opt-in privacy policy + 0.1.0 changelog go live).
@@ -269,7 +271,7 @@ in the private archive repo (drafts up to v0.4.4) and in the notes below. Versio
   blocks named "End" can't be told apart in flow selects; importing a
   backup into the same workspace duplicates everything; error texts include Rust internals (`os error 10061`).
 - Issue #2: the Windows test (rounds 1–3 done; round 4 moved into #9). Issue #9: the next Windows round.
-- No PRs open (2026-11-17). PR #10, branded installers (`src-tauri/installer/`, `scripts/make-installer-art.mjs`),
+- No PRs open (2026-11-18). PR #10, branded installers (`src-tauri/installer/`, `scripts/make-installer-art.mjs`),
   is merged; its look has only been seen as images on Linux.
 - Merged 2026-11-10, in `main` but not in any tag: the desktop app's local MCP endpoint (#6; Settings → AI
   assistants; `src-tauri/src/mcp_host.rs`, `src/core/mcpHandler.ts`, `src/ui/mcpHost.ts`; the port applies on
@@ -277,8 +279,8 @@ in the private archive repo (drafts up to v0.4.4) and in the notes below. Versio
   sidebar, tabs onto collections, requests onto flow canvases and the Runner; `src/ui/dnd.ts`).
 - Flaky CI: `tests/browser.test.ts` ("The browser didn't start in time") and the Linux `linuxdeploy` step each
   failed once and passed on `gh run rerun --failed`. The browser test failed again on PR #18 (2026-11-16).
-- The macOS job (universal build) hits its 15-minute limit on every run since 2026-11-16 (#26, #27, #28, `main`), so
-  no `.dmg` is built. Not caused by those PRs; not investigated yet. Windows and Linux builds pass.
+- The macOS job (universal build) hit its 15-minute limit on every run 2026-11-16/17 (#26, #27, #28, `main`), so no
+  `.dmg` was built; on 2026-11-18 it passed on #31 and #32 (cause never found). Watch it on the next runs.
 
 **Sites.** dispatch.ogcrafts.cloud shows 0.5.1 (published 2026-11-14 from a branch off the v0.5.1 tag plus the
 rebranded site files; `site/release.json` on `main` points at 0.5.1). The OGCrafts home site, https://ogcrafts.cloud
