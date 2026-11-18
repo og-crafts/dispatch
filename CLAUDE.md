@@ -194,7 +194,10 @@ Afterwards stop the exe, unregister the task, and delete `%LOCALAPPDATA%\cloud.o
 install starts clean. **Wait until no `msedgewebview2.exe` with `cloud.ogcrafts.dispatch` in its command line is left
 before deleting** (they outlive a `taskkill` of the exe for a few seconds). On 2026-11-17 the first launch after such
 a cleanup started WebView2 40 s late and a minute later ran on an empty database (data imported meanwhile was gone);
-a clean cold start did not repeat it. Unexplained; watch for it.
+a clean cold start did not repeat it. Explained 2026-11-18: the first launch of a freshly unpacked build
+started two `dispatch.exe` 5 s apart, both on the same data (no single-instance guard then); the first exited after
+opening its WebView and the second came up 40 s late. Fixed by `tauri-plugin-single-instance` (a second launch
+focuses the open window and quits; the lock is released before an update restart).
 Tips from 2026-11-17: Node's `fetch` won't send a custom `Host` header, so call MCP with `node:http`; dialogs are
 native `<dialog>` elements; picking the open library section folds the panel; import test data by setting a
 `DataTransfer` file on `input[aria-label="Import file"]` and dispatching `change`.

@@ -36,6 +36,8 @@ tokio-stream = "0.1"
 http = "1"
 bytes = "1"
 futures-util = "0.3"
+# One running copy: a second launch focuses the open window (see run() in lib.rs).
+tauri-plugin-single-instance = "2"
 
 [profile.release]
 codegen-units = 1

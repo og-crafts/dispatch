@@ -690,9 +690,23 @@ fn mock_reply(state: tauri::State<'_, std::sync::Arc<MockState>>, id: u64, reply
     if let Some(tx) = state.waiting.lock().unwrap().remove(&id) { let _ = tx.send(reply); }
 }
 
+/// Shows the main window, restores it if it was minimized and gives it focus.
+fn focus_main_window(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        if window.is_minimized().unwrap_or(false) { let _ = window.unminimize(); }
+        let _ = window.set_focus();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // One Dispatch at a time: a second launch (a double-click, a second shortcut) brings the open window to
+        // the front and quits, instead of starting another copy on the same data. Must be the first plugin.
+        // The lock is released before an update restart (`cleanup_before_exit`), so the new version can start.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| focus_main_window(app)))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
