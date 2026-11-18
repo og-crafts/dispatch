@@ -8,8 +8,6 @@ const short = (m: string) => (m === 'DELETE' ? 'DEL' : m === 'OPTIONS' ? 'OPT' :
 
 /** Where the app starts from the rail or the logo: what's here, what you did last, and the common first steps. */
 export function HomeView({ ws, onImport, onNewFlow }: { ws: WorkspaceApi; onImport: () => void; onNewFlow: () => void }) {
-  const hour = new Date().getHours()
-  const greeting = hour < 5 ? 'Working late' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
   const space = ws.spaces.find((x) => x.id === ws.activeSpaceId)?.name ?? 'Workspace'
   const colIds = new Set(ws.collections.map((c) => c.id))
   const saved = ws.requests.filter((r) => r.collectionId && colIds.has(r.collectionId)).length
@@ -19,8 +17,7 @@ export function HomeView({ ws, onImport, onNewFlow }: { ws: WorkspaceApi; onImpo
   return (
     <section className="home" aria-label="Home">
       <header className="homeHero">
-        <p className="eyebrow">{space}</p>
-        <h1>{greeting}</h1>
+        <h1>{space}</h1>
         <p className="muted">
           {saved} saved request{saved === 1 ? '' : 's'} in {ws.collections.length} collection{ws.collections.length === 1 ? '' : 's'}
           {ws.environment ? <> · environment <b>{ws.environment.name}</b></> : ' · no environment selected'}

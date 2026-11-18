@@ -79,13 +79,13 @@ export function ResponsePane({ ws, notify, saveFile }: { ws: WorkspaceApi; notif
   return (
     <section className="response" aria-label="Response">
       <div className="resHead">
-        {res ? <>
+        {res ? <span className={`postmark ${statusTone(res.status)}`}>
           <span className={`status ${statusTone(res.status)}`}>{res.status} {res.statusText}</span>
           <span className="metric" title={res.timings ? `Waiting for first byte ${formatMs(res.timings.ttfbMs)}, download ${formatMs(res.timings.downloadMs)}` : 'Time'}>
             {formatMs(res.timeMs)}{res.timings && <span className="muted"> (first byte {formatMs(res.timings.ttfbMs)})</span>}
           </span>
           <span className="metric" title="Size">{formatBytes(res.size)}</span>
-        </> : <span className="status bad">{result.error?.startsWith('Skipped') ? 'Skipped' : 'Not sent'}</span>}
+        </span> : <span className="status bad">{result.error?.startsWith('Skipped') ? 'Skipped' : 'Not sent'}</span>}
         {tests.length > 0 && <span className={`metric ${passed === tests.length ? 'goodText' : 'badText'}`}>{passed}/{tests.length} tests passed</span>}
         <span className="grow" />
         <button type="button" className="btn ghost small" onClick={() => copy(toCurl(result.sent), 'curl command')}>Copy as curl</button>
