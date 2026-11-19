@@ -9,8 +9,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Read-only by default. The two jobs that attach files to a draft release ask for more themselves.
+# Third-party actions are pinned to a commit; Dependabot proposes the bumps (.github/dependabot.yml).
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: build-${{ github.ref }}
@@ -19,9 +21,10 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npm run typecheck
@@ -31,11 +34,42 @@ jobs:
           DISPATCH_BROWSER_START_MS: '60000'
       - run: npm run build
       - run: npm run build:cli
-      - uses: actions/upload-artifact@v4
+      # The marketing site: builds it and runs its own checks (links, contrast, no third-party requests).
+      - run: python3 site/build.py --strict
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with: { name: dispatch-run-cli, path: dist-cli/dispatch-run.mjs }
+
+  # The desktop side's own tests, and clippy (warnings are shown, only errors fail the job).
+  rust:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 22, cache: npm }
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
+          components: clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with: { workspaces: src-tauri, key: tests }
+      - name: Linux packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev libssl-dev patchelf
+      # Tauri embeds the web build at compile time, so it has to exist first.
+      - run: npm ci
+      - run: npm run build
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets
 
   desktop:
     needs: test
+    # Long on purpose: on a release tag the job waits up to two hours for the owner to approve signing.
+    timeout-minutes: 150
+    permissions:
+      contents: write   # attach the installers to a draft release (tags only)
+      actions: read     # SignPath reads the unsigned-installers artifact
     strategy:
       fail-fast: false
       matrix:
@@ -56,13 +90,14 @@ jobs:
             targets: aarch64-apple-darwin,x86_64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: 22, cache: npm }
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
+          toolchain: stable
           targets: ${{ matrix.targets }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with: { workspaces: src-tauri }
       - name: Linux packages
         if: startsWith(matrix.name, 'linux')
@@ -102,13 +137,13 @@ jobs:
           cp src-tauri/target/release/bundle/nsis/*-setup.exe src-tauri/target/release/bundle/msi/*.msi to-sign/
           echo "go=1" >> "$GITHUB_OUTPUT"
           echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         id: unsigned
         if: steps.tosign.outputs.go == '1'
         with: { name: windows-unsigned, path: to-sign/, if-no-files-found: error }
       - name: Sign with SignPath (approve the request in SignPath)
         if: steps.tosign.outputs.go == '1'
-        uses: signpath/github-action-submit-signing-request@v3
+        uses: signpath/github-action-submit-signing-request@4a84eb4ad763290f059275786f2deed97c2c672b # v3
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
@@ -135,7 +170,7 @@ jobs:
               rm -f "$f.sig"; npx tauri signer sign "$f" > /dev/null
             done
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dispatch-${{ matrix.name }}
           if-no-files-found: error
@@ -150,7 +185,7 @@ jobs:
             src-tauri/target/**/release/bundle/**/*.sig
       - name: Attach to a draft release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           draft: true
           # v0.1.0-SNAPSHOT and other suffixed tags are pre-releases: not "Latest", so installed apps aren't offered them.
@@ -170,9 +205,12 @@ jobs:
     needs: desktop
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write   # attach latest.json to the draft release
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with: { pattern: 'dispatch-*', path: artifacts }
       - name: latest.json
         id: latest
@@ -183,7 +221,7 @@ jobs:
           else echo "::warning::No update signatures in this build, so no latest.json."; fi
       - name: Attach latest.json to the draft release
         if: steps.latest.outputs.made == '1'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           draft: true
           # v0.1.0-SNAPSHOT and other suffixed tags are pre-releases: not "Latest", so installed apps aren't offered them.
