@@ -243,9 +243,14 @@ export interface HistoryEntry {
   tests?: TestResult[]
 }
 
+export type Look = 'dispatch' | 'grove' | 'grove-classic'
+export const LOOKS: Look[] = ['dispatch', 'grove', 'grove-classic']
+
 export interface Settings {
   activeEnvId: string | null
   theme: 'system' | 'light' | 'dark'
+  /** The look picked under Settings → Themes; each has a light and a dark side (`theme` picks which). */
+  look: Look
   timeoutMs: number
   followRedirects: boolean
   /** Desktop only: skip TLS certificate checks (self-signed homelab certs). */
@@ -294,7 +299,7 @@ export interface ClientCert {
 }
 
 export const defaultSettings: Settings = {
-  activeEnvId: null, theme: 'system', timeoutMs: 30_000, followRedirects: true, insecureTls: false, cookieJar: true,
+  activeEnvId: null, theme: 'system', look: 'dispatch', timeoutMs: 30_000, followRedirects: true, insecureTls: false, cookieJar: true,
   proxyUrl: '', proxyBypass: 'localhost, 127.0.0.1', clientCerts: [], caCerts: [], activeSpaceId: 'default', spaceEnv: {},
   mcpHostEnabled: false, mcpHostPort: 4320, mcpHostToken: '', mcpHostMethods: 'GET,HEAD', mcpHostWorkspace: false, mcpHostLogs: false,
   updateCheckOnStart: false,

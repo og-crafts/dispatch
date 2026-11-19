@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useState } from 'react'
-import type { ClientCert } from '../core/types'
+import type { ClientCert, Look } from '../core/types'
 import { ASSISTANT_SPACE, uid } from '../core/types'
 import { CookieTransport } from '../core/transport'
 import type { StoredCookie } from '../core/cookies'
@@ -26,35 +26,79 @@ function PemPick({ label, onText, notify }: { label: string; onText: (t: string)
   )
 }
 
-type SettingsTab = 'general' | 'network' | 'certs' | 'ai'
-const SETTINGS_TABS: [SettingsTab, string][] = [['general', 'General'], ['network', 'Network'], ['certs', 'Certificates'], ['ai', 'AI assistants']]
+type SettingsTab = 'general' | 'themes' | 'network' | 'certs' | 'ai'
+const SETTINGS_TABS: [SettingsTab, string][] = [['general', 'General'], ['themes', 'Themes'], ['network', 'Network'], ['certs', 'Certificates'], ['ai', 'AI assistants']]
+/** Network, certificates and AI assistants need the desktop app; the browser shows the other tabs. */
+const DESKTOP_ONLY: SettingsTab[] = ['network', 'certs', 'ai']
+
+/** The colours a theme card draws its two small pictures with (light, then dark). They mirror the tokens in app.css. */
+type Shot = { bg: string; panel: string; line: string; field: string; soft: string; ink: string; btn: string; accent: string }
+const GRAPHITE: [Shot, Shot] = [
+  { bg: '#f4f4f5', panel: '#ffffff', line: '#e2e2e4', field: '#fafafa', soft: '#f0f0f1', ink: '#171717', btn: '#5b2ee0', accent: '#5b2ee0' },
+  { bg: '#0f0f10', panel: '#161617', line: '#2a2a2c', field: '#1e1e20', soft: '#232325', ink: '#ededed', btn: '#5b2ee0', accent: '#9a86ff' },
+]
+const GROVE: [Shot, Shot] = [
+  { bg: '#f2f6ef', panel: '#ffffff', line: '#d5e2d3', field: '#ffffff', soft: '#e3efe1', ink: '#1c2a22', btn: '#1c2a22', accent: '#2c6e3f' },
+  { bg: '#0a0d0b', panel: '#0f1713', line: '#2a3f34', field: '#131d18', soft: '#1a2b21', ink: '#f2f6ef', btn: '#6ee7a0', accent: '#6ee7a0' },
+]
+const THEMES: { id: Look; name: string; text: string; shots: [Shot, Shot]; gap: number; r: number; r2: number; roomy?: boolean }[] = [
+  { id: 'dispatch', name: 'Dispatch', text: 'Graphite panels and one violet accent. Compact.', shots: GRAPHITE, gap: 3, r: 4, r2: 3 },
+  { id: 'grove', name: 'Grove', text: 'Mint and forest green. Roomy, with floating pill bars and a big request title.', shots: GROVE, gap: 6, r: 9, r2: 99, roomy: true },
+  { id: 'grove-classic', name: 'Grove classic', text: 'The Grove colours on the compact layout.', shots: GROVE, gap: 4, r: 6, r2: 99 },
+]
+
+function ThemeShot({ shot, gap, r, r2, roomy }: { shot: Shot; gap: number; r: number; r2: number; roomy?: boolean }) {
+  const vars = { '--s-bg': shot.bg, '--s-panel': shot.panel, '--s-line': shot.line, '--s-field': shot.field, '--s-soft': shot.soft, '--s-ink': shot.ink,
+    '--s-btn': shot.btn, '--s-accent': shot.accent, '--g': `${gap}px`, '--r': `${r}px`, '--r2': `${r2}px` } as React.CSSProperties
+  return <span className={`shot${roomy ? ' roomy' : ''}`} style={vars}><i className="sTop" /><i className="sSide" /><i className="sMain"><b /><u /><s /><s /></i></span>
+}
 
 /** App settings in tabs: general; on the desktop also network (proxy), certificates (CA, client) and AI assistants (MCP). */
 export function SettingsView({ ws, notify, mcpHost = { state: 'off' } }: { ws: WorkspaceApi; notify: (m: string) => void; mcpHost?: McpHostStatus }) {
   const st = ws.settings
   const desktop = ws.transport.unrestricted
   const [tab, setTab] = useState<SettingsTab>('general')
-  const shown: SettingsTab = desktop ? tab : 'general'
+  const tabs = SETTINGS_TABS.filter(([id]) => desktop || !DESKTOP_ONLY.includes(id))
+  const shown: SettingsTab = tabs.some(([id]) => id === tab) ? tab : 'general'
   const setCert = (id: string, patch: Partial<ClientCert>) => ws.setSettings({ clientCerts: st.clientCerts.map((c) => (c.id === id ? { ...c, ...patch } : c)) })
   return (
     <section className="editor" aria-label="Settings">
       <h1 className="titleInput">Settings</h1>
-      {desktop && (
+      {(
         <div className="tabs settingsTabs" role="tablist" aria-label="Settings sections">
-          {SETTINGS_TABS.map(([id, label]) => (
+          {tabs.map(([id, label]) => (
             <button key={id} type="button" role="tab" id={`settings-tab-${id}`} aria-selected={shown === id} className={shown === id ? 'on' : ''} onClick={() => setTab(id)}>{label}</button>
           ))}
         </div>
       )}
-      <div role={desktop ? 'tabpanel' : undefined} aria-labelledby={desktop ? `settings-tab-${shown}` : undefined} className="settingsPanel">
-      {shown === 'general' && <>
-      <h2>General</h2>
+      <div role="tabpanel" aria-labelledby={`settings-tab-${shown}`} className="settingsPanel">
+      {shown === 'themes' && <>
+      <h2>Themes</h2>
+      <p className="muted small">Pick a look. Each one has a light and a dark side.</p>
+      <div className="themeGrid" role="radiogroup" aria-label="Theme">
+        {THEMES.map((t) => (
+          <label key={t.id} className={`themeCard${st.look === t.id ? ' on' : ''}`}>
+            <input type="radio" name="look" value={t.id} checked={st.look === t.id} onChange={() => ws.setSettings({ look: t.id })} />
+            <span className="themeShot" aria-hidden="true">
+              <ThemeShot shot={t.shots[0]} gap={t.gap} r={t.r} r2={t.r2} roomy={t.roomy} />
+              <ThemeShot shot={t.shots[1]} gap={t.gap} r={t.r} r2={t.r2} roomy={t.roomy} />
+            </span>
+            <span className="themeName">{t.name}{st.look === t.id && <span className="pill">In use</span>}</span>
+            <p className="muted small">{t.text}</p>
+          </label>
+        ))}
+      </div>
       <div className="auth">
-        <label className="field"><span>Theme</span>
+        <label className="field"><span>Light or dark</span>
           <select value={st.theme} onChange={(e) => ws.setSettings({ theme: e.target.value as 'system' | 'light' | 'dark' })}>
             <option value="system">Same as the system</option><option value="light">Light</option><option value="dark">Dark</option>
           </select>
         </label>
+      </div>
+      </>}
+      {shown === 'general' && <>
+      <h2>General</h2>
+      <div className="auth">
         <label className="field"><span>Timeout (seconds)</span>
           <input type="number" min={1} max={600} value={Math.round(st.timeoutMs / 1000)} onChange={(e) => ws.setSettings({ timeoutMs: Math.min(600, Math.max(1, Number(e.target.value) || 30)) * 1000 })} />
         </label>
