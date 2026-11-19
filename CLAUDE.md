@@ -48,7 +48,8 @@ and an import format; never copy its name, branding, icons or UI.
   Themes (Settings → Themes, since 2026-11-19): `settings.look` = `dispatch` (the look above, default) | `grove` |
   `grove-classic`, set as `data-look` on `<html>`; `settings.theme` still picks light/dark. Both Grove looks share one
   palette (mint, forest green, terracotta; from the owner's design canvas "Dispatch — screen designs", directions F
-  and G) and the bundled Manrope font (`@fontsource-variable/manrope`, no network); `grove` is roomy (pill bars, filled
+  and G); the owner wants the colours to match the canvas exactly (2026-11-19): only green, terracotta and the
+  delete red carry meaning (PUT/PATCH are terracotta like POST, no blue or purple), dividers are `--divider` and the bundled Manrope font (`@fontsource-variable/manrope`, no network); `grove` is roomy (pill bars, filled
   pill tabs, big request title), `grove-classic` keeps the compact layout. All of it is the "Themes" block at the end
   of `app.css`; new rules must use tokens (`--sans` for the font) so every look picks them up. The canvas's own
   layouts (nav in the top bar, a history sidebar, Git status line) are NOT built: the looks restyle today's layout.

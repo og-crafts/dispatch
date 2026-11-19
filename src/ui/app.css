@@ -772,11 +772,13 @@ body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: 
    dark in the two blocks after it (system dark, then Settings → Dark). */
 :root[data-look^="grove"] {
   --bg: #f2f6ef; --wash: #cfe6cf; --surface: rgba(255, 255, 255, .8); --surface-solid: #ffffff; --field: #ffffff; --raised: #e3efe1;
-  --sunken: rgba(28, 42, 34, .05); --outline: #d5e2d3; --ink: #1c2a22; --muted: #4a5a50; --faint: #5b6b61;
+  --sunken: rgba(28, 42, 34, .05); --outline: #d5e2d3; --ink: #1c2a22; --muted: #4a5a50; --faint: #4a5a50; --divider: #dfe9dc;
   --primary: #2c6e3f; --primary-strong: #1c2a22; --on-primary: #f2f6ef; --primary-soft: rgba(44, 110, 63, .11); --link: #2c6e3f;
-  --danger: #a3301f; --danger-soft: rgba(163, 48, 31, .08); --good: #2c6e3f; --good-soft: rgba(44, 110, 63, .1);
-  --warn: #a04a1a; --warn-soft: rgba(160, 74, 26, .09); --info: #1d5fa8; --info-soft: rgba(29, 95, 168, .08);
-  --m-get: #2c6e3f; --m-post: #a04a1a; --m-put: #1d5fa8; --m-patch: #6b3fa0; --m-delete: #7a2e1c; --m-other: #4a5a50;
+  --danger: #7a2e1c; --danger-soft: rgba(122, 46, 28, .08); --good: #2c6e3f; --good-soft: rgba(44, 110, 63, .1); --on-good: #ffffff; --good-dot: #b9e2c4;
+  --warn: #a04a1a; --warn-soft: rgba(160, 74, 26, .09); --info: #4a5a50; --info-soft: rgba(28, 42, 34, .05);
+  --m-get: #2c6e3f; --m-post: #a04a1a; --m-put: #a04a1a; --m-patch: #a04a1a; --m-delete: #7a2e1c; --m-other: #4a5a50;
+  --sel: #1c2a22; --on-sel: #f2f6ef; --sel-tag: #b9e2c4; --top: rgba(255, 255, 255, .72); --send-glow: 0 8px 20px rgba(28, 42, 34, .25);
+  --cm-keyword: #2c6e3f; --cm-string: #a04a1a; --cm-number: #1c2a22; --cm-property: #2c6e3f; --cm-function: #1c2a22; --cm-type: #a04a1a;
   --accent2: #d9743f; --chip: #fbe6d8; --chip-ink: #8a3f15;
   --shadow: 0 8px 30px rgba(44, 110, 63, .1); --panel-shadow: 0 8px 30px rgba(44, 110, 63, .08); --panel-line: transparent;
   --hairline-hi: rgba(255, 255, 255, 0); --panel-r: 22px;
@@ -785,22 +787,26 @@ body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: 
 @media (prefers-color-scheme: dark) {
   :root[data-look^="grove"]:not([data-theme="light"]) {
     --bg: #0a0d0b; --wash: #12291d; --surface: #0f1713; --surface-solid: #131d18; --field: #131d18; --raised: #1a2b21;
-    --sunken: rgba(242, 246, 239, .05); --outline: #2a3f34; --ink: #f2f6ef; --muted: #a7b5ac; --faint: #8b9a90;
+    --sunken: rgba(242, 246, 239, .05); --outline: #2a3f34; --ink: #f2f6ef; --muted: #a7b5ac; --faint: #a7b5ac; --divider: #1f2e26;
     --primary: #6ee7a0; --primary-strong: #6ee7a0; --on-primary: #0a1a11; --primary-soft: rgba(110, 231, 160, .12); --link: #6ee7a0;
-    --danger: #f08a78; --danger-soft: rgba(240, 138, 120, .1); --good: #6ee7a0; --good-soft: rgba(110, 231, 160, .1);
-    --warn: #f0a070; --warn-soft: rgba(240, 160, 112, .1); --info: #6aa8f0; --info-soft: rgba(106, 168, 240, .1);
-    --m-get: #6ee7a0; --m-post: #f0a070; --m-put: #6aa8f0; --m-patch: #b59cff; --m-delete: #f08a78; --m-other: #a7b5ac;
+    --danger: #f08a78; --danger-soft: rgba(240, 138, 120, .1); --good: #6ee7a0; --good-soft: rgba(110, 231, 160, .1); --on-good: #0a1a11; --good-dot: #0a1a11;
+    --warn: #f0a070; --warn-soft: rgba(240, 160, 112, .1); --info: #a7b5ac; --info-soft: rgba(242, 246, 239, .05);
+    --m-get: #6ee7a0; --m-post: #f0a070; --m-put: #f0a070; --m-patch: #f0a070; --m-delete: #f08a78; --m-other: #a7b5ac;
+    --sel: #183024; --on-sel: #f2f6ef; --top: #0f1713; --send-glow: 0 0 28px rgba(110, 231, 160, .28);
+    --cm-keyword: #6ee7a0; --cm-string: #f0a070; --cm-number: #f2f6ef; --cm-property: #6ee7a0; --cm-function: #f2f6ef; --cm-type: #f0a070;
     --chip: #3a2114; --chip-ink: #f5b08a;
     --shadow: 0 12px 32px rgba(0, 0, 0, .5); --panel-shadow: none; --panel-line: #1f3329;
   }
 }
 :root[data-look^="grove"][data-theme="dark"] {
   --bg: #0a0d0b; --wash: #12291d; --surface: #0f1713; --surface-solid: #131d18; --field: #131d18; --raised: #1a2b21;
-  --sunken: rgba(242, 246, 239, .05); --outline: #2a3f34; --ink: #f2f6ef; --muted: #a7b5ac; --faint: #8b9a90;
+  --sunken: rgba(242, 246, 239, .05); --outline: #2a3f34; --ink: #f2f6ef; --muted: #a7b5ac; --faint: #a7b5ac; --divider: #1f2e26;
   --primary: #6ee7a0; --primary-strong: #6ee7a0; --on-primary: #0a1a11; --primary-soft: rgba(110, 231, 160, .12); --link: #6ee7a0;
-  --danger: #f08a78; --danger-soft: rgba(240, 138, 120, .1); --good: #6ee7a0; --good-soft: rgba(110, 231, 160, .1);
-  --warn: #f0a070; --warn-soft: rgba(240, 160, 112, .1); --info: #6aa8f0; --info-soft: rgba(106, 168, 240, .1);
-  --m-get: #6ee7a0; --m-post: #f0a070; --m-put: #6aa8f0; --m-patch: #b59cff; --m-delete: #f08a78; --m-other: #a7b5ac;
+  --danger: #f08a78; --danger-soft: rgba(240, 138, 120, .1); --good: #6ee7a0; --good-soft: rgba(110, 231, 160, .1); --on-good: #0a1a11; --good-dot: #0a1a11;
+  --warn: #f0a070; --warn-soft: rgba(240, 160, 112, .1); --info: #a7b5ac; --info-soft: rgba(242, 246, 239, .05);
+  --m-get: #6ee7a0; --m-post: #f0a070; --m-put: #f0a070; --m-patch: #f0a070; --m-delete: #f08a78; --m-other: #a7b5ac;
+  --sel: #183024; --on-sel: #f2f6ef; --top: #0f1713; --send-glow: 0 0 28px rgba(110, 231, 160, .28);
+  --cm-keyword: #6ee7a0; --cm-string: #f0a070; --cm-number: #f2f6ef; --cm-property: #6ee7a0; --cm-function: #f2f6ef; --cm-type: #f0a070;
   --chip: #3a2114; --chip-ink: #f5b08a;
   --shadow: 0 12px 32px rgba(0, 0, 0, .5); --panel-shadow: none; --panel-line: #1f3329;
 }
@@ -833,12 +839,29 @@ body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: 
 [data-look^="grove"] .tabs [role="tab"].on { font-weight: 700; }
 [data-look^="grove"] .postmark { border-radius: 999px; padding-right: 12px; }
 [data-look^="grove"] .postmark .status { border-radius: 999px; }
-[data-look^="grove"] .postmark.good .status { background: var(--good); color: var(--bg); }
-[data-look^="grove"] .mtag { border-radius: 999px; }
+[data-look^="grove"] .postmark.good .status { background: var(--good); color: var(--on-good); }
+[data-look^="grove"] .mtag { background: transparent; font-weight: 600; }
 [data-look^="grove"] .urlBar .method { border-radius: 999px 0 0 999px; background: var(--raised); font-weight: 700; padding-left: 16px; }
 [data-look^="grove"] .urlBar .btn { border-radius: 0 999px 999px 0; padding-inline: 26px; }
 
-/* Grove classic: the compact layout, a little more air between panels. */
+/* Values from the design canvas: divider lines are lighter than control outlines; method names are plain coloured
+   text; a JSON key is green and a string terracotta. */
+[data-look^="grove"] :is(.tabs, .tabBar, .rail, hr) { border-color: var(--divider); }
+[data-look^="grove"] .homeList > li + li { border-top-color: var(--divider); }
+[data-look^="grove"] .tree ul { border-left-color: var(--divider); }
+[data-look^="grove"] .postmark.good .status::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--good-dot); margin-right: 7px; vertical-align: 1px; }
+[data-look^="grove"] .testList .fail .testMark { color: var(--warn); }
+[data-look^="grove"] .reqName { font-weight: 700; }
+
+/* Grove classic: the compact layout, a little more air between panels. The URL field is one bordered pill and
+   Send stands beside it; the open tab is a white tab with a green line under it. */
+[data-look="grove-classic"] .urlBar { gap: 8px; }
+[data-look="grove-classic"] .urlBar .url { border-radius: 0 999px 999px 0; }
+[data-look="grove-classic"] .urlBar .btn { border-radius: 999px; min-height: 44px; font-size: 15px; }
+[data-look="grove-classic"] .urlBar .method { min-height: 44px; }
+[data-look="grove-classic"] .reqTab.on { background: var(--field); }
+[data-look="grove-classic"] .btn { min-height: 36px; padding-block: 0; display: inline-flex; align-items: center; gap: 6px; }
+[data-look="grove-classic"] .btn.small { min-height: 30px; }
 @media (min-width: 761px) { [data-look="grove-classic"] .app { gap: 12px; padding: 12px; } }
 
 /* Grove (roomy): floating pill bars, filled pill tabs, a big title above the URL bar. */
@@ -856,21 +879,23 @@ body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: 
 [data-look="grove"] .request { padding: 20px 24px 0; }
 [data-look="grove"] .reqName { font-size: 26px; font-weight: 700; letter-spacing: -.03em; line-height: 1.15; }
 [data-look="grove"] .titleRow { margin-bottom: 14px; }
-[data-look="grove"] .urlBar { padding: 6px; gap: 8px; background: var(--field); border: 1px solid var(--panel-line); border-radius: 999px; box-shadow: var(--shadow); }
-[data-look="grove"] .urlBar .method { border: 0; border-radius: 999px; min-height: 44px; }
+[data-look="grove"] .urlBar { padding: 8px; gap: 10px; background: var(--field); border: 0; border-radius: 999px; box-shadow: 0 10px 34px rgba(44, 110, 63, .12); }
+[data-look="grove"] .urlBar .method { border: 0; border-radius: 999px; min-height: 48px; }
 [data-look="grove"] .urlBar .url { border: 0; background: transparent; box-shadow: none; font-size: 14.5px; }
-[data-look="grove"] .urlBar .btn { border-radius: 999px; min-height: 44px; font-size: 14.5px; }
-[data-look="grove"] .urlBar:focus-within { border-color: var(--primary); }
-[data-look="grove"] .row.on { background: var(--ink); color: var(--bg); border-radius: 14px; }
-[data-look="grove"] .row.on .mtag { color: inherit; background: color-mix(in srgb, var(--bg) 16%, transparent); }
+[data-look="grove"] .urlBar .btn { border-radius: 999px; min-height: 48px; font-size: 15px; }
+[data-look="grove"] .urlBar .btn.primary { box-shadow: var(--send-glow); }
+[data-look="grove"] .row.on { background: var(--sel); color: var(--on-sel); border-radius: 16px; }
+[data-look="grove"] .row.on .mtag { color: var(--sel-tag); }
 [data-look="grove"] .row.on :is(.caret, .menu > summary, button.icon) { color: inherit; }
 [data-look="grove"] .rowMain { padding: 8px; }
 [data-look="grove"] .sideHead h2 { font: 700 11px var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--primary); }
-[data-look="grove"] .homeHero h1 { font-size: 40px; font-weight: 700; letter-spacing: -.035em; }
-[data-look="grove"] h1.titleInput { font-size: 30px; letter-spacing: -.035em; }
+[data-look="grove"] .homeHero h1 { font-size: 38px; line-height: 1.05; font-weight: 700; letter-spacing: -.035em; }
+[data-look="grove"] h1.titleInput { font-size: 38px; line-height: 1.05; letter-spacing: -.035em; }
 [data-look="grove"] .editor { padding: 28px 36px 48px; }
-[data-look="grove"] .btn { padding-block: 8px; }
-[data-look="grove"] .btn.small { padding-block: 5px; }
+[data-look="grove"] .btn { min-height: 40px; padding-block: 0; display: inline-flex; align-items: center; gap: 6px; }
+[data-look="grove"] .btn.small { min-height: 34px; }
+[data-look="grove"] .field > span { font: 700 11px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+@media (min-width: 761px) { [data-look="grove"] .top { background: var(--top); } }
 
 /* Settings → Themes: one card per look, each showing its light and its dark side. */
 .themeGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 216px), 1fr)); gap: 16px; margin: 12px 0 20px; max-width: 860px; }
