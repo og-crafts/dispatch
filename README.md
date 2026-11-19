@@ -120,4 +120,7 @@ operating it. Full policy: https://dispatch.ogcrafts.cloud/code-signing/
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). The bundled fonts keep their own licence: see
+[THIRD-PARTY-NOTICES](public/THIRD-PARTY-NOTICES.txt).
+
+To help out, read [CONTRIBUTING.md](CONTRIBUTING.md). To report a security problem, read [SECURITY.md](SECURITY.md).

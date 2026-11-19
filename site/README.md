@@ -1,6 +1,6 @@
 # dispatch.ogcrafts.cloud
 
-Static marketing and legal site for Dispatch, with the web app published under `/app/`. Dispatch's own tokens (warm ground, ink and violet, method colours, 12px radius; dark theme through `prefers-color-scheme`), Nunito and Geist Mono self-hosted (SIL Open Font License; licence text for Geist Mono is in `src/assets/fonts`). No trackers, no cookies, no third-party requests. A strict Content-Security-Policy `<meta>` is on every site page.
+Static marketing and legal site for Dispatch, with the web app published under `/app/`. Dispatch's own tokens (warm ground, ink and violet, method colours, 12px radius; dark theme through `prefers-color-scheme`), Nunito and Geist Mono self-hosted (SIL Open Font License; the licence texts are in `src/assets/fonts` and are published with the fonts). No trackers, no cookies, no third-party requests. A strict Content-Security-Policy `<meta>` is on every site page.
 
 Pages: home (hero, features, tour with screenshots, imports, desktop vs web table, privacy summary, planned items, FAQ), `/download/`, `/cli/`, `/changelog/`, `/privacy/`, `/terms/`, `/support/`, 404, sitemap, robots, web manifest, `/app/` (the web app), `/downloads/dispatch-run.mjs` (the CLI).
 
