@@ -21,7 +21,7 @@ dialog and 493x58 banner (WiX).
 The `.dmg` background is drawn at 1320x800 and marked 144 dpi so Finder shows it at 660x400 points, sharp on Retina.
 **One-click setup on Windows.** Double-clicking `Dispatch_x.y.z_x64-setup.exe` shows no wizard: one small progress
 window ("Installing Dispatch"), a per-user install with no admin prompt, shortcuts on the desktop and in the Start
-menu, and then Dispatch opens. It is Tauri's NSIS template with four small blocks added, each marked `DISPATCH:`, in
+menu, and then Dispatch opens. It is Tauri's NSIS template with five small blocks added, each marked `DISPATCH:`, in
 `src-tauri/installer/installer.nsi` (`bundle.windows.nsis.template`). `setup.exe /WIZARD` brings the classic pages
 back (choose a folder, finish page); `/S` (silent), `/P` (passive) and the updater's `/P /UPDATE /R` behave as
 before. **When `@tauri-apps/cli` is bumped,** diff Tauri's new `installer.nsi` against the old one, re-apply the

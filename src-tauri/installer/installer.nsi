@@ -2,7 +2,7 @@
 ;
 ; Source: tauri-bundler, crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi at tag tauri-cli-v2.12.4
 ; (sha256 d00089d3b1a2..., the same file at tauri-cli-v2.12.6). Tauri is MIT or Apache-2.0 licensed.
-; Every change is marked "DISPATCH:"; there are four. When @tauri-apps/cli is bumped, diff Tauri's new template
+; Every change is marked "DISPATCH:"; there are five. When @tauri-apps/cli is bumped, diff Tauri's new template
 ; against the old one, re-apply the marked blocks and update the version above (tests/installer.test.ts checks it).
 ; TAURI-CLI-VERSION: 2.12.4
 ;
@@ -438,8 +438,21 @@ Var AppStartMenuFolder
 !define MUI_PAGE_HEADER_TEXT "Installing Dispatch"
 !define MUI_PAGE_HEADER_SUBTEXT "This takes a few seconds. Dispatch opens when it is ready."
 ShowInstDetails nevershow
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW OneClickHideWizardButtons
 ; DISPATCH: end
 !insertmacro MUI_PAGE_INSTFILES
+
+; DISPATCH: a one-click install is not a wizard, so its window has no Back and Next buttons.
+; Cancel stays: it is the way out if the install fails.
+Function OneClickHideWizardButtons
+  ${If} $OneClick = 1
+    GetDlgItem $0 $HWNDPARENT 3
+    ShowWindow $0 ${SW_HIDE}
+    GetDlgItem $0 $HWNDPARENT 1
+    ShowWindow $0 ${SW_HIDE}
+  ${EndIf}
+FunctionEnd
+; DISPATCH: end
 
 ; 8. Finish page
 ;

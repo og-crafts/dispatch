@@ -35,4 +35,13 @@ describe('Windows installer template', () => {
   it('is plain ASCII, so makensis reads it the same everywhere', () => {
     expect(/[^\x00-\x7F]/.test(nsi)).toBe(false)
   })
+  it('hides the wizard buttons only on a one-click run, and keeps Cancel', () => {
+    const start = nsi.indexOf('Function OneClickHideWizardButtons')
+    const fn = nsi.slice(start, nsi.indexOf('FunctionEnd', start))
+    expect(nsi).toContain('!define MUI_PAGE_CUSTOMFUNCTION_SHOW OneClickHideWizardButtons')
+    expect(fn).toContain('${If} $OneClick = 1')
+    expect(fn).toContain('GetDlgItem $0 $HWNDPARENT 3')
+    expect(fn).toContain('GetDlgItem $0 $HWNDPARENT 1')
+    expect(fn).not.toContain('$HWNDPARENT 2')
+  })
 })
