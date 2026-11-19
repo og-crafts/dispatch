@@ -2,7 +2,7 @@
 
 Owner chose: all four groups + suite runner, performance/load testing, data-driven testing. Git: commit per
 feature on branch `overnight/v0.2`, push to the private repo, open a PR for review in the morning.
-Out of scope (conflicts with OneLifeStack rules): cloud/team workspaces, monitors, Postbot/AI.
+Out of scope (conflicts with OneLifeStack rules): cloud/team workspaces, monitors, built-in AI chat.
 
 Order (each step: code + tests + typecheck + build, then commit and push):
 
@@ -32,11 +32,11 @@ Progress notes go under each step as it lands.
   globals, secret variables (blank in backups), path variables, all body types incl. files (fetch + Rust multipart),
   per-request settings, timings (TTFB/download). 48 tests.
 - Step 3: scripts run in a fresh Web Worker per script (fetch/XHR/WebSocket/IndexedDB removed first; 10 s limit),
-  pm API close to Postman's (scopes, request edits, response + to.have.*, test/expect via chai, sendRequest,
+  pm-style scripting API (scopes, request edits, response + to.have.*, test/expect via chai, sendRequest,
   skipRequest, setNextRequest, legacy tests[]), collection → folders → request order, tests tab, console drawer,
   snippets. Browser-checked: sendRequest works, direct fetch blocked. Also pulled in from step 11: HTML/image
   preview (sandboxed iframe), JSONPath filter, cookies tab, save response to file, save as example, timings.
-- Step 4: 70 {{$random…}} generators (Postman names, built-in word lists), "{{ }}" panel listing scope + generators.
+- Step 4: 70 {{$random…}} generators (compatible names, built-in word lists), "{{ }}" panel listing scope + generators.
 - Step 5: runner view (targets = suite, pick/reorder, iterations, delay, CSV/JSON data, stop on failure, keep
   variable changes, live results + inspector, JSON/JUnit export); setNextRequest with loop guard; cookie jar
   (CookieTransport) on desktop and in runs. Core in core/runner.ts + core/csv.ts so the CLI reuses it.

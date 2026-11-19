@@ -20,7 +20,7 @@ function useMedia(query: string): boolean {
 }
 
 /**
- * Request above response (side by side on wide screens) with a divider you drag, like Postman: each side scrolls
+ * Request above response (side by side on wide screens) with a divider you drag: each side scrolls
  * on its own, so giving the request more room gives the body editor more room. Arrow keys move it too, a
  * double-click resets it, and the position is remembered. On phones the two simply stack.
  */

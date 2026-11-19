@@ -1,5 +1,5 @@
 /**
- * Pre-request and post-response scripts with a pm-style API (close to Postman's, so existing scripts mostly work).
+ * Pre-request and post-response scripts with a pm-style API (so existing collection scripts mostly work).
  * This file has no DOM or Node dependencies: the Web Worker, the tests and the CLI all run it, each passing in how
  * to compile code. Scripts never touch the app directly; they get plain data in and give plain data back.
  */

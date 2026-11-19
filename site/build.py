@@ -88,7 +88,7 @@ def shell(path, title, desc, body, current="", noindex=False):
 </main>
 <footer class="site"><div class="wrap">
 <div><a class="brand" href="/"><img src="/assets/icon-32.png" width="32" height="32" alt="">Dispatch</a>
-<p>A local-first API client. No account, no cloud, nothing shared unless you say yes.</p></div>
+<p>An API client that keeps your work on your machine. No account, nothing shared unless you say yes.</p></div>
 <div><h2>Dispatch</h2><ul><li><a href="/#features">Features</a></li><li><a href="/download/">Download</a></li><li><a href="/cli/">Command line</a></li><li>{app or '<a href="/download/">Web app</a>'}</li><li><a href="/changelog/">Changelog</a></li><li><a href="https://github.com/og-crafts/dispatch">Source code</a></li></ul></div>
 <div><h2>Fine print</h2><ul><li><a href="/privacy/">Privacy policy</a></li><li><a href="/terms/">Terms of use</a></li><li><a href="/code-signing/">Code signing policy</a></li><li><a href="/support/">Support</a></li><li><a href="mailto:{EMAIL}">{EMAIL}</a></li></ul></div>
 <small>&copy; {DAY[:4]} OGCrafts. Dispatch is made by <a href="https://ogcrafts.cloud">OGCrafts</a>. Other product and format names that appear on this site are used only to say what Dispatch can import or export; they belong to their owners, and Dispatch is independent of and not affiliated with them.</small>
@@ -99,6 +99,17 @@ def article(path, title, desc, inner, crumb):
     return shell(path, f"{title} | Dispatch", desc, body, current=path)
 
 # ---------- content ----------
+# Each card starts from a frustration people have with API tools and says what Dispatch does about it.
+# No product is named or compared here, on purpose.
+WHY = [
+ ("No account. Open it and send.", "There is nothing to sign up for and no login between you and your first request. Dispatch has no accounts at all, so there is no account to lose access to either."),
+ ("Your work stays where you put it.", "Collections, environments and history are saved on your machine. Secrets are encrypted with a key that never leaves it. We run no server that receives your requests, and we could not read them if we wanted to."),
+ ("The basics are not behind a paywall.", "The runner, load tests, mock server, documentation and command-line runner are all in the same free app. There are no tiers, seats or limits on how many times you may run your own collection."),
+ ("It works when the network doesn&rsquo;t.", "On a train, on a locked-down VPN or in a room with no signal, the desktop app opens and your collections are there. Nothing has to sync before you can work."),
+ ("Your team already has a place to share.", "Link a workspace to a folder and it becomes plain YAML files. Review them in a pull request and share them through the git you already use."),
+ ("You decide what leaves your machine.", "Usage and error reports are off until you tick a box, and the privacy policy lists exactly what they contain. Your URLs, requests and responses are never part of them."),
+]
+
 FEATURES = [
  ("Requests", "HTTP with params, path variables, headers and bodies: JSON, text, XML, HTML, urlencoded, multipart with files, binary and GraphQL. Also WebSocket, MQTT over WebSocket, server-sent events, Socket.IO and, on desktop, gRPC with server reflection or a `.proto` file. Several requests open in tabs."),
  ("GraphQL", "Fetch the schema by introspection, get completions and checks as you type, and browse the schema with starter operations."),
@@ -108,6 +119,8 @@ FEATURES = [
  ("Browser logins", "On desktop, a Browser login request drives your installed Chrome or Edge through a login page: open, type, click, wait. It keeps the cookies (HttpOnly too) or the token from local storage as secret variables, so the requests after it are signed in. It also runs in the runner, schedules and the CLI."),
  ("Flows", "Wire saved requests together on a canvas with If, Script, Set variable, For each, Delay and End blocks. Requests branch on ok or failed, and each block shows its status live while the flow runs. Run flows in the app or with `dispatch-run flow`."),
  ("MCP", "Test MCP servers: connect over HTTP or, on desktop, start a local server command, then list and call tools, read resources and get prompts. On desktop, sign in to servers that use OAuth; the sign-in is kept per environment as a secret. `dispatch-run mcp` works the other way round and lets an AI assistant list, send and run your saved requests, limited to the methods you allow."),
+ ("AI assistants, on your terms", "On desktop, Dispatch can let the AI assistant you already use work with your requests through a local connection. It is off until you turn it on, limited to the methods you allow, and secret values are hidden from it. Hand a request over with a note, and decide whether the assistant may edit your workspace or only its own."),
+ ("Share as a page", "Turn a request or a collection into one HTML file anyone can open, with the response and examples included and secret values removed before it is written."),
  ("Runner and data-driven runs", "Run a collection, a folder or a suite, with iterations, delays, CSV or JSON data files and stop-on-failure. Export JSON or JUnit reports."),
  ("Load testing", "Up to 200 virtual users with ramp-up, duration or loops, think time and pass/fail thresholds (p95, error rate, throughput). Latency and throughput charts, and a CSV of every sample."),
  ("Schedules", "On desktop, run a collection every few minutes and get a notification when it fails. Results are kept."),
@@ -138,11 +151,11 @@ FAQ = [
  ("Is Dispatch free?", "Yes. There are no accounts, ads or paid tiers."),
  ("Is Dispatch open source?", "Yes, under the MIT licence. The source code is on <a href=\"https://github.com/og-crafts/dispatch\">GitHub</a>, so you can read it, build it yourself and report issues there."),
  ("Where is my data stored?", "On your device. The desktop app and the web app both keep collections, environments and history in local storage (IndexedDB). If you link a workspace or collection to a folder on desktop, that folder holds them too. We run no server that receives your data."),
- ("Does it send anything besides my requests?", "Only if you agree. On first launch Dispatch asks whether to share anonymous usage (which features are used) and reports of its own errors; both are off unless you tick them, and you can change them in Settings. It never sends your URLs, requests, responses or variables. The desktop app checks for updates only when you ask. See the privacy policy."),
+ ("Does it send anything besides my requests?", "Only if you agree. On first launch Dispatch asks whether to share anonymous usage (which features are used) and reports of its own errors; both are off unless you tick them, and you can change them in Settings. It never sends your URLs, requests, responses or variables. The desktop app checks for updates only when you ask, or on start if you turn that on in Settings. See the privacy policy."),
  ("What happens to my secrets?", "Secret variables, passwords, tokens, keys and Authorization or Cookie headers are encrypted before they are stored, using a key that stays on the device and cannot be exported. A copy of the database moved to another device cannot read them. Exports and backups leave secrets out."),
  ("What if I clear my browser data?", "The web app keeps its data in that browser, so clearing site data erases it. Use Menu, Export backup now and then. The desktop app is not affected by browser data."),
  ("Why does the web app say servers must allow CORS?", "A web page can only read responses from servers that permit it. If a server does not, use the desktop app, which has no such rule."),
- ("Can it replace my current API client?", "It can import Postman collections and environments, Insomnia exports, Bruno folders, OpenAPI files, HAR files and curl commands, so you can try it on your own collections. Check the feature list for what you rely on."),
+ ("Can I bring my existing collections?", "Yes. Dispatch imports Postman collections and environments, Insomnia exports, Bruno folders, OpenAPI files, HAR files and curl commands, so you can try it with the requests you already have."),
  ("Are the installers signed?", "Not yet. Windows SmartScreen and macOS Gatekeeper will warn on first launch. The <a href=\"/download/#unsigned\">download page</a> explains how to open them."),
  ("Does it sync between devices?", "Not now. Export a backup, or link a workspace to a folder and keep it in git."),
  ("Is there a mobile app?", "No. The web app works in a phone browser but is built for a larger screen."),
@@ -163,6 +176,7 @@ def app_buttons(primary=True):
     return out
 
 def home():
+    why = "".join(f'<div class="card"><h3>{t}</h3><p>{inline(d)}</p></div>' for t, d in WHY)
     feats = "".join(f'<div class="card"><h3>{t}</h3><p>{inline(d)}</p></div>' for t, d in FEATURES)
     cmp_rows = "".join(f"<tr><th scope=\"row\">{inline(a)}</th><td>{inline(b)}</td><td>{inline(c)}</td></tr>" for a, b, c in COMPARE)
     faq = "".join(f"<details><summary>{q}</summary><p>{a if '<a' in a else inline(a)}</p></details>" for q, a in FAQ)
@@ -172,30 +186,32 @@ def home():
     return f"""
 <section class="hero"><div class="wrap"><div>
 <p class="eyebrow">Dispatch by OGCrafts</p>
-<h1>A local-first API client.</h1>
-<p class="lead">Build, send, test and document APIs. No account, no cloud. Your collections stay on your device.</p>
+<h1>Open it. Send the request. That&rsquo;s it.</h1>
+<p class="lead">Dispatch is an API client that stays out of your way. Nothing to sign up for, nothing to log in to, and your collections stay on your own machine.</p>
 <div class="cta-row">{app_buttons()}</div>
-<p class="note">Version {e(VERSION)}. Desktop for Windows, macOS and Linux, the same app in your browser, and a command-line runner for CI. Free and open source.</p></div>
+<p class="note">Free and open source. For Windows, macOS and Linux, in your browser, and on the command line for CI.</p></div>
 {figure("request", lazy=False, dark="request-dark")}</div></section>
-<div class="promise"><div class="wrap"><ul><li>No account</li><li>No cloud</li><li>Opt-in only analytics</li><li>Workspaces as files for git</li><li>Open source (MIT)</li><li>CLI for CI</li></ul></div></div>
-<section id="features"><div class="wrap"><div class="section-head"><p class="eyebrow">What it does</p><h2>Everything you need to work with an API.</h2><p class="lead">One app for sending requests, checking responses, running them in bulk and documenting the result.</p></div>
-<div class="grid">{feats}</div></div></section>
+<div class="promise"><div class="wrap"><ul><li>No sign-up, ever</li><li>Your data stays with you</li><li>Nothing behind a paywall</li><li>Plain files that live in git</li><li>Open source (MIT)</li></ul></div></div>
+<section id="why"><div class="wrap"><div class="section-head"><p class="eyebrow">Why we built it</p><h2>We wanted our API tool back.</h2><p class="lead">You know the feeling. You only want to check one endpoint, and first there is a login screen, a sync spinner and a banner about a plan you don&rsquo;t need. We felt that too, so we built the tool we wanted to use.</p></div>
+<div class="grid three">{why}</div></div></section>
 <section class="tint" id="tour"><div class="wrap">
 <div class="split"><div><p class="eyebrow">Scripts and tests</p><h2>Check every response.</h2><p>Write a few lines of JavaScript after a request to test the status, the body or the timing, and to save a value like a token for the next request. Each test shows as passed or failed under the response.</p><p>Scripts run in a sandbox, apart from the app and your saved data.</p></div>{figure("scripts")}</div>
 <div class="split flip"><div><p class="eyebrow">Runner</p><h2>Run it again for every row.</h2><p>Run a whole collection, a folder or several collections as a suite. Give it a CSV or JSON file and it runs once per row, with the columns as variables. Export the results as JSON or JUnit.</p><p>The same run works from the command line, so CI can do it too.</p></div>{figure("runner")}</div>
 <div class="split"><div><p class="eyebrow">Load testing</p><h2>See how it holds up.</h2><p>Send the same request, or a whole flow, from up to 200 virtual users. Set pass and fail thresholds for p95 latency, error rate and throughput, and watch the charts.</p><p>Load test only servers you own or have permission to test. Dispatch asks you to confirm that before it starts.</p></div>{figure("load")}</div>
 <div class="split flip"><div><p class="eyebrow">Docs and mocks</p><h2>Documentation comes with the collection.</h2><p>Dispatch writes Markdown documentation from your requests, parameters, bodies and saved examples, and leaves secret values out. Save a response as an example and a mock server can serve it back.</p></div>{figure("docs")}</div>
 </div></section>
-<section id="imports"><div class="wrap"><div class="section-head"><p class="eyebrow">Bring what you have</p><h2>Import, export, keep in git.</h2><p>Dispatch reads the formats your collections are probably in, and writes its own as plain files.</p></div>
+<section id="features"><div class="wrap"><div class="section-head"><p class="eyebrow">Also in the box</p><h2>The whole job, in one app.</h2><p class="lead">Send requests, check the responses, run them in bulk, and write up the result. All of it is included.</p></div>
+<div class="grid">{feats}</div></div></section>
+<section class="tint" id="imports"><div class="wrap"><div class="section-head"><p class="eyebrow">Bring what you have</p><h2>Import, export, keep in git.</h2><p>Years of saved requests shouldn&rsquo;t be the price of trying something new. Dispatch reads the formats your collections are already in, and writes its own as plain files.</p></div>
 <ul class="chips"><li>Postman collections and environments</li><li>Insomnia</li><li>Bruno folders</li><li>OpenAPI 3 and Swagger 2</li><li>HAR</li><li>curl</li><li>Postman export</li><li>YAML folders for git</li></ul>
-<p class="muted">Import any of them from the menu, or paste a curl command into the URL bar. Names of other tools appear here only to describe file formats.</p></div></section>
-<section class="tint" id="compare"><div class="wrap"><div class="section-head"><p class="eyebrow">Desktop or web</p><h2>Same app, two ways to send.</h2><p>The desktop app sends requests from Rust, so it can reach any server. The web app uses the browser&rsquo;s <code>fetch</code>, so the browser&rsquo;s rules apply.</p></div>
+<p class="muted">Import any of them from the menu, or paste a curl command into the URL bar.</p></div></section>
+<section id="compare"><div class="wrap"><div class="section-head"><p class="eyebrow">Desktop or web</p><h2>Same app, two ways to send.</h2><p>The desktop app sends requests from Rust, so it can reach any server. The web app uses the browser&rsquo;s <code>fetch</code>, so the browser&rsquo;s rules apply.</p></div>
 <div class="table-wrap"><table><thead><tr><th scope="col">&nbsp;</th><th scope="col">Desktop</th><th scope="col">Web</th></tr></thead><tbody>{cmp_rows}</tbody></table></div></div></section>
-<section id="privacy"><div class="wrap"><div class="section-head"><p class="eyebrow">Privacy</p><h2>Your APIs are your business.</h2><p>Dispatch has no servers of its own to send your data to. The <a href="/privacy/">privacy policy</a> has the details in plain words.</p></div>
-<div class="grid"><div class="card"><h3>Kept on your device</h3><ul>{keep}</ul></div><div class="card"><h3>Never happens</h3><ul>{never}</ul></div></div></div></section>
-<section class="tint" id="next"><div class="wrap"><div class="section-head"><p class="eyebrow">Coming next</p><h2>Planned, not shipped.</h2><p>These are ideas we intend to build. They are not in the current release, and there is no date.</p></div><div class="grid">{nxt}</div></div></section>
-<section id="faq"><div class="wrap"><div class="section-head"><p class="eyebrow">FAQ</p><h2>Good questions.</h2></div>{faq}<p>Still stuck? <a href="/support/">Contact support</a>.</p></div></section>
-<section class="tint"><div class="wrap"><h2>Try it now.</h2><p class="lead">Open the web app and send a request, no sign-up.</p><div class="cta-row">{app_buttons()}</div></div></section>
+<section class="tint" id="privacy"><div class="wrap"><div class="section-head"><p class="eyebrow">Privacy</p><h2>Your APIs are your business.</h2><p>Dispatch has no servers of its own to send your data to. The <a href="/privacy/">privacy policy</a> has the details in plain words.</p></div>
+<div class="grid"><div class="card"><h3>Kept on your device</h3><ul>{keep}</ul></div><div class="card"><h3>What we will never do</h3><ul>{never}</ul></div></div></div></section>
+<section id="next"><div class="wrap"><div class="section-head"><p class="eyebrow">Coming next</p><h2>Planned, not shipped.</h2><p>These are ideas we intend to build. They are not in the current release, and there is no date.</p></div><div class="grid">{nxt}</div></div></section>
+<section class="tint" id="faq"><div class="wrap"><div class="section-head"><p class="eyebrow">FAQ</p><h2>Good questions.</h2></div>{faq}<p>Still stuck? <a href="/support/">Contact support</a>.</p></div></section>
+<section><div class="wrap"><h2>Send your first request in a minute.</h2><p class="lead">Open the web app and try it. There is nothing to sign up for.</p><div class="cta-row">{app_buttons()}</div></div></section>
 """
 
 def dl_card(os_key, title, assets):
@@ -263,7 +279,7 @@ def cli_page():
 <p>Runs a flow from a Dispatch backup or export, with the same blocks and branches as in the app. Browser login steps need Chrome or Edge on the machine.</p>
 <h2>Serve a collection to an AI assistant (MCP)</h2>
 <pre><code>claude mcp add dispatch -- node dispatch-run.mjs mcp ./my-collection -e staging.json --allow-methods GET,HEAD</code></pre>
-<p>An MCP server over stdio with three tools: <code>list_requests</code>, <code>send_request</code> and <code>run_collection</code>. Requests go through their auth, scripts and tests. <code>--allow-methods</code> limits what the assistant may send.</p>
+<p>An MCP server over stdio with four tools: <code>list_requests</code>, <code>send_request</code>, <code>run_collection</code> and <code>run_flow</code>. Requests go through their auth, scripts and tests. <code>--allow-methods</code> limits what the assistant may send.</p>
 <h2>In GitHub Actions</h2>
 <pre><code>- uses: actions/setup-node@v4
   with: {{ node-version: 22 }}
@@ -395,7 +411,7 @@ def main():
     if WEB: shutil.copytree(WEB_DIST, DIST / "app")
     if CLI: (DIST / "downloads").mkdir(); shutil.copy(CLI_FILE, DIST / "downloads/dispatch-run.mjs")
 
-    pages = {"/": shell("/", "Dispatch: a local-first API client", "Build, send, test and document APIs. No account, no cloud; your collections stay on your device. Desktop, web and CLI.", home(), current="/")}
+    pages = {"/": shell("/", "Dispatch: an API client with no account and no cloud", "Open it and send the request. Nothing to sign up for, and your collections stay on your own machine. Free and open source, for desktop, web and CI.", home(), current="/")}
     pages["/download/"] = article("/download/", "Download", "Download Dispatch for Windows, macOS and Linux, open the web app, or get the command-line runner.", download(), "Download")
     pages["/cli/"] = article("/cli/", "Command line", "dispatch-run runs Dispatch collections, load tests and mock servers from the command line and in CI.", cli_page(), "Command line")
     pages["/changelog/"] = article("/changelog/", "Changelog", "What changed in each Dispatch release.", changelog(), "Changelog")
@@ -410,7 +426,7 @@ def main():
     (DIST / "sitemap.xml").write_text('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + "".join(f"<url><loc>{BASE}{p}</loc><lastmod>{DAY}</lastmod></url>\n" for p in urls) + "</urlset>\n")
     (DIST / "CNAME").write_text("dispatch.ogcrafts.cloud\n"); (DIST / ".nojekyll").write_text("")
     (DIST / "robots.txt").write_text(f"User-agent: *\nAllow: /\nSitemap: {BASE}/sitemap.xml\n")
-    (DIST / "site.webmanifest").write_text(json.dumps({"name": "Dispatch", "short_name": "Dispatch", "description": "A local-first API client", "start_url": "/app/", "scope": "/app/", "display": "standalone",
+    (DIST / "site.webmanifest").write_text(json.dumps({"name": "Dispatch", "short_name": "Dispatch", "description": "An API client that keeps your work on your machine", "start_url": "/app/", "scope": "/app/", "display": "standalone",
         "icons": [{"src": "/assets/icon-192.png", "sizes": "192x192", "type": "image/png"}, {"src": "/assets/icon-512.png", "sizes": "512x512", "type": "image/png"}],
         "theme_color": "#FFF9F2", "background_color": "#FFF9F2"}) + "\n")
     return check(pages)

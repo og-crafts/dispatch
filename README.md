@@ -1,7 +1,11 @@
 # Dispatch by OGCrafts
 
-A local-first API client for building, sending, testing and documenting APIs. It runs as a desktop app (Tauri, for
-Linux, Windows and macOS), as a web app built from the same code, and as a command-line runner for CI.
+An API client that stays out of your way. Open it and send the request: there is nothing to sign up for, and your
+collections stay on your own machine. Build, send, test and document APIs in a desktop app (Tauri, for Linux,
+Windows and macOS), in a web app built from the same code, or from a command-line runner for CI.
+
+We built it because we wanted our API tool back: no login before the first request, no waiting for a sync, the
+runner, load tests, mocks and docs all in the same free app, and collections as plain files that live in git.
 
 No account, no sync. Collections, environments and history stay in this device's storage. Besides the requests you
 send, Dispatch sends nothing unless you opt in to anonymous usage and error reports (asked on first launch; see
@@ -9,7 +13,7 @@ docs/TELEMETRY.md) or check for updates.
 
 ## Features
 
-**New in v0.3**
+**Everyday work**
 - Code editor (CodeMirror): syntax colours, `{{variable}}` and `pm.` autocomplete, GraphQL completion from the
   schema, foldable JSON responses.
 - Secrets (secret variables, passwords, tokens, keys, Authorization/Cookie headers) encrypted at rest with a
@@ -34,7 +38,7 @@ docs/TELEMETRY.md) or check for updates.
   never exported. A list of well-known MCP servers (Linear, Notion, Atlassian, Sentry, Stripe, GitHub, …) to start
   from.
 - Flows: a canvas where you wire saved requests together with If, Script, Set variable, For each, Delay and End
-  blocks, n8n-style. Requests branch on “ok”/“failed”; live status per block and a run log. Run them in the app,
+  blocks. Requests branch on “ok”/“failed”; live status per block and a run log. Run them in the app,
   with `dispatch-run flow`, or from an AI assistant (`run_flow` over MCP). Flows are part of backups and exports.
 
 **Requests**
@@ -51,7 +55,7 @@ refresh), JWT (HS256/384/512), AWS Signature v4; inherited from folders and coll
 **Variables**: globals, collection, environment, data-file and script-local scopes; secret values (hidden, left out
 of backups); 70 `{{$random…}}` fake-data generators; a `{{ }}` panel listing what's in scope.
 
-**Scripts and tests**: pre-request and post-response JavaScript with a `pm` API close to Postman's (variables,
+**Scripts and tests**: pre-request and post-response JavaScript with a `pm.*` scripting API, so many existing collection scripts keep working (variables,
 request edits, `pm.response`, `pm.test`/`pm.expect` with chai, `pm.sendRequest`, `setNextRequest`, `skipRequest`).
 Scripts run sandboxed in a Web Worker with no network or storage access of their own. Console for script output and
 the network log.
@@ -94,8 +98,12 @@ For gRPC see `examples/grpc/README.md`.
 
 ## Not yet
 
-Code signing and auto-updates (need the owner's certificates and key; see docs/RELEASING.md), optional
-Sync (needs a design), gRPC in the browser, AI assistance (needs a separate decision).
+Signed installers (in progress; see docs/SIGNING.md), optional sync between devices (needs a design) and gRPC in
+the browser.
+
+Already here since the early previews: in-app updates on desktop (you are asked before anything is installed), a
+local connection for the AI assistant you already use (off by default, secrets hidden; Settings → AI assistants),
+Share as HTML, and usage and error reports that stay off unless you opt in (docs/TELEMETRY.md).
 
 ## Build
 

@@ -3,8 +3,11 @@
 Dispatch is OGCrafts' local-first API client: a React + TypeScript web app (`src/`) wrapped in a Tauri 2
 desktop shell (`src-tauri/`). Same UI everywhere; only the transport differs (`src/core/transport.ts`).
 
-It's our own app with its own name and look (own palette, inherited from the OneLifeStack apps). Postman is only a reference for the feature set
-and an import format; never copy its name, branding, icons or UI.
+It's our own app with its own name and look (own palette, inherited from the OneLifeStack apps). Other API tools appear only as file formats we import or export;
+never copy another product's name, branding, icons, UI or wording, and never describe Dispatch as an alternative to,
+replacement for or clone of another product (owner rule, 2026-11-19). Copy is warm and starts from the problems
+people have with API tools (forced accounts, sync, paywalled basics, data leaving the machine) and what Dispatch does
+about each, without naming or disparaging anyone.
 
 ## Layout
 

@@ -218,7 +218,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
     ws.closeTabs(ids)
   }, [ws, confirm])
   const ctx = useContextMenu()
-  /** Right-click on a tab: Postman's tab menu. */
+  /** Right-click on a tab: the tab menu. */
   const tabMenu = useCallback((e: React.MouseEvent, id: string) => {
     const i = ws.tabs.findIndex((t) => t.id === id)
     if (i < 0) return
