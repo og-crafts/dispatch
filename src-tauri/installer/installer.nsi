@@ -839,7 +839,13 @@ Function .onInstSuccess
       ${GetOptions} $CMDLINE "/ARGS" $R0
       nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" "$R0"
     ; DISPATCH: a one-click install has no finish page with a "Run" box, so open the app
+    ; The first start of a new build can take Windows half a minute to check, with this window still up,
+    ; so say what is happening, and repaint now because the launch call blocks this thread.
     ${ElseIf} $OneClick = 1
+      !insertmacro MUI_HEADER_TEXT "Opening Dispatch" "The first time, Windows may take a moment to check it."
+      GetDlgItem $0 $HWNDPARENT 3
+      ShowWindow $0 ${SW_HIDE}
+      System::Call 'user32::RedrawWindow(p $HWNDPARENT, p 0, p 0, i 0x181)'
       nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" ""
     ${EndIf}
   ${EndIf}

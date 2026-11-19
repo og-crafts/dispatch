@@ -19,7 +19,7 @@ describe('Windows installer template', () => {
   it('turns a plain double-click into a one-click install and opens the app afterwards', () => {
     expect(nsi).toMatch(/GetOptions\} \$CMDLINE "\/WIZARD"/)
     expect(nsi).toMatch(/StrCpy \$PassiveMode 1\s+StrCpy \$OneClick 1/)
-    expect(nsi).toMatch(/\$\{ElseIf\} \$OneClick = 1\s+nsis_tauri_utils::RunAsUser/)
+    expect(nsi).toMatch(/\$\{ElseIf\} \$OneClick = 1[\s\S]{0,400}?nsis_tauri_utils::RunAsUser "\$INSTDIR/)
   })
 
   it('leaves silent, passive and update runs as Tauri made them', () => {
@@ -43,5 +43,9 @@ describe('Windows installer template', () => {
     expect(fn).toContain('GetDlgItem $0 $HWNDPARENT 3')
     expect(fn).toContain('GetDlgItem $0 $HWNDPARENT 1')
     expect(fn).not.toContain('$HWNDPARENT 2')
+    // while Windows checks a new build before its first start, the window says so
+    const done = nsi.slice(nsi.indexOf('Function .onInstSuccess'))
+    expect(done.indexOf('"Opening Dispatch"')).toBeGreaterThan(done.indexOf('${ElseIf} $OneClick = 1'))
+    expect(done.indexOf('"Opening Dispatch"')).toBeLessThan(done.indexOf('RunAsUser "$INSTDIR\\${MAINBINARYNAME}.exe" ""'))
   })
 })
