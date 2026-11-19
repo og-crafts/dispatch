@@ -39,6 +39,7 @@ import { ProtocolPicker, RealtimePane } from './RealtimePane'
 import { GrpcPane } from './GrpcPane'
 import { BackupsView } from './BackupsView'
 import { CookiesView, SettingsView } from './SettingsView'
+import { LOOKS } from '../core/types'
 import type { Auth } from '../core/types'
 import type { Collection } from '../core/types'
 import type { Pipeline } from '../core/runtime'
@@ -176,6 +177,11 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
     const root = document.documentElement
     if (ws.settings.theme === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', ws.settings.theme)
   }, [ws.settings.theme])
+  useEffect(() => {
+    const root = document.documentElement
+    const look = LOOKS.includes(ws.settings.look) ? ws.settings.look : 'dispatch'
+    if (look === 'dispatch') root.removeAttribute('data-look'); else root.setAttribute('data-look', look)
+  }, [ws.settings.look])
 
   const save = useCallback(async () => {
     if (ws.saved) { await ws.saveDraft(); notify('Saved.'); return }

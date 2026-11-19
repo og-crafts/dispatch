@@ -131,17 +131,17 @@ describe('app shell', () => {
 })
 
 describe('settings tabs', () => {
-  it('splits Settings into General, Network, Certificates and AI assistants on the desktop', async () => {
+  it('splits Settings into General, Themes, Network, Certificates and AI assistants on the desktop', async () => {
     const { SettingsView } = await import('../src/ui/SettingsView')
     const { defaultSettings } = await import('../src/core/types')
     const ws = { settings: defaultSettings, transport: { unrestricted: true }, setSettings: () => {} } as any
     render(<SettingsView ws={ws} notify={() => {}} />)
     const tabs = within(screen.getByRole('tablist', { name: 'Settings sections' }))
-    expect(screen.getByLabelText('Theme')).toBeTruthy()
+    expect(screen.getByLabelText('Timeout (seconds)')).toBeTruthy()
     expect(screen.queryByText(/Proxy URL/)).toBeNull()
     fireEvent.click(tabs.getByRole('tab', { name: 'Network' }))
     expect(screen.getByText(/Proxy URL/)).toBeTruthy()
-    expect(screen.queryByLabelText('Theme')).toBeNull()
+    expect(screen.queryByLabelText('Timeout (seconds)')).toBeNull()
     fireEvent.click(tabs.getByRole('tab', { name: 'Certificates' }))
     expect(screen.getByRole('button', { name: '+ Add certificate' })).toBeTruthy()
     fireEvent.click(tabs.getByRole('tab', { name: 'AI assistants' }))
@@ -149,12 +149,27 @@ describe('settings tabs', () => {
     expect(screen.getByRole('checkbox', { name: /Let AI assistants use Dispatch/ })).toBeTruthy()
   })
 
-  it('shows only General in the browser, where the network settings don’t apply', async () => {
+  it('shows only General and Themes in the browser, where the network settings don’t apply', async () => {
     const { SettingsView } = await import('../src/ui/SettingsView')
     const { defaultSettings } = await import('../src/core/types')
     render(<SettingsView ws={{ settings: defaultSettings, transport: { unrestricted: false }, setSettings: () => {} } as any} notify={() => {}} />)
-    expect(screen.queryByRole('tablist', { name: 'Settings sections' })).toBeNull()
+    const tabs = within(screen.getByRole('tablist', { name: 'Settings sections' }))
+    expect(tabs.getAllByRole('tab').map((t) => t.textContent)).toEqual(['General', 'Themes'])
     expect(screen.getByText(/for the desktop app/)).toBeTruthy()
+  })
+
+  it('lets you pick a look and light or dark under Themes', async () => {
+    const { SettingsView } = await import('../src/ui/SettingsView')
+    const { defaultSettings } = await import('../src/core/types')
+    const saved: object[] = []
+    render(<SettingsView ws={{ settings: defaultSettings, transport: { unrestricted: true }, setSettings: (p: object) => saved.push(p) } as any} notify={() => {}} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Themes' }))
+    const looks = within(screen.getByRole('radiogroup', { name: 'Theme' }))
+    expect(looks.getAllByRole('radio').map((r) => (r as HTMLInputElement).value)).toEqual(['dispatch', 'grove', 'grove-classic'])
+    expect((looks.getByRole('radio', { name: /^Dispatch/ }) as HTMLInputElement).checked).toBe(true)
+    fireEvent.click(looks.getByRole('radio', { name: /^Grove classic/ }))
+    fireEvent.change(screen.getByLabelText('Light or dark'), { target: { value: 'dark' } })
+    expect(saved).toEqual([{ look: 'grove-classic' }, { theme: 'dark' }])
   })
 })
 

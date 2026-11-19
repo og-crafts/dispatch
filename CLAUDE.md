@@ -45,6 +45,14 @@ and an import format; never copy its name, branding, icons or UI.
   for marks and focus); spacing on a 4px grid; weights 400–600, sentence-case labels; the response "postmark" (status ·
   time · size, `.postmark` in ResponsePane) is the signature. The "Look" section at the end of `app.css` overrides the
   older rules.
+  Themes (Settings → Themes, since 2026-11-19): `settings.look` = `dispatch` (the look above, default) | `grove` |
+  `grove-classic`, set as `data-look` on `<html>`; `settings.theme` still picks light/dark. Both Grove looks share one
+  palette (mint, forest green, terracotta; from the owner's design canvas "Dispatch — screen designs", directions F
+  and G); the owner wants the colours to match the canvas exactly (2026-11-19): only green, terracotta and the
+  delete red carry meaning (PUT/PATCH are terracotta like POST, no blue or purple), dividers are `--divider` and the bundled Manrope font (`@fontsource-variable/manrope`, no network); `grove` is roomy (pill bars, filled
+  pill tabs, big request title), `grove-classic` keeps the compact layout. All of it is the "Themes" block at the end
+  of `app.css`; new rules must use tokens (`--sans` for the font) so every look picks them up. The canvas's own
+  layouts (nav in the top bar, a history sidebar, Git status line) are NOT built: the looks restyle today's layout.
 - Share as HTML: `core/share.ts` builds sanitized data (Sanitizer: secret-named values, JWT/bearer/AWS keys,
   emails, IPs, server address → `{{baseUrl}}`, sampled lists; variables stay `{{name}}`), `core/shareHtml.ts`
   renders one self-contained page (CSP, data embedded as JSON, DOM built with textContent). `ui/ShareDialog.tsx`
@@ -204,7 +212,8 @@ two `dispatch.exe` 5–6 s apart, both stalled about 40 s, and one exited as the
 and once without the single-instance guard (PR #32), and not with a third fresh build (one parent, the task's
 `cmd.exe`). Cause unknown; so far only seen with this check's way of launching a just-unpacked exe. Since #32 a
 deliberate second launch can't run a second copy: it focuses the open window and quits within 0.2 s (the lock is
-released before an update restart).
+released before an update restart). Seen a fourth time on 2026-11-19 (themes build, PR #33): two `dispatch.exe` 6 s apart, both children
+of the task's one `cmd.exe`; the guard closed the second copy after 34 s and the first kept running.
 Tips from 2026-11-17: Node's `fetch` won't send a custom `Host` header, so call MCP with `node:http`; dialogs are
 native `<dialog>` elements; picking the open library section folds the panel; import test data by setting a
 `DataTransfer` file on `input[aria-label="Import file"]` and dispatching `change`.
