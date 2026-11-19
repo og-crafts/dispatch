@@ -44,6 +44,7 @@
       },
       "nsis": {
         "installMode": "currentUser",
+        "template": "installer/installer.nsi",
         "headerImage": "installer/nsis-header.bmp",
         "sidebarImage": "installer/nsis-sidebar.bmp",
         "installerIcon": "icons/icon.ico"
