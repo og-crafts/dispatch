@@ -142,7 +142,7 @@ unpack it from `apt-get download libasound2t64` with `dpkg-deb -x` and set `LD_L
 
 ## Where we left off
 
-Updated 2026-11-18. **Pending work is tracked on the Kan board "Dispatch"**
+Updated 2026-11-19. **Pending work is tracked on the Kan board "Dispatch"**
 (https://kanban.gautamlabs.io/boards/mb7hut0k7z77; CLI: `KAN_BOARD=mb7hut0k7z77 ~/bin/kan show|card|move|note|desc`).
 Lists: Waiting on you (owner actions), To do, In progress, Testing, Done; labels Release, Feature, Bug, Testing,
 Infra. Keep the cards current at the end of each session (as with the Native Android Apps board).
@@ -156,8 +156,14 @@ refresh (#17) and its fixes (#20), Share as HTML (#18), in-app updates (#22; upd
 groundwork (#23) and opt-in usage/error reports + Send feedback (#26, `docs/TELEMETRY.md`); since 2026-11-17 also
 the AI hand-off, "AI can edit" and right-click menus (#27) and the MCP log tools (#28), see "AI assistants" below;
 since 2026-11-18 the unslop redesign (#31, see "Look" above) and the single-instance guard (#32: a second launch
-focuses the open window and quits; `tauri-plugin-single-instance`, first plugin in `src-tauri/src/lib.rs`).
-**No PRs are open** (2026-11-18: #31 then #32 merged, branches deleted; `main` = 46560a1).
+focuses the open window and quits; `tauri-plugin-single-instance`, first plugin in `src-tauri/src/lib.rs`);
+since 2026-11-19 themes (#33: Dispatch, Grove, Grove classic; the Grove colours follow the owner's canvas exactly,
+see "Look" above), warm problem-led copy on the site and README with every comparison to other tools removed (#34,
+rule at the top of this file) and the one-click Windows setup (#35, see "Windows setup" below).
+**No PRs are open** (2026-11-19: #33, #34, #35 merged by Claude on the owner's word; `main` = 2ee3999, CI green).
+Follow-ups from the 2026-11-19 audit of the repo and site are on the Kan card "Audit 2026-11-19: follow-ups" (old
+screenshots and og.png, Share as HTML still in the old violet look, OFL notices for Manrope and Nunito, CI
+permissions, no Rust tests in CI, SECURITY.md, hand-bumped version constants).
 - **Blocking the snapshot tag:** the owner's Aptabase App Key and Sentry DSN → repo variables `APTABASE_APP_KEY`,
   `SENTRY_DSN` (a build without them offers and sends nothing). Then tag, the owner publishes the pre-release,
   Claude publishes the site from the tag (policy page + opt-in privacy policy + 0.1.0 changelog go live).
@@ -216,10 +222,30 @@ and once without the single-instance guard (PR #32), and not with a third fresh 
 `cmd.exe`). Cause unknown; so far only seen with this check's way of launching a just-unpacked exe. Since #32 a
 deliberate second launch can't run a second copy: it focuses the open window and quits within 0.2 s (the lock is
 released before an update restart). Seen a fourth time on 2026-11-19 (themes build, PR #33): two `dispatch.exe` 6 s apart, both children
-of the task's one `cmd.exe`; the guard closed the second copy after 34 s and the first kept running.
+of the task's one `cmd.exe`; the guard closed the second copy after 34 s and the first kept running. A fifth time
+the same day, on the first of three fresh installs by the new setup (both copies children of the setup, 0.3 s
+apart; the setup calls `ShellExecute` once). Every sighting is the first start of a never-seen unsigned exe, where
+Windows also holds the launch for about 27 s, so the likely cause is that Windows check, not Dispatch.
 Tips from 2026-11-17: Node's `fetch` won't send a custom `Host` header, so call MCP with `node:http`; dialogs are
 native `<dialog>` elements; picking the open library section folds the panel; import test data by setting a
 `DataTransfer` file on `input[aria-label="Import file"]` and dispatching `change`.
+
+**Windows setup (one-click, #35; checked on the Predator 2026-11-19).** `src-tauri/installer/installer.nsi` is
+Tauri's NSIS template (CLI 2.12.4) with five blocks marked `DISPATCH:`; `tests/installer.test.ts` fails when the
+Tauri CLI is bumped without re-applying them (`docs/RELEASING.md`). A plain double-click forces passive mode: one
+window ("Installing Dispatch", a progress bar, only Cancel), a per-user install with no admin prompt, shortcuts, then
+the app opens. `/WIZARD` brings the pages back; `/S`, `/P` and `/UPDATE` runs are as Tauri made them. Seen working
+on Windows 11 with the CI build 4e5ff68 (left installed there in `%LOCALAPPDATA%\Dispatch`): fresh install, install
+over a running app (closed, replaced, reopened), `/WIZARD`, `/S`. Not run: the uninstall, an in-app update.
+- The first start of every new unsigned build blocks about 27 s inside the setup's launch call (Windows checking the
+  file; a repeat install of the same build takes under 1 s), so the window then says "Opening Dispatch. The first
+  time, Windows may take a moment to check it." A new setup exe also took 30-40 s to start. Signing should end both.
+- The old 0.5.1 on the Predator was a broken MSI remnant (publisher OneLifeStack, no exe). The setup only replaces an
+  MSI with the same product name and publisher, so that entry is still listed in Windows' installed apps.
+- How it was run: copy the setup over `scp`, start it in the owner's desktop session with a temporary `/it`
+  scheduled task that runs a PowerShell watcher (window and control texts through `EnumWindows`/`EnumChildWindows`,
+  pictures with `PrintWindow`), then delete the task and files. Never use `CopyFromScreen`: the setup window opens
+  behind the owner's windows, so it captures their screen. `PrintWindow` hangs while the setup's thread is blocked.
 
 **Moved to OGCrafts (2026-11-14).** Dispatch is no longer an OneLifeStack app. Home: GitHub org
 `og-crafts` (a free org; admin login `og-crafterr`). Repo `og-crafts/dispatch` (transferred, so issues, PRs and the
@@ -243,8 +269,9 @@ numbers restarted here; below, numbers marked *archive* refer to the old repo. L
 repo. Never commit with any address other than the noreply one (see the folder CLAUDE.md).
 
 **Releases.** Every release is a *draft*: the owner publishes. **Versioning restarted at v0.1.0 (owner,
-2026-11-16):** the earlier previews (v0.2.0–v0.5.1, built under OneLifeStack) had their GitHub releases and tags
-deleted from this repo and their changelog entries replaced by one 0.1.0 entry; their history stays in the commits,
+2026-11-16):** the earlier previews (v0.2.0–v0.5.1, built under OneLifeStack) had their changelog entries replaced
+by one 0.1.0 entry. Their GitHub releases (v0.5.0, v0.5.1, the second still marked "Latest") and eight tags are
+still in this repo as of 2026-11-19: delete them only after 0.1.0 is out, with the owner's OK; their history stays in the commits,
 in the private archive repo (drafts up to v0.4.4) and in the notes below. Version numbers live in `package.json`
 (+ lock), `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` (+ lock), `VERSION` in `src/cli/main.ts`,
 `clientVersion` in `src/core/mcp.ts` and `docs/TESTING-WINDOWS.md`.
@@ -283,7 +310,7 @@ in the private archive repo (drafts up to v0.4.4) and in the notes below. Versio
   blocks named "End" can't be told apart in flow selects; importing a
   backup into the same workspace duplicates everything; error texts include Rust internals (`os error 10061`).
 - Issue #2: the Windows test (rounds 1–3 done; round 4 moved into #9). Issue #9: the next Windows round.
-- No PRs open (2026-11-18). PR #10, branded installers (`src-tauri/installer/`, `scripts/make-installer-art.mjs`),
+- No PRs open (2026-11-19). PR #10, branded installers (`src-tauri/installer/`, `scripts/make-installer-art.mjs`),
   is merged; its look has only been seen as images on Linux.
 - Merged 2026-11-10, in `main` but not in any tag: the desktop app's local MCP endpoint (#6; Settings → AI
   assistants; `src-tauri/src/mcp_host.rs`, `src/core/mcpHandler.ts`, `src/ui/mcpHost.ts`; the port applies on
@@ -300,6 +327,10 @@ rebranded site files; `site/release.json` on `main` points at 0.5.1). The OGCraf
 (version) after each release. After each published release: regenerate `site/release.json`, run
 `scripts/publish-site.sh` from a worktree at the release tag (it worked for Claude on 2026-11-14 with the
 `og-crafts` gh token), and bump the version on the home site.
+On 2026-11-19 the owner chose **not** to publish the site from `main` (it describes 0.1.0, and its download page
+says "install 0.1.0 from this page", while the only installers are the 0.5.1 preview): it waits for the
+`v0.1.0-SNAPSHOT` tag. Until then the live site keeps the old copy, says "No telemetry" and has no `/code-signing/`
+page. The GitHub repo description, homepage (the site) and topics were set the same day.
 
 **Waiting on the owner.**
 - **Aptabase App Key and Sentry DSN** as repo variables `APTABASE_APP_KEY` / `SENTRY_DSN`: the only thing blocking
@@ -309,7 +340,8 @@ rebranded site files; `site/release.json` on `main` points at 0.5.1). The OGCraf
 - **Windows code signing: SignPath Foundation** (owner, 2026-11-16). Code signing policy page, privacy wording and
   the CI step (gated on the `SIGNPATH_API_TOKEN` secret) are built; the owner turns on MFA, applies, and after
   approval sets up the SignPath project and token, then approves each release in SignPath. All in `docs/SIGNING.md`.
-- A look at the Windows setup pages and the .dmg window (branded installers, PR #10, merged).
+- A look at the .dmg window (branded installers, PR #10, merged). The Windows setup was seen on the Predator
+  2026-11-19 (above); its header art still shows the old violet icon.
 - Sync design.
 - OGCrafts email extras: Gmail "Send mail as" via Resend and a DMARC record (see the memory note ogcrafts-brand).
 
