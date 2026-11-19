@@ -24,8 +24,8 @@ import { createServer } from 'node:http'
 import { buildRoutes, fillMockBody, matchRoute } from '../core/mock'
 import { serveMcp } from './mcpServer'
 import { runFlow } from '../core/flows'
+import { VERSION } from '../core/version'
 
-const VERSION = '0.1.0'
 const color = process.stdout.isTTY && !process.env.NO_COLOR
 const c = (code: number) => (s: string) => (color ? `\x1b[${code}m${s}\x1b[0m` : s)
 const green = c(32), red = c(31), dim = c(2), bold = c(1), yellow = c(33)

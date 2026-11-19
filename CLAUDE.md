@@ -273,8 +273,9 @@ repo. Never commit with any address other than the noreply one (see the folder C
 by one 0.1.0 entry. Their GitHub releases (v0.5.0, v0.5.1, the second still marked "Latest") and eight tags are
 still in this repo as of 2026-11-19: delete them only after 0.1.0 is out, with the owner's OK; their history stays in the commits,
 in the private archive repo (drafts up to v0.4.4) and in the notes below. Version numbers live in `package.json`
-(+ lock), `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` (+ lock), `VERSION` in `src/cli/main.ts`,
-`clientVersion` in `src/core/mcp.ts` and `docs/TESTING-WINDOWS.md`.
+(+ lock), `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` (+ lock) and `docs/TESTING-WINDOWS.md`;
+`tests/version.test.ts` fails if they disagree. The CLI and the MCP client read theirs from `package.json`
+(`src/core/version.ts`).
 - v0.1.0: the first release as Dispatch by OGCrafts (bundle ID `cloud.ogcrafts.dispatch`, in-app updates, Share
   as HTML, the UX refresh, the MCP assistant workspace). Previews can't update to it: export a backup, uninstall,
   install 0.1.0, import.
@@ -300,8 +301,8 @@ in the private archive repo (drafts up to v0.4.4) and in the notes below. Versio
 - As of 2026-11-16 no tester report on #9 (and none new on #2). Part B is partly covered by Claude's desktop check
   above (MCP endpoint; not drag and drop).
 - **Next step:** read the newest comment on #9 and any `[Windows] …` issues or `test/windows-*` branches the agent
-  opened. Then fix in a PR, bump the version (package.json, tauri.conf.json, Cargo.toml + lock, `VERSION` in
-  `src/cli/main.ts`, `clientVersion` in `src/core/mcp.ts`, the version in `docs/TESTING-WINDOWS.md`), tag, add
+  opened. Then fix in a PR, bump the version (package.json + lock, tauri.conf.json, Cargo.toml + lock, the version in
+  `docs/TESTING-WINDOWS.md`), tag, add
   release notes, and refresh #2's body from the guide.
 
 **Open on GitHub.**

@@ -7,6 +7,7 @@ import type { PreparedRequest } from './types'
 import type { SendOptions, Transport } from './transport'
 import { SendError } from './transport'
 import { SseParser } from './sse'
+import { VERSION } from './version'
 
 export const PROTOCOL_VERSION = '2025-06-18'
 
@@ -42,7 +43,7 @@ export class McpClient {
     return answer.result
   }
 
-  async initialize(clientVersion = '0.1.0') {
+  async initialize(clientVersion = VERSION) {
     const r = await this.call('initialize', { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'Dispatch', version: clientVersion } })
     this.serverInfo = r?.serverInfo ?? {}
     this.capabilities = r?.capabilities ?? {}
