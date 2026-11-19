@@ -1,5 +1,5 @@
 /**
- * Fake data for {{$random…}} variables (names match Postman's, so collections keep working). Small built-in word
+ * Fake data for {{$random…}} variables (the common names, so imported collections keep working). Small built-in word
  * lists, no dependency. Values are plausible test data, not real people or valid card numbers.
  */
 import { uid } from './types'

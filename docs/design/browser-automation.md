@@ -1,8 +1,8 @@
 # Browser steps and flows (design, for discussion)
 
 Status: decided 2026-11-04 (answers below); built on `feature/flows` (browser login requests and visual flows). From inbox item 5: "UI testing, like user name and password, fetching of cookies,
-or auth token from browser cookies and then using it as token for the rest of the pipeline for REST calls. More like
-n8n for testing."
+or auth token from browser cookies and then using it as token for the rest of the pipeline for REST calls." In
+short: a visual flow builder for testing.
 
 ## The problem
 
@@ -17,7 +17,7 @@ What people want:
 2. **Run that unattended** (runner, schedules, CI) where the login can be scripted.
 3. **Check the UI itself** a little: the page loaded, a value is shown, a button works (light UI testing, not a
    full Playwright replacement).
-4. **Chain all of it** visually, like n8n: browser steps, HTTP requests, scripts, conditions, loops.
+4. **Chain all of it** visually: browser steps, HTTP requests, scripts, conditions, loops.
 
 ## Options
 
@@ -55,7 +55,7 @@ The same step, but driven by a short script of actions: `goto`, `fill`, `click`,
 - Cons: SSO with MFA can't be fully unattended (needs a stored session from option A, or a test account
   without MFA); more to maintain.
 
-### C. Flows (the n8n-like part)
+### C. Flows (the visual builder)
 
 A new item type, Flow: a canvas of steps (HTTP request, browser step, script, condition, loop over data, wait,
 extract) wired together, with variables passing between steps. Under the hood it's the existing runner with
@@ -63,7 +63,7 @@ branching, so collections stay the simple, linear case.
 
 - Pros: the most visual and flexible; good for multi-system tests (log in on A, create on B, check on C).
 - Cons: by far the biggest piece (editor, execution engine, error handling, storage, CLI support); risk of
-  building a second, worse n8n.
+  building a general automation tool instead of an API client.
 
 ## Recommendation
 
@@ -97,7 +97,7 @@ Build in three steps, each useful on its own:
 1. Simple username/password forms are enough → scripted steps (option B); no SSO/MFA handling needed now.
 2. Relying on an installed Chrome or Edge is fine → drive it over the DevTools protocol (B1).
 3. For now browser steps only get tokens/cookies; UI assertions come later.
-4. A visual flow builder (option C, n8n-like) is wanted.
+4. A visual flow builder (option C) is wanted.
 
 Plan: (1) a "Browser login" request type with steps (goto, fill, click, wait, extract cookie / storage / text)
 that runs everywhere requests run (app, runner, schedules, CLI, MCP) and stores what it extracts as secret

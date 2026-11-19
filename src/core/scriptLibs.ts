@@ -1,5 +1,5 @@
 /**
- * Libraries scripts can require(), like Postman's sandbox: lodash, moment, crypto-js, uuid, ajv (JSON Schema),
+ * Libraries scripts can require(): lodash, moment, crypto-js, uuid, ajv (JSON Schema),
  * handlebars (visualizer). A script's code is scanned before it runs and only the libraries it mentions are loaded,
  * so a plain script stays fast; require() itself then works synchronously, as scripts expect.
  */
