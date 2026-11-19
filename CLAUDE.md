@@ -211,7 +211,8 @@ two `dispatch.exe` 5–6 s apart, both stalled about 40 s, and one exited as the
 and once without the single-instance guard (PR #32), and not with a third fresh build (one parent, the task's
 `cmd.exe`). Cause unknown; so far only seen with this check's way of launching a just-unpacked exe. Since #32 a
 deliberate second launch can't run a second copy: it focuses the open window and quits within 0.2 s (the lock is
-released before an update restart).
+released before an update restart). Seen a fourth time on 2026-11-19 (themes build, PR #33): two `dispatch.exe` 6 s apart, both children
+of the task's one `cmd.exe`; the guard closed the second copy after 34 s and the first kept running.
 Tips from 2026-11-17: Node's `fetch` won't send a custom `Host` header, so call MCP with `node:http`; dialogs are
 native `<dialog>` elements; picking the open library section folds the panel; import test data by setting a
 `DataTransfer` file on `input[aria-label="Import file"]` and dispatching `change`.

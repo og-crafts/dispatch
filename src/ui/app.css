@@ -854,7 +854,7 @@ body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: 
 [data-look="grove"] .tabs:not(.side-tabs) [role="tab"].on .badge { background: color-mix(in srgb, var(--bg) 18%, transparent); color: inherit; }
 [data-look="grove"] .badge { border-radius: 999px; }
 [data-look="grove"] .request { padding: 20px 24px 0; }
-[data-look="grove"] .reqName { font-size: 26px; font-weight: 700; letter-spacing: -.03em; line-height: 1.15; min-width: 190px; }
+[data-look="grove"] .reqName { font-size: 26px; font-weight: 700; letter-spacing: -.03em; line-height: 1.15; }
 [data-look="grove"] .titleRow { margin-bottom: 14px; }
 [data-look="grove"] .urlBar { padding: 6px; gap: 8px; background: var(--field); border: 1px solid var(--panel-line); border-radius: 999px; box-shadow: var(--shadow); }
 [data-look="grove"] .urlBar .method { border: 0; border-radius: 999px; min-height: 44px; }
@@ -873,7 +873,7 @@ body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: 
 [data-look="grove"] .btn.small { padding-block: 5px; }
 
 /* Settings → Themes: one card per look, each showing its light and its dark side. */
-.themeGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 16px; margin: 12px 0 20px; max-width: 860px; }
+.themeGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 216px), 1fr)); gap: 16px; margin: 12px 0 20px; max-width: 860px; }
 .themeCard { display: grid; gap: 10px; padding: 10px 10px 12px; border: 1px solid var(--outline); border-radius: 14px; background: var(--field); cursor: pointer; position: relative; }
 .themeCard:hover { border-color: color-mix(in srgb, var(--ink) 22%, transparent); }
 .themeCard.on { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
@@ -896,3 +896,7 @@ body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: 
 .shot .sMain s + s { width: 50%; background: var(--s-line); opacity: 1; }
 .shot.roomy .sTop { border-radius: 99px; margin-inline: 8%; }
 .shot.roomy .sMain b { height: 8px; }
+/* Found in the Windows desktop check: the big title squeezed the protocol picker to its arrow, and the response
+   actions wrapped at 1280px. */
+[data-look="grove"] .titleRow .protoPick { flex: none; width: 104px; min-width: 0; }
+[data-look="grove"] :is(.titleRow, .resHead) .btn.ghost { padding-inline: 9px; }
