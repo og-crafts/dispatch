@@ -83,7 +83,23 @@ function variableSource(vars: () => { name: string; detail?: string }[]) {
   }
 }
 
-/** The pm API, for script completion. */
+const list = (names: string[], type: string): Completion[] => names.map((label) => ({ label, type }))
+const SCOPE = list(['get', 'set', 'has', 'unset', 'clear', 'all', 'fill'], 'method')
+
+/** Dispatch's script API (dx), for script completion. */
+const DX: Record<string, Completion[]> = {
+  dx: [...list(['vars', 'env', 'collection', 'globals', 'row', 'request', 'response', 'info'], 'property'), ...list(['test', 'expect', 'send', 'skip', 'next', 'stop', 'visualize'], 'function')],
+  'dx.vars': list(['get', 'set', 'has', 'unset', 'all', 'fill'], 'method'),
+  'dx.env': SCOPE, 'dx.collection': SCOPE, 'dx.globals': SCOPE,
+  'dx.row': list(['get', 'has', 'all', 'fill'], 'method'),
+  'dx.request': [...list(['name', 'url', 'method', 'headers', 'body'], 'property')],
+  'dx.request.headers': list(['get', 'set', 'has', 'remove', 'all'], 'method'),
+  'dx.response': [...list(['status', 'statusText', 'ok', 'time', 'size', 'headers'], 'property'), ...list(['json', 'text', 'validate'], 'method')],
+  'dx.response.headers': list(['get', 'has', 'all'], 'method'),
+  'dx.info': list(['request', 'requestId', 'iteration', 'iterations', 'phase'], 'property'),
+}
+
+/** The Postman-style API, still offered for scripts that came from Postman collections. */
 const PM: Record<string, Completion[]> = {
   pm: ['environment', 'collectionVariables', 'globals', 'variables', 'iterationData', 'request', 'response', 'test', 'expect', 'sendRequest', 'info', 'execution', 'visualizer', 'require']
     .map((label) => ({ label, type: ['test', 'expect', 'sendRequest', 'require'].includes(label) ? 'function' : 'property' })),
@@ -99,23 +115,30 @@ const PM: Record<string, Completion[]> = {
   'pm.visualizer': [{ label: 'set', type: 'method', detail: '(template, data)' }],
 }
 const SCOPES = ['pm.environment', 'pm.collectionVariables', 'pm.globals', 'pm.variables', 'pm.iterationData']
+const GLOBALS: Completion[] = [
+  { label: 'dx', type: 'variable', detail: 'Dispatch' }, { label: 'test', type: 'function', detail: '(name, fn)' },
+  { label: 'expect', type: 'function', detail: 'chai' }, { label: 'console', type: 'variable' },
+]
 
-export function pmSource(ctx: CompletionContext): CompletionResult | null {
-  const m = ctx.matchBefore(/(pm(?:\.[\w]+)*)\.(\w*)$/)
+export function scriptSource(ctx: CompletionContext): CompletionResult | null {
+  const m = ctx.matchBefore(/((?:dx|pm)(?:\.[\w]+)*)\.(\w*)$/)
   if (m) {
-    const [, obj, partial] = m.text.match(/(pm(?:\.[\w]+)*)\.(\w*)$/)!
-    const options = SCOPES.includes(obj) ? PM.scope : PM[obj]
+    const [, obj, partial] = m.text.match(/((?:dx|pm)(?:\.[\w]+)*)\.(\w*)$/)!
+    const options = obj.startsWith('dx') ? DX[obj] : SCOPES.includes(obj) ? PM.scope : PM[obj]
     if (options) return { from: m.to - partial.length, options, validFor: /^\w*$/ }
   }
-  const w = ctx.matchBefore(/\b(pm|console)?\w*$/)
-  if (w && w.text && ctx.explicit === false && /^p/.test(w.text)) return { from: w.from, options: [{ label: 'pm', type: 'variable' }, { label: 'console', type: 'variable' }] }
+  const w = ctx.matchBefore(/\b\w+$/)
+  if (w && ctx.explicit === false) {
+    const options = GLOBALS.filter((g) => g.label.startsWith(w.text) && g.label !== w.text)
+    if (options.length) return { from: w.from, options }
+  }
   return null
 }
 
 async function langExt(o: EditorOptions): Promise<Extension> {
   switch (o.lang) {
     case 'json': return json()
-    case 'javascript': return [javascript(), autocompletion({ override: [pmSource, ...(o.variables ? [variableSource(o.variables)] : [])] })]
+    case 'javascript': return [javascript(), autocompletion({ override: [scriptSource, ...(o.variables ? [variableSource(o.variables)] : [])] })]
     case 'xml': return xml()
     case 'html': return html()
     case 'graphql': {

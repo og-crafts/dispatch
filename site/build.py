@@ -32,7 +32,7 @@ SHOTS = {  # file -> (alt text, caption)
     "request-dark": ("Dispatch in dark theme: the same request and response", "The same request in the dark theme."),
     "grove": ("Dispatch in the Grove look, light: mint and forest green, pill-shaped tabs and a large request title", "The Grove look: roomier, in mint and forest green."),
     "grove-dark": ("Dispatch in the Grove look, dark", "Grove in the dark."),
-    "scripts": ("A post-response script with pm.test and pm.collectionVariables, and the passing test listed under the response", "Scripts and tests run in a sandbox. The response shows each test."),
+    "scripts": ("A post-response script with test, expect and dx.collection, and the passing test listed under the response", "Scripts and tests run in a sandbox. The response shows each test."),
     "runner": ("The collection runner results: fifteen requests across three data rows, 18 tests passed and none failed", "The runner sends a collection once per data row and lists every result."),
     "load": ("A passed load test with request count, median, p95 and error rate, and charts of response time and requests per second", "A load test with charts, thresholds and a per-status breakdown."),
     "docs": ("Generated documentation for a collection: variables, the Login request with headers and body", "Documentation generated from the collection, ready to export as Markdown."),
@@ -126,7 +126,7 @@ FEATURES = [
  ("GraphQL", "Fetch the schema by introspection, get completions and checks as you type, and browse the schema with starter operations."),
  ("Auth", "Basic, bearer, API key, Digest, OAuth 2.0 (client credentials, password, authorization code with PKCE, refresh), JWT and AWS Signature v4. Folders and collections can set auth for everything inside."),
  ("Variables and secrets", "Globals, collection, environment, data-file and script scopes, plus 70 `{{$random...}}` fake-data generators. Secret values are hidden, left out of exports, and encrypted on this device."),
- ("Scripts and tests", "Pre-request and post-response JavaScript with a `pm` API (variables, request edits, `pm.test`, `pm.expect`, `pm.sendRequest`). Scripts run in a sandbox with no network or storage access of their own. Common libraries can be loaded with `require`."),
+ ("Scripts and tests", "Pre-request and post-response JavaScript with Dispatch's `dx` API (variables, request edits, `dx.response`, `dx.send`) and `test`/`expect` checks. Scripts from collections you import from Postman run unchanged. Scripts run in a sandbox with no network or storage access of their own. Common libraries can be loaded with `require`."),
  ("Browser logins", "On desktop, a Browser login request drives your installed Chrome or Edge through a login page: open, type, click, wait. It keeps the cookies (HttpOnly too) or the token from local storage as secret variables, so the requests after it are signed in. It also runs in the runner, schedules and the CLI."),
  ("Flows", "Wire saved requests together on a canvas with If, Script, Set variable, For each, Delay and End blocks. Requests branch on ok or failed, and each block shows its status live while the flow runs. Run flows in the app or with `dispatch-run flow`."),
  ("MCP", "Test MCP servers: connect over HTTP or, on desktop, start a local server command, then list and call tools, read resources and get prompts. On desktop, sign in to servers that use OAuth; the sign-in is kept per environment as a secret. `dispatch-run mcp` works the other way round and lets an AI assistant list, send and run your saved requests, limited to the methods you allow."),
@@ -305,7 +305,7 @@ def changelog():
     rel("0.1.0", "2026-11-16", "The first release of Dispatch by OGCrafts.", [
         "Requests: HTTP with params, path variables, headers, every body type (JSON, form-data with files, binary, XML, GraphQL) and auth (Basic, Bearer, Digest, OAuth 2.0, JWT, AWS Signature v4); GraphQL schema tools, WebSocket, MQTT, server-sent events, Socket.IO, and gRPC on desktop.",
         "Collections with nested folders, tabs, environments, globals and workspaces; each workspace keeps its own tabs. Undo for every delete, daily local backups, and search across everything (Ctrl+K).",
-        "A code editor with `{{variable}}` and `pm.` completion; pre-request and post-response scripts with tests in a sandbox, with lodash, moment, crypto-js, uuid, ajv and handlebars; 70 fake-data variables.",
+        "A code editor with `{{variable}}` and `dx.` completion; pre-request and post-response scripts with tests in a sandbox, with lodash, moment, crypto-js, uuid, ajv and handlebars; 70 fake-data variables.",
         "The runner (iterations, delays, CSV or JSON data, JUnit reports), load tests with charts, scheduled runs with notifications, response history with compare, saved examples, generated docs and a local mock server.",
         "Flows: wire requests together on a canvas with If, Script, Set variable, For each, Delay and End blocks.",
         "Browser login requests that drive Chrome or Edge through a login page and keep the cookies or token as secrets.",
@@ -333,7 +333,7 @@ def privacy():
 <h2>Secrets</h2>
 <p>Secret variables, passwords, tokens, keys, and Authorization and Cookie headers are encrypted before they are saved, using a key that stays on the device and cannot be exported. Exports and backups you download leave secrets out.</p>
 <h2>Requests you send</h2>
-<p>When you press Send, Dispatch sends that request to the address you typed, with the headers and body you set. That is the only network traffic Dispatch makes. What the other server does with it is up to that server. Scripts you write can send requests too (<code>pm.sendRequest</code>), to the places you tell them to.</p>
+<p>When you press Send, Dispatch sends that request to the address you typed, with the headers and body you set. That is the only network traffic Dispatch makes. What the other server does with it is up to that server. Scripts you write can send requests too (<code>dx.send</code>), to the places you tell them to.</p>
 <p>A Browser login request opens your installed Chrome or Edge with a new, empty profile that is deleted afterwards, with sync and background networking turned off. It visits the pages in your steps. The values it keeps, such as cookies or a token, are stored as secret variables on this device.</p>
 <h2>What Dispatch does not do</h2>
 <ul><li>No account, sign-in or sync.</li><li>No analytics or error reports unless you opt in (below).</li><li>No update check unless you turn it on. The desktop app looks for a new version only when you choose <strong>Menu, Check for updates</strong>, or turn on <strong>Check for updates when Dispatch starts</strong> in Settings (off by default). The check asks GitHub, where the releases are published, for a small file that names the newest version; GitHub sees your IP address, as with any download. Nothing about you or your data is sent, and nothing is installed unless you agree.</li><li>No advertising and no trackers.</li><li>No fonts, scripts or images loaded from other sites, in the app or on this website.</li></ul>

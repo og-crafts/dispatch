@@ -37,7 +37,7 @@ export const PORTS: Record<FlowNodeType, string[]> = {
 export const BLOCKS: { type: FlowNodeType; label: string; help: string }[] = [
   { type: 'request', label: 'Request', help: 'Send a saved request (HTTP, browser login…). Goes to “ok”, or “failed” on an error, a 4xx/5xx or a failing test.' },
   { type: 'if', label: 'If', help: 'A JavaScript condition, e.g. response.code === 200 or vars.role === "admin".' },
-  { type: 'script', label: 'Script', help: 'Run JavaScript with pm (pm.variables, pm.environment, pm.response of the last request).' },
+  { type: 'script', label: 'Script', help: 'Run JavaScript with dx (dx.vars, dx.env, dx.response of the last request).' },
   { type: 'set', label: 'Set variable', help: 'Set a variable from text with {{variables}}, or a JSONPath into the last response ($.id).' },
   { type: 'forEach', label: 'For each', help: 'Repeat the “each” branch for every row of data or every item a JSONPath finds in the last response.' },
   { type: 'delay', label: 'Delay', help: 'Wait some milliseconds.' },
@@ -122,7 +122,7 @@ export async function runFlow(f: Flow, w: FlowWorld, transport: Transport, pipel
       request: { name: label, url: '', method: 'GET', headers: [], body: { mode: 'none', raw: '' } },
       vars: { globals: Object.fromEntries(run.globals.filter((v) => v.enabled).map((v) => [v.key, v.value])), collection: {}, environment: Object.fromEntries((environment?.variables ?? []).filter((v) => v.enabled).map((v) => [v.key, v.value])), data: {}, locals: Object.fromEntries(locals) },
       info: { requestName: label, requestId: '', iteration: 0, iterationCount: 1 },
-    }, { sendRequest: () => Promise.reject(new Error('pm.sendRequest isn’t available in flow scripts; use a Request block.')) })
+    }, { sendRequest: () => Promise.reject(new Error('dx.send isn’t available in flow scripts; use a Request block.')) })
     run.logs.push(...r.logs)
     if (r.error) throw new Error(r.error)
     for (const [k, v] of Object.entries(r.vars.locals)) locals.set(k, v)
@@ -169,9 +169,10 @@ export async function runFlow(f: Flow, w: FlowWorld, transport: Transport, pipel
         case 'script': await script(n.config.code ?? '', n.label); finish('ok', port, 'done'); break
         case 'if': {
           const expr = (n.config.expression ?? '').trim() || 'false'
-          await script(`const response = pm.response ? { code: pm.response.code, status: pm.response.status, headers: pm.response.headers.toObject(), body: pm.response.text(), json: (() => { try { return pm.response.json() } catch { return undefined } })() } : null
-            const vars = pm.variables.toObject()
-            pm.variables.set('__flowIf', (${expr}) ? 'true' : 'false')`, n.label)
+          await script(`const r = dx.response
+            const response = r ? { code: r.status, status: r.statusText, headers: r.headers.all(), body: r.text(), json: (() => { try { return r.json() } catch { return undefined } })() } : null
+            const vars = dx.vars.all()
+            dx.vars.set('__flowIf', (${expr}) ? 'true' : 'false')`, n.label)
           port = locals.get('__flowIf') === 'true' ? 'true' : 'false'
           locals.delete('__flowIf')
           finish('ok', port, `${expr} → ${port}`)
