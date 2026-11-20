@@ -332,6 +332,10 @@ On 2026-11-19 the owner chose **not** to publish the site from `main` (it descri
 says "install 0.1.0 from this page", while the only installers are the 0.5.1 preview): it waits for the
 `v0.1.0-SNAPSHOT` tag. Until then the live site keeps the old copy, says "No telemetry" and has no `/code-signing/`
 page. The GitHub repo description, homepage (the site) and topics were set the same day.
+On 2026-11-20 the site source moved to the app's Dispatch look (graphite and violet tokens, Manrope instead of
+Nunito), got new screenshots incl. Grove (`scripts/screenshots.mjs site`), a new `og.png`, JSON-LD, and a short
+promo video with captions; the video and og.png come from `promo/` (Remotion, local Kokoro voice, synthesized
+music; see `promo/README.md`). Still unpublished, same rule: it goes live with the tag.
 
 **Waiting on the owner.**
 - **Aptabase App Key and Sentry DSN** as repo variables `APTABASE_APP_KEY` / `SENTRY_DSN`: the only thing blocking
