@@ -46,8 +46,8 @@ about each, without naming or disparaging anyone.
   the gap, arrow keys; width in localStorage `dispatch.sideWidth`). Pages open as one extra tab in the tab bar
   (`TabBar` `page`), so requests are one click away. `HomeView.tsx` is the Home page; `Icons.tsx` the line icons.
   Look (since the unslop redesign, 2026-11-18): tokens at the top of `app.css` (light + dark), graphite surfaces with
-  hairlines, no glass, glows or gradients; one accent, the logo violet (`--primary-strong` #5b2ee0 for fills, `--primary`
-  for marks and focus); spacing on a 4px grid; weights 400–600, sentence-case labels; the response "postmark" (status ·
+  hairlines, no glass, glows or gradients; one accent, the logo amber (since 2026-11-20; `--primary-strong` #ffb020 fills with graphite `--on-primary`,
+  `--primary` a deeper amber #a86500 in light mode for marks and focus, `--link` #8a5300); spacing on a 4px grid; weights 400–600, sentence-case labels; the response "postmark" (status ·
   time · size, `.postmark` in ResponsePane) is the signature. The "Look" section at the end of `app.css` overrides the
   older rules.
   Themes (Settings → Themes, since 2026-11-19): `settings.look` = `dispatch` (the look above, default) | `grove` |
@@ -164,7 +164,7 @@ see "Look" above), warm problem-led copy on the site and README with every compa
 rule at the top of this file) and the one-click Windows setup (#35, see "Windows setup" below).
 **No PRs are open** (2026-11-19: #33, #34, #35 merged by Claude on the owner's word; `main` = 2ee3999, CI green).
 Follow-ups from the 2026-11-19 audit of the repo and site are on the Kan card "Audit 2026-11-19: follow-ups" (old
-screenshots and og.png, Share as HTML still in the old violet look, OFL notices for Manrope and Nunito, CI
+screenshots and og.png, Share as HTML still in the old look, OFL notices for Manrope and Nunito, CI
 permissions, no Rust tests in CI, SECURITY.md, hand-bumped version constants).
 - **Blocking the snapshot tag:** the owner's Aptabase App Key and Sentry DSN → repo variables `APTABASE_APP_KEY`,
   `SENTRY_DSN` (a build without them offers and sends nothing). Then tag, the owner publishes the pre-release,
@@ -334,7 +334,7 @@ On 2026-11-19 the owner chose **not** to publish the site from `main` (it descri
 says "install 0.1.0 from this page", while the only installers are the 0.5.1 preview): it waits for the
 `v0.1.0-SNAPSHOT` tag. Until then the live site keeps the old copy, says "No telemetry" and has no `/code-signing/`
 page. The GitHub repo description, homepage (the site) and topics were set the same day.
-On 2026-11-20 the site source moved to the app's Dispatch look (graphite and violet tokens, Manrope instead of
+On 2026-11-20 the site source moved to the app's Dispatch look (graphite and amber tokens, Manrope instead of
 Nunito), got new screenshots incl. Grove (`scripts/screenshots.mjs site`), a new `og.png`, JSON-LD, and a short
 promo video with captions; the video and og.png come from `promo/` (Remotion, local Kokoro voice, synthesized
 music; see `promo/README.md`). Still unpublished, same rule: it goes live with the tag.
@@ -348,9 +348,15 @@ music; see `promo/README.md`). Still unpublished, same rule: it goes live with t
   the CI step (gated on the `SIGNPATH_API_TOKEN` secret) are built; the owner turns on MFA, applies, and after
   approval sets up the SignPath project and token, then approves each release in SignPath. All in `docs/SIGNING.md`.
 - A look at the .dmg window (branded installers, PR #10, merged). The Windows setup was seen on the Predator
-  2026-11-19 (above); its header art still shows the old violet icon.
+  2026-11-19 (above); its header art was redrawn with the new logo on 2026-11-20 (not yet seen in a real installer).
 - Sync design.
 - OGCrafts email extras: Gmail "Send mail as" via Resend and a DMARC record (see the memory note ogcrafts-brand).
+
+**Logo (2026-11-20).** The owner picked "Plane in motion" (option J of the logo sheet
+https://claude.ai/artifact/TjdKDtCsPvJNQsRbJMwDSG): amber #FFB020 tile, graphite #1C1C1E plane with speed lines
+(`public/icon.svg`, copied to `site/src/assets/icons/`). Desktop icons come from `npx tauri icon <1024 png>` (delete
+the android/ and ios/ folders it adds); installer art from `scripts/make-installer-art.mjs`. The app accent moved from
+violet to amber with it (owner's choice).
 
 **Design canvas.** "Dispatch — Complete UX Redesign" (https://claude.ai/artifact/VxFK9bQ6zCXUV3wb36YLE7) was
 gap-analysed against 0.4.4 on 2026-11-05. The owner keeps the node-graph flow editor (the canvas proposed a list).

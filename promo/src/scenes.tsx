@@ -24,13 +24,13 @@ export const Hook = () => {
       <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', padding: wide ? 160 : 90, gap: wide ? 64 : 80 }}>
         <Rise at={4}>
           <div style={{ fontSize: wide ? 92 : 104, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05, textAlign: 'center', maxWidth: wide ? 1400 : 900 }}>
-            You only wanted to check <span style={{ color: C.violet }}>one endpoint.</span>
+            You only wanted to check <span style={{ color: C.accent }}>one endpoint.</span>
           </div>
         </Rise>
         <Rise at={22}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 22, padding: '22px 30px', borderRadius: 18, background: C.surface, border: `1px solid ${C.outline}`, fontFamily: MONO, fontSize: wide ? 38 : 42, minWidth: wide ? 760 : 860 }}>
             <span style={{ color: C.good, fontWeight: 700 }}>GET</span>
-            <span>{typed}<span style={{ opacity: caret ? 1 : 0, color: C.violet }}>▍</span></span>
+            <span>{typed}<span style={{ opacity: caret ? 1 : 0, color: C.accent }}>▍</span></span>
           </div>
         </Rise>
       </AbsoluteFill>
@@ -52,7 +52,7 @@ export const Friction = () => {
           return (
             <div key={text} style={{ position: 'relative', opacity: a * (1 - 0.55 * strike), transform: `translateY(${(1 - a) * 20}px)`, fontSize: wide ? 84 : 92, fontWeight: 700, letterSpacing: '-0.02em', color: C.muted }}>
               {text}
-              <div style={{ position: 'absolute', left: -12, top: '54%', height: 8, borderRadius: 4, background: C.violet, width: `calc(${strike * 100}% + ${strike * 24}px)` }} />
+              <div style={{ position: 'absolute', left: -12, top: '54%', height: 8, borderRadius: 4, background: C.accent, width: `calc(${strike * 100}% + ${strike * 24}px)` }} />
             </div>
           )
         })}
@@ -83,7 +83,7 @@ const FeatureScene = ({ f }: { f: Feature }) => {
   const label = f.label?.(frame)
   const caption = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: wide ? 22 : 24 }}>
-      <Rise at={2}><div style={{ fontSize: wide ? 30 : 36, fontWeight: 600, color: C.violet }}>{f.eyebrow}</div></Rise>
+      <Rise at={2}><div style={{ fontSize: wide ? 30 : 36, fontWeight: 600, color: C.accent }}>{f.eyebrow}</div></Rise>
       <Rise at={8}><div style={{ fontSize: wide ? 76 : 88, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.04 }}>{f.title}</div></Rise>
       <Rise at={16}><div style={{ fontSize: wide ? 32 : 38, lineHeight: 1.4, color: C.muted, maxWidth: wide ? 560 : 900 }}>{f.body}</div></Rise>
       {label ? <div style={{ alignSelf: 'flex-start', marginTop: 8, padding: '10px 20px', borderRadius: 999, border: `1px solid ${C.outline}`, background: C.surface, fontSize: wide ? 28 : 34, fontWeight: 600 }}>{label}</div> : null}
@@ -191,8 +191,8 @@ export const Private = () => {
         {rows.map(([title, body, at]) => (
           <Rise key={title} at={at}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 36 }}>
-              <div style={{ width: wide ? 76 : 88, height: wide ? 76 : 88, borderRadius: 999, background: 'rgba(154, 134, 255, .14)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke={C.violet} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+              <div style={{ width: wide ? 76 : 88, height: wide ? 76 : 88, borderRadius: 999, background: 'rgba(255, 176, 32, .14)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke={C.accent} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
               </div>
               <div>
                 <div style={{ fontSize: wide ? 64 : 72, fontWeight: 800, letterSpacing: '-0.02em' }}>{title}</div>

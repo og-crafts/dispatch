@@ -1,5 +1,6 @@
 /* dispatch.ogcrafts.cloud. Tokens follow the app's Dispatch look (src/ui/app.css): graphite and white surfaces,
-   hairlines, one violet accent. The app's translucent tints are flattened to hex here so build.py can read the two
+   hairlines, one amber accent (the logo's): amber fills with graphite text, a deeper amber (--mark) for focus
+   rings and outlines. The app's translucent tints are flattened to hex here so build.py can read the two
    token blocks below (light, then dark) and check every text/background pair in both against WCAG AA 4.5:1.
    Keep each block one level deep. Manrope is the app's Grove face; Geist Mono for code. */
 @font-face { font-family: Manrope; font-weight: 200 800; font-display: swap; src: url(/assets/fonts/manrope-latin.woff2) format("woff2"); }
@@ -7,7 +8,7 @@
 
 :root {
   --bg: #F7F7F8; --surface: #FFFFFF; --sunken: #EFEFF1; --outline: #E2E2E6; --ink: #171717; --muted: #525252;
-  --primary: #5B2EE0; --on-primary: #FFFFFF; --primary-soft: #F0ECFC; --link: #4B22C9;
+  --primary: #FFB020; --on-primary: #1C1C1E; --primary-soft: #FFF2DB; --link: #8A5300; --mark: #A86500;
   --good: #15803D; --good-soft: #F0F7F2; --warn: #8A4D00; --warn-soft: #F6F0E8; --danger: #C4262B; --info: #1D5FA8;
   --m-get: #15803D; --m-post: #8A4D00; --m-put: #1D5FA8; --m-patch: #6B3FA0; --m-delete: #C4262B;
   --shadow: 0 8px 24px rgba(0, 0, 0, .08), 0 1px 2px rgba(0, 0, 0, .05);
@@ -15,7 +16,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0F0F10; --surface: #1C1C1E; --sunken: #141415; --outline: #2C2C2F; --ink: #EDEDED; --muted: #A1A1A6;
-    --primary: #9A86FF; --on-primary: #0F0F10; --primary-soft: #221F31; --link: #B7A9FF;
+    --primary: #FFB020; --on-primary: #1C1C1E; --primary-soft: #3C311E; --link: #FFC24D; --mark: #FFB020;
     --good: #4CC38A; --good-soft: #15211D; --warn: #E2A336; --warn-soft: #241E14; --danger: #F0686C; --info: #6AA8F0;
     --m-get: #4CC38A; --m-post: #E2A336; --m-put: #6AA8F0; --m-patch: #B59CFF; --m-delete: #F0686C;
     --shadow: 0 12px 32px rgba(0, 0, 0, .5);
@@ -28,7 +29,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 400 17px/1.6 M
 img { max-width: 100%; height: auto; }
 a { color: var(--link); text-underline-offset: 3px; }
 a:hover { text-decoration-thickness: 2px; }
-:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+:focus-visible { outline: 3px solid var(--mark); outline-offset: 2px; border-radius: 4px; }
 code, kbd, pre, .mono { font-family: "Geist Mono", ui-monospace, "Cascadia Code", Menlo, Consolas, monospace; font-size: .88em; }
 code { background: var(--sunken); padding: .08em .35em; border-radius: 5px; overflow-wrap: anywhere; }
 pre { background: var(--sunken); border: 1px solid var(--outline); border-radius: 12px; padding: 14px 16px; overflow-x: auto; line-height: 1.5; margin: 0 0 1em; }
@@ -59,10 +60,10 @@ nav.main a[aria-current="page"] { color: var(--link); background: var(--primary-
 
 /* Buttons */
 .cta-row { display: flex; gap: 12px; flex-wrap: wrap; margin: 1.4em 0 1em; }
-.btn { display: inline-flex; align-items: center; gap: 8px; font: 700 1rem Manrope, system-ui, sans-serif; text-decoration: none; padding: 12px 20px; border-radius: 12px; border: 2px solid var(--primary); color: var(--link); background: transparent; cursor: pointer; }
+.btn { display: inline-flex; align-items: center; gap: 8px; font: 700 1rem Manrope, system-ui, sans-serif; text-decoration: none; padding: 12px 20px; border-radius: 12px; border: 2px solid var(--mark); color: var(--link); background: transparent; cursor: pointer; }
 .btn:hover { background: var(--primary-soft); }
-.btn.primary { background: var(--primary); color: var(--on-primary); }
-.btn.primary:hover { filter: brightness(1.1); background: var(--primary); }
+.btn.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.btn.primary:hover { filter: brightness(.94); background: var(--primary); }
 .btn[aria-disabled="true"] { border-color: var(--outline); color: var(--muted); cursor: default; background: var(--sunken); }
 .btn.small { padding: 7px 14px; font-size: .92rem; }
 
