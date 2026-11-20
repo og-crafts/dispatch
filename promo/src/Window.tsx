@@ -3,7 +3,7 @@ import { C, enter, inOut } from './theme'
 
 // A real screenshot of the app (1440×900 logical, captured at 2x) in a rounded frame, seen through a slow camera
 // that moves from rect `from` to rect `to` (logical px). Rects are widened to the frame's aspect and kept inside
-// the shot. `marks` draws a violet outline around parts of the shot from a given frame.
+// the shot. `marks` draws an amber outline around parts of the shot from a given frame.
 export type Rect = { x: number; y: number; w: number; h: number }
 export const FULL: Rect = { x: 0, y: 0, w: 1440, h: 900 }
 const SW = 1440
@@ -67,7 +67,7 @@ export const Window = ({
             style={{
               position: 'absolute', left: (rect.x - cam.x - pad) * s, top: (rect.y - cam.y - pad) * s,
               width: (rect.w + pad * 2) * s, height: (rect.h + pad * 2) * s, borderRadius: 10 * Math.min(s, 2),
-              border: `${Math.max(3, 2.2 * s)}px solid ${C.violet}`, opacity: a, transform: `scale(${1.06 - 0.06 * a})`,
+              border: `${Math.max(3, 2.2 * s)}px solid ${C.accent}`, opacity: a, transform: `scale(${1.06 - 0.06 * a})`,
               boxShadow: '0 0 0 4000px rgba(10, 10, 12, ' + 0.28 * a + ')',
             }}
           />

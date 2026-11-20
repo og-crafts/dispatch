@@ -5,8 +5,8 @@ A 42-second promo made with [Remotion](https://www.remotion.dev), in two cuts th
 `OgImage` still is the website's link preview (`site/src/assets/og.png`).
 
 - **Picture:** real screenshots of the web app (`../scripts/screenshots.mjs promo`, 2x), seen through a slow camera
-  (`src/Window.tsx`) with a violet outline on the part that matters. The look is the app's Dispatch theme, dark:
-  graphite, hairlines, one violet accent; Manrope and Geist Mono (both OFL).
+  (`src/Window.tsx`) with an amber outline on the part that matters. The look is the app's Dispatch theme, dark:
+  graphite, hairlines, one amber accent; Manrope and Geist Mono (both OFL).
 - **Voice:** Kokoro-82M (Apache 2.0), voice `af_heart`, made on this machine by `scripts/make-voice.mjs` from
   `scripts/voice-lines.json`. The WAVs are committed in `assets/voice/`, so a render does not need the model.
 - **Music:** soft and low, synthesized by `scripts/make-music.mjs` (68 BPM, D major, pad, keys, sub bass, a few

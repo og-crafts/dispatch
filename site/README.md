@@ -1,6 +1,6 @@
 # dispatch.ogcrafts.cloud
 
-Static marketing and legal site for Dispatch, with the web app published under `/app/`. Tokens follow the app's Dispatch look (graphite and white, hairlines, one violet accent, method colours, 12px radius; dark theme through `prefers-color-scheme`), Manrope and Geist Mono self-hosted (SIL Open Font License; the licence texts are in `src/assets/fonts` and are published with the fonts). No trackers, no cookies, no third-party requests. A strict Content-Security-Policy `<meta>` is on every site page.
+Static marketing and legal site for Dispatch, with the web app published under `/app/`. Tokens follow the app's Dispatch look (graphite and white, hairlines, one amber accent, method colours, 12px radius; dark theme through `prefers-color-scheme`), Manrope and Geist Mono self-hosted (SIL Open Font License; the licence texts are in `src/assets/fonts` and are published with the fonts). No trackers, no cookies, no third-party requests. A strict Content-Security-Policy `<meta>` is on every site page.
 
 Pages: home (hero, a short promo video with captions, features, tour with screenshots and themes, imports, desktop vs web table, privacy summary, planned items, FAQ), `/download/`, `/cli/`, `/changelog/`, `/privacy/`, `/terms/`, `/support/`, 404, sitemap, robots, web manifest, `/app/` (the web app), `/downloads/dispatch-run.mjs` (the CLI).
 

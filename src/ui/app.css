@@ -1,10 +1,10 @@
-/* Dispatch look: a dispatcher's desk at night. Graphite surfaces, hairlines for depth, and one accent, the violet of
-   the logo, kept for Send, the selection and focus. The response "postmark" (status · time · size) is the signature.
+/* Dispatch look: a dispatcher's desk at night. Graphite surfaces, hairlines for depth, and one accent, the amber of
+   the logo: amber fills with graphite text (Send), a deeper amber for marks and links on light surfaces. The response "postmark" (status · time · size) is the signature.
    Every colour is a token here; the dark set is used with the system's dark mode or Settings → Theme → Dark. */
 :root {
   --bg: #f4f4f5; --surface: #ffffff; --surface-solid: #ffffff; --field: #fafafa; --raised: #f0f0f1;
   --sunken: rgba(23, 23, 23, .04); --outline: rgba(23, 23, 23, .1); --ink: #171717; --muted: #525252; --faint: #737373;
-  --primary: #5b2ee0; --primary-strong: #5b2ee0; --on-primary: #ffffff; --primary-soft: rgba(91, 46, 224, .09); --link: #4b22c9;
+  --primary: #a86500; --primary-strong: #ffb020; --on-primary: #1c1c1e; --primary-soft: rgba(255, 176, 32, .16); --link: #8a5300;
   --danger: #c4262b; --danger-soft: rgba(196, 38, 43, .08); --good: #15803d; --good-soft: rgba(21, 128, 61, .09);
   --warn: #965400; --warn-soft: rgba(150, 84, 0, .09); --info: #1d5fa8; --info-soft: rgba(29, 95, 168, .08);
   --m-get: #15803d; --m-post: #965400; --m-put: #1d5fa8; --m-patch: #6b3fa0; --m-delete: #c4262b; --m-other: #525252;
@@ -18,7 +18,7 @@
   :root:not([data-theme="light"]) {
     --bg: #0f0f10; --surface: #161617; --surface-solid: #1c1c1e; --field: #1e1e20; --raised: #232325;
     --sunken: rgba(237, 237, 237, .04); --outline: rgba(237, 237, 237, .09); --ink: #ededed; --muted: #a1a1a6; --faint: #85858b;
-    --primary: #9a86ff; --primary-strong: #5b2ee0; --on-primary: #ffffff; --primary-soft: rgba(154, 134, 255, .13); --link: #b7a9ff;
+    --primary: #ffb020; --primary-strong: #ffb020; --on-primary: #1c1c1e; --primary-soft: rgba(255, 176, 32, .14); --link: #ffc24d;
     --danger: #f0686c; --danger-soft: rgba(240, 104, 108, .1); --good: #4cc38a; --good-soft: rgba(76, 195, 138, .1);
     --warn: #e2a336; --warn-soft: rgba(226, 163, 54, .1); --info: #6aa8f0; --info-soft: rgba(106, 168, 240, .1);
     --m-get: #4cc38a; --m-post: #e2a336; --m-put: #6aa8f0; --m-patch: #b59cff; --m-delete: #f0686c; --m-other: #a1a1a6;
@@ -28,7 +28,7 @@
 :root[data-theme="dark"] {
   --bg: #0f0f10; --surface: #161617; --surface-solid: #1c1c1e; --field: #1e1e20; --raised: #232325;
   --sunken: rgba(237, 237, 237, .04); --outline: rgba(237, 237, 237, .09); --ink: #ededed; --muted: #a1a1a6; --faint: #85858b;
-  --primary: #9a86ff; --primary-strong: #5b2ee0; --on-primary: #ffffff; --primary-soft: rgba(154, 134, 255, .13); --link: #b7a9ff;
+  --primary: #ffb020; --primary-strong: #ffb020; --on-primary: #1c1c1e; --primary-soft: rgba(255, 176, 32, .14); --link: #ffc24d;
   --danger: #f0686c; --danger-soft: rgba(240, 104, 108, .1); --good: #4cc38a; --good-soft: rgba(76, 195, 138, .1);
   --warn: #e2a336; --warn-soft: rgba(226, 163, 54, .1); --info: #6aa8f0; --info-soft: rgba(106, 168, 240, .1);
   --m-get: #4cc38a; --m-post: #e2a336; --m-put: #6aa8f0; --m-patch: #b59cff; --m-delete: #f0686c; --m-other: #a1a1a6;
@@ -567,7 +567,7 @@ button.icon:hover { background: var(--sunken); }
 .badge { border-radius: 4px; font-family: var(--mono); background: var(--sunken); color: var(--muted); }
 .pill { border-radius: 4px; }
 kbd { font: 500 10.5px var(--mono); opacity: 1; color: var(--faint); border: 1px solid var(--outline); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
-.btn.primary kbd { color: inherit; border-color: rgba(255, 255, 255, .35); opacity: .85; }
+.btn.primary kbd { color: inherit; border-color: color-mix(in srgb, currentColor 35%, transparent); opacity: .85; }
 .tabs [role="tab"] { font: 500 13px var(--sans); }
 
 /* Method tags: coloured mono text on a faint fill of the same colour */

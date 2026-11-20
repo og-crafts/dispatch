@@ -11,7 +11,7 @@ export const Og = () => (
         <div style={{ fontSize: 46, fontWeight: 800, letterSpacing: '-0.03em' }}>Dispatch</div>
       </div>
       <div style={{ fontSize: 60, fontWeight: 800, letterSpacing: '-0.035em', lineHeight: 1.04, marginTop: 40 }}>
-        Open it.<br />Send the request.<br /><span style={{ color: C.violet }}>That&rsquo;s it.</span>
+        Open it.<br />Send the request.<br /><span style={{ color: C.accent }}>That&rsquo;s it.</span>
       </div>
       <div style={{ fontSize: 26, color: C.muted, marginTop: 28, lineHeight: 1.4 }}>No account, no cloud. Free and open source.</div>
     </div>

@@ -59,7 +59,7 @@ async function oauthRoutes(req, res, url) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
       res.end(`<!doctype html><title>Sign in to the demo MCP server</title><body style="font:16px system-ui;padding:3rem;max-width:32rem">
 <h1>Allow ${esc(c.name ?? 'this app')}?</h1><p>It wants to use the demo MCP server as <b>ann</b>.</p>
-<p><a id="approve" href="/authorize/approve?${esc(q.toString())}" style="padding:.5rem 1rem;background:#5B2EE0;color:#fff;border-radius:8px;text-decoration:none">Allow</a>
+<p><a id="approve" href="/authorize/approve?${esc(q.toString())}" style="padding:.5rem 1rem;background:#FFB020;color:#1C1C1E;border-radius:8px;text-decoration:none">Allow</a>
 &nbsp; <a href="${esc(q.get('redirect_uri'))}?error=access_denied&state=${esc(encodeURIComponent(q.get('state') ?? ''))}">Deny</a></p>`)
       return true
     }

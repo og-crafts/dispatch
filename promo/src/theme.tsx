@@ -5,7 +5,7 @@ import { Easing, interpolate, staticFile, useVideoConfig } from 'remotion'
 loadFont({ family: 'Manrope', url: staticFile('fonts/manrope.woff2'), weight: '200 800' })
 loadFont({ family: 'Geist Mono', url: staticFile('fonts/geist-mono-400.ttf'), weight: '400' })
 
-// The app's Dispatch look, dark: graphite surfaces, hairlines, one violet accent (src/ui/app.css).
+// The app's Dispatch look, dark: graphite surfaces, hairlines, one amber accent (src/ui/app.css).
 export const C = {
   bg: '#0f0f10',
   surface: '#161617',
@@ -14,8 +14,8 @@ export const C = {
   ink: '#ededed',
   muted: '#a1a1a6',
   faint: '#85858b',
-  violet: '#9a86ff',
-  violetStrong: '#5b2ee0',
+  accent: '#ffb020',
+  accentStrong: '#ffb020',
   good: '#4cc38a',
   warn: '#e2a336',
   yellow: '#FFC94D',

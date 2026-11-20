@@ -34,15 +34,15 @@ const DESKTOP_ONLY: SettingsTab[] = ['network', 'certs', 'ai']
 /** The colours a theme card draws its two small pictures with (light, then dark). They mirror the tokens in app.css. */
 type Shot = { bg: string; panel: string; line: string; field: string; soft: string; ink: string; btn: string; accent: string }
 const GRAPHITE: [Shot, Shot] = [
-  { bg: '#f4f4f5', panel: '#ffffff', line: '#e2e2e4', field: '#fafafa', soft: '#f0f0f1', ink: '#171717', btn: '#5b2ee0', accent: '#5b2ee0' },
-  { bg: '#0f0f10', panel: '#161617', line: '#2a2a2c', field: '#1e1e20', soft: '#232325', ink: '#ededed', btn: '#5b2ee0', accent: '#9a86ff' },
+  { bg: '#f4f4f5', panel: '#ffffff', line: '#e2e2e4', field: '#fafafa', soft: '#f0f0f1', ink: '#171717', btn: '#ffb020', accent: '#a86500' },
+  { bg: '#0f0f10', panel: '#161617', line: '#2a2a2c', field: '#1e1e20', soft: '#232325', ink: '#ededed', btn: '#ffb020', accent: '#ffb020' },
 ]
 const GROVE: [Shot, Shot] = [
   { bg: '#f2f6ef', panel: '#ffffff', line: '#d5e2d3', field: '#ffffff', soft: '#e3efe1', ink: '#1c2a22', btn: '#1c2a22', accent: '#2c6e3f' },
   { bg: '#0a0d0b', panel: '#0f1713', line: '#2a3f34', field: '#131d18', soft: '#1a2b21', ink: '#f2f6ef', btn: '#6ee7a0', accent: '#6ee7a0' },
 ]
 const THEMES: { id: Look; name: string; text: string; shots: [Shot, Shot]; gap: number; r: number; r2: number; roomy?: boolean }[] = [
-  { id: 'dispatch', name: 'Dispatch', text: 'Graphite panels and one violet accent. Compact.', shots: GRAPHITE, gap: 3, r: 4, r2: 3 },
+  { id: 'dispatch', name: 'Dispatch', text: 'Graphite panels and one amber accent. Compact.', shots: GRAPHITE, gap: 3, r: 4, r2: 3 },
   { id: 'grove', name: 'Grove', text: 'Mint and forest green. Roomy, with floating pill bars and a big request title.', shots: GROVE, gap: 6, r: 9, r2: 99, roomy: true },
   { id: 'grove-classic', name: 'Grove classic', text: 'The Grove colours on the compact layout.', shots: GROVE, gap: 4, r: 6, r2: 99 },
 ]
