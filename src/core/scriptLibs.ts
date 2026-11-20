@@ -20,8 +20,8 @@ export const AVAILABLE = Object.keys(LOADERS)
 export function neededLibs(code: string): string[] {
   const out = new Set<string>()
   for (const m of code.matchAll(/require\(\s*['"`]([\w@/.-]+)['"`]\s*\)/g)) if (LOADERS[m[1]]) out.add(m[1])
-  if (/\bjsonSchema\s*\(/.test(code)) out.add('ajv')
-  if (/\bvisualizer\s*\.\s*set\s*\(/.test(code)) out.add('handlebars')
+  if (/\bjsonSchema\s*\(|\bresponse\s*\.\s*validate\s*\(/.test(code)) out.add('ajv')
+  if (/\bvisualizer\s*\.\s*set\s*\(|\bdx\s*\.\s*visualize\s*\(/.test(code)) out.add('handlebars')
   if (/\b_\s*\./.test(code)) out.add('lodash') // Postman exposes lodash as a global "_"
   return [...out]
 }

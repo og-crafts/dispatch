@@ -27,7 +27,7 @@ export class InlineEngine implements ScriptEngine {
   }
 }
 
-/** Raised when a pre-request script calls pm.execution.skipRequest(). */
+/** Raised when a pre-request script calls dx.skip() (pm.execution.skipRequest()). */
 export class SkipRequest extends SendError { override name = 'SkipRequest' }
 
 const toRecord = (rows: KV[] | undefined): Vars => Object.fromEntries((rows ?? []).filter((v) => v.enabled && v.key.trim()).map((v) => [v.key.trim(), v.value]))
@@ -154,7 +154,7 @@ export function scriptPipeline(o: ScriptPipelineOptions): Pipeline {
     async beforeSend(req, ctx, out) {
       const before = pmRequestOf(req)
       const { request, skip } = await runPhase('pre', req, ctx, out, before, null)
-      if (skip) throw new SkipRequest('Skipped: a pre-request script called pm.execution.skipRequest().')
+      if (skip) throw new SkipRequest('Skipped: a pre-request script asked to skip it.')
       return applyPmRequest(req, before, request)
     },
     async afterResponse(req, ctx, out) {

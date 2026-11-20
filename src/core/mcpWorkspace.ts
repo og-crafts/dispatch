@@ -43,11 +43,11 @@ export interface AssistantWorkspace {
 export const WORKSPACE_TOOL_NAMES = ['create_request', 'update_request', 'copy_request', 'move_request', 'delete_request', 'set_variables', 'set_scripts']
 
 const IS_VAR = /^\s*\{\{[^{}]+\}\}\s*$/
-/** Pre-request and tests scripts (pm-style JavaScript: pm.environment.set, pm.test, pm.response.json() …). */
+/** Pre-request and tests scripts (Dispatch's dx API: dx.env.set, test(), expect(), dx.response.json() …; pm.* also runs). */
 function scriptFields(what: string) {
   return {
-    preRequestScript: { type: 'string', description: `JavaScript run before ${what === 'request' ? 'it is sent' : `every request in the ${what}`} (pm.variables.set, pm.environment.set …). Replaces the whole script; "" removes it. get_request shows the current one.` },
-    testScript: { type: 'string', description: `JavaScript run after the response${what === 'request' ? '' : ` of every request in the ${what}`} (pm.test, pm.expect, pm.response.json(), pm.environment.set …). Replaces the whole script; "" removes it.` },
+    preRequestScript: { type: 'string', description: `JavaScript run before ${what === 'request' ? 'it is sent' : `every request in the ${what}`} (dx.vars.set, dx.env.set …; Postman's pm.* also works, but write new scripts with dx). Replaces the whole script; "" removes it. get_request shows the current one.` },
+    testScript: { type: 'string', description: `JavaScript run after the response${what === 'request' ? '' : ` of every request in the ${what}`} (test("name", () => expect(dx.response.status).to.equal(200)), dx.response.json(), dx.env.set …; Postman's pm.* also works, but write new scripts with dx). Replaces the whole script; "" removes it.` },
   }
 }
 const fields = {

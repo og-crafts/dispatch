@@ -19,7 +19,7 @@ Preview locally: `npx serve -c site/serve.json site/dist` (or any static server 
 ## Screenshots, video and link preview
 `src/assets/shots/*.png` (1440x900) are real captures of the built web app: `npm run build`, then
 `PLAYWRIGHT=<playwright dir> CHROMIUM=<chrome> node scripts/screenshots.mjs site` (it starts `examples/demo-server.mjs`
-on :4318 and `vite preview` on :5291, imports `examples/demo-shop.postman_collection.json`, makes a "Demo shop (local)"
+on :4318 and `vite preview` on :5291, imports `examples/demo-shop.dispatch.json`, makes a "Demo shop (local)"
 environment and captures request and response in Dispatch light and dark and in Grove light and dark, scripts and
 tests, the runner with `examples/users.csv`, a load test of the flaky endpoint and the generated docs). Retake them
 when the UI changes.

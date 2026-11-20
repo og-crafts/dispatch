@@ -24,20 +24,21 @@ const GraphqlTools = lazy(() => import('./GraphqlTools').then((m) => ({ default:
 
 const SNIPPETS: Record<'pre' | 'post', [string, string][]> = {
   pre: [
-    ['Set an environment variable', 'pm.environment.set("key", "value")'],
-    ['Set a timestamp', 'pm.variables.set("now", new Date().toISOString())'],
-    ['Add a header', 'pm.request.headers.upsert({ key: "X-Request-Id", value: pm.variables.replaceIn("{{$guid}}") })'],
-    ['Fetch a token first', 'const res = await pm.sendRequest({\n  url: pm.environment.get("authUrl"),\n  method: "POST",\n  header: { "Content-Type": "application/json" },\n  body: { mode: "raw", raw: JSON.stringify({ user: pm.environment.get("user") }) },\n})\npm.environment.set("token", res.json().token)'],
-    ['Skip this request', 'if (!pm.environment.get("token")) pm.execution.skipRequest()'],
+    ['Set an environment variable', 'dx.env.set("key", "value")'],
+    ['Set a timestamp', 'dx.vars.set("now", new Date().toISOString())'],
+    ['Add a header', 'dx.request.headers.set("X-Request-Id", dx.vars.fill("{{$guid}}"))'],
+    ['Fetch a token first', 'const res = await dx.send({\n  url: dx.env.get("authUrl"),\n  method: "POST",\n  body: { user: dx.env.get("user") },\n})\ndx.env.set("token", res.json("token"))'],
+    ['Skip this request', 'if (!dx.env.get("token")) dx.skip()'],
   ],
   post: [
-    ['Status is 200', 'pm.test("status is 200", () => {\n  pm.response.to.have.status(200)\n})'],
-    ['Response time under 500 ms', 'pm.test("responds in under 500 ms", () => {\n  pm.expect(pm.response.responseTime).to.be.below(500)\n})'],
-    ['Body has a field', 'pm.test("has an id", () => {\n  pm.expect(pm.response.json()).to.have.property("id")\n})'],
-    ['Header is present', 'pm.test("is JSON", () => {\n  pm.response.to.have.header("Content-Type")\n  pm.expect(pm.response.headers.get("Content-Type")).to.include("json")\n})'],
-    ['Save a value for later', 'pm.environment.set("id", pm.response.json().id)'],
-    ['Log the body', 'console.log(pm.response.json())'],
-    ['Next request (runner)', 'pm.execution.setNextRequest("Request name") // null stops the run'],
+    ['Status is 200', 'test("status is 200", () => {\n  expect(dx.response.status).to.equal(200)\n})'],
+    ['Response time under 500 ms', 'test("responds in under 500 ms", () => {\n  expect(dx.response.time).to.be.below(500)\n})'],
+    ['Body has a field', 'test("has an id", () => {\n  expect(dx.response.json()).to.have.property("id")\n})'],
+    ['Header is present', 'test("is JSON", () => {\n  expect(dx.response.headers.get("Content-Type")).to.include("json")\n})'],
+    ['Matches a schema', 'test("matches the schema", () => {\n  const { valid, errors } = dx.response.validate({ type: "object", required: ["id"] })\n  expect(valid, errors.join("; ")).to.equal(true)\n})'],
+    ['Save a value for later', 'dx.env.set("id", dx.response.json("id"))'],
+    ['Log the body', 'console.log(dx.response.json())'],
+    ['Next request (runner)', 'dx.next("Request name") // dx.stop() ends the run'],
   ],
 }
 
@@ -197,8 +198,8 @@ export function RequestPane({ ws, onSave, notify, authActions, scriptHelp, rende
             <CodeArea key={scriptTab} lang="javascript" variables={ws.variableNames} label={scriptTab === 'pre' ? 'Pre-request script' : 'Post-response script'} rows={14} value={draft.scripts[scriptTab]}
               onChange={(v) => set({ scripts: { ...draft.scripts, [scriptTab]: v } })}
               placeholder={scriptTab === 'pre'
-                ? '// Runs before the request is sent.\npm.environment.set("now", Date.now())'
-                : '// Runs after the response arrives.\npm.test("status is 200", () => {\n  pm.expect(pm.response.code).to.equal(200)\n})'} />
+                ? '// Runs before the request is sent.\ndx.vars.set("now", Date.now())'
+                : '// Runs after the response arrives.\ntest("status is 200", () => {\n  expect(dx.response.status).to.equal(200)\n})'} />
             <div className="snippets" aria-label="Snippets">
               <span className="small muted">Snippets:</span>
               {SNIPPETS[scriptTab].map(([label, code]) => (
@@ -209,7 +210,7 @@ export function RequestPane({ ws, onSave, notify, authActions, scriptHelp, rende
               ))}
             </div>
             {scriptHelp}
-            <p className="muted small">Scripts run sandboxed with no access to your saved data. <code>pm</code> covers variables, request, response, <code>pm.test</code>/<code>pm.expect</code> (chai), <code>pm.sendRequest</code> and <code>console</code>; output shows in the Console.</p>
+            <p className="muted small">Scripts run sandboxed with no access to your saved data. <code>dx</code> covers variables (<code>dx.vars</code>, <code>dx.env</code>), the request and response, <code>dx.send</code> and the runner; <code>test</code> and <code>expect</code> (chai) write checks; <code>console</code> output shows in the Console. Scripts from Postman collections run as they are.</p>
           </div>
         )}
         {tab === 'docs' && (

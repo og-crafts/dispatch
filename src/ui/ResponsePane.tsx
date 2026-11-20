@@ -124,7 +124,7 @@ export function ResponsePane({ ws, notify, saveFile }: { ws: WorkspaceApi; notif
               <iframe className="htmlPreview" title="Response preview" sandbox="" srcDoc={res.body} />
             </>)}
         {current === 'visualize' && result.visualizer && <>
-          <p className="muted small">Made by <code>pm.visualizer.set()</code> in a script, shown in a sandbox{ws.transport.unrestricted ? ' (scripts inside the template run in the web version only)' : ''}.</p>
+          <p className="muted small">Made by <code>dx.visualize()</code> in a script, shown in a sandbox{ws.transport.unrestricted ? ' (scripts inside the template run in the web version only)' : ''}.</p>
           <iframe className="htmlPreview" title="Visualization" sandbox="allow-scripts" srcDoc={result.visualizer.html} />
         </>}
         {res && current === 'headers' && (

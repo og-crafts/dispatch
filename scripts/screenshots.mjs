@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Takes the website's screenshots (site/src/assets/shots, 1440×900) or the promo video's (promo/public/shots, 2x)
-// from the real web app: it imports examples/demo-shop.postman_collection.json, makes a "Demo shop (local)"
+// from the real web app: it imports examples/demo-shop.dispatch.json, makes a "Demo shop (local)"
 // environment, sends requests to examples/demo-server.mjs and runs the runner and a load test.
 //
 //   npm run build                      # the web app in dist/
@@ -77,7 +77,7 @@ async function capture(browser, { scheme, look, dpr, which, name }) {
   await page.goto('http://127.0.0.1:5291/'); await wait(1500)
   const consent = page.locator('dialog[open] button', { hasText: /No thanks|Not now/ }).first()
   if (await consent.count()) await consent.click().catch(() => {})
-  await page.locator('input[aria-label="Import file"]').setInputFiles(join(REPO, 'examples/demo-shop.postman_collection.json'))
+  await page.locator('input[aria-label="Import file"]').setInputFiles(join(REPO, 'examples/demo-shop.dispatch.json'))
   await wait(1200); await dismissToasts()
 
   if (look !== 'dispatch') {

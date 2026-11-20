@@ -17,7 +17,9 @@ about each, without naming or disparaging anyone.
   - building and sending: `vars.ts` + `fake.ts` ({{variables}}), `url.ts`, `prepare.ts` (variables + auth + body),
     `runtime.ts` (`execute`: the one pipeline everything uses), `auth.ts` (JWT, AWS SigV4, Digest, OAuth 2),
     `transport.ts` (fetch / Tauri / cookie jar), `cookies.ts`
-  - scripts: `scripts.ts` (pm API, chai), `scriptPipeline.ts` (collection → folders → request order),
+  - scripts: `scripts.ts` (Dispatch's own `dx` API + top-level `test`/`expect` with chai; the Postman `pm` API stays
+    only so imported scripts run; new snippets, docs, demos and AI tool texts use `dx`, never `pm`; reference
+    `docs/SCRIPTS.md`), `scriptPipeline.ts` (collection → folders → request order),
     `scriptWorker.ts` + `workerEngine.ts` (sandboxed Web Worker per script)
   - running: `runner.ts` (collections/suites/data, JUnit), `load.ts` (load tests), `csv.ts`
   - other: `codegen.ts` (12 languages), `curl.ts`, `docs.ts`, `mock.ts`, `graphql.ts`, `jsonpath.ts`, `format.ts`
