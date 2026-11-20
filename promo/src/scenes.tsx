@@ -134,8 +134,8 @@ export const Tests = () => (
   <FeatureScene f={{
     eyebrow: 'Scripts and tests', title: 'Check every response.', body: 'A few lines of JavaScript after a request. Each test shows as passed or failed.',
     shots: ['light-scripts'], to: { x: 420, y: 240, w: 1010, h: 320 },
-    tallFrom: { x: 420, y: 240, w: 700, h: 480 }, tallTo: { x: 425, y: 280, w: 560, h: 300 },
-    marks: [{ rect: { x: 462, y: 296, w: 445, h: 18 }, at: 40 }, { rect: { x: 745, y: 503, w: 130, h: 22 }, at: 78 }],
+    tallFrom: { x: 420, y: 240, w: 700, h: 480 }, tallTo: { x: 425, y: 280, w: 580, h: 310 },
+    marks: [{ rect: { x: 462, y: 296, w: 520, h: 18 }, at: 40 }, { rect: { x: 745, y: 503, w: 130, h: 22 }, at: 78 }],
   }} />
 )
 
