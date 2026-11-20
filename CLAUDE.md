@@ -144,7 +144,7 @@ unpack it from `apt-get download libasound2t64` with `dpkg-deb -x` and set `LD_L
 
 ## Where we left off
 
-Updated 2026-11-19. **Pending work is tracked on the Kan board "Dispatch"**
+Updated 2026-11-20. **Pending work is tracked on the Kan board "Dispatch"**
 (https://kanban.gautamlabs.io/boards/mb7hut0k7z77; CLI: `KAN_BOARD=mb7hut0k7z77 ~/bin/kan show|card|move|note|desc`).
 Lists: Waiting on you (owner actions), To do, In progress, Testing, Done; labels Release, Feature, Bug, Testing,
 Infra. Keep the cards current at the end of each session (as with the Native Android Apps board).
@@ -162,7 +162,18 @@ focuses the open window and quits; `tauri-plugin-single-instance`, first plugin 
 since 2026-11-19 themes (#33: Dispatch, Grove, Grove classic; the Grove colours follow the owner's canvas exactly,
 see "Look" above), warm problem-led copy on the site and README with every comparison to other tools removed (#34,
 rule at the top of this file) and the one-click Windows setup (#35, see "Windows setup" below).
-**No PRs are open** (2026-11-19: #33, #34, #35 merged by Claude on the owner's word; `main` = 2ee3999, CI green).
+Since 2026-11-19 also the audit fixes (#36 hygiene, #37 CI, #38 version + tests). Since 2026-11-20: the site refresh
+and promo video (#46), Dispatch's own script API `dx` with `pm` kept for Postman scripts (#47, `docs/SCRIPTS.md`) and
+the new logo "Plane in motion" with the amber accent (#48, see "Logo" below). All merged by Claude on the owner's
+word; `main` = ddf4fce, CI green on every job (updater skipped as always).
+**Open PRs: only Dependabot #39–#45** (owner to review). Branches were cleaned up 2026-11-20: every merged branch was
+deleted on GitHub and locally. Left on purpose: `docs/after-installers` (PR #11 closed unmerged), the old local branches
+that are copies of the `archive` remote (`feature/flows`, `feature/inbox`, `feature/v0.3`, …), `site/0.5.0-ogcrafts`
+(local, unmerged), and `site/0.5.1-ogcrafts`, checked out in the worktree `../onelifestack-dispatch-site` with staged,
+uncommitted changes (LICENSE, `scripts/publish-site.sh`, `site/*`): look before touching it.
+**Resume here (next session):** nothing is in flight. Pick up from the Kan board: the snapshot tag still waits on the
+owner's Aptabase/Sentry keys; meanwhile the "Audit 2026-11-19: follow-ups" card (In progress) has the open items.
+Not yet seen for real: the new icons and installer art in an actual install (Windows setup, .dmg).
 Follow-ups from the 2026-11-19 audit of the repo and site are on the Kan card "Audit 2026-11-19: follow-ups" (old
 screenshots and og.png, Share as HTML still in the old look, OFL notices for Manrope and Nunito, CI
 permissions, no Rust tests in CI, SECURITY.md, hand-bumped version constants).
@@ -313,7 +324,7 @@ in the private archive repo (drafts up to v0.4.4) and in the notes below. Versio
   blocks named "End" can't be told apart in flow selects; importing a
   backup into the same workspace duplicates everything; error texts include Rust internals (`os error 10061`).
 - Issue #2: the Windows test (rounds 1–3 done; round 4 moved into #9). Issue #9: the next Windows round.
-- No PRs open (2026-11-19). PR #10, branded installers (`src-tauri/installer/`, `scripts/make-installer-art.mjs`),
+- Only Dependabot PRs #39–#45 open (2026-11-20). PR #10, branded installers (`src-tauri/installer/`, `scripts/make-installer-art.mjs`),
   is merged; its look has only been seen as images on Linux.
 - Merged 2026-11-10, in `main` but not in any tag: the desktop app's local MCP endpoint (#6; Settings → AI
   assistants; `src-tauri/src/mcp_host.rs`, `src/core/mcpHandler.ts`, `src/ui/mcpHost.ts`; the port applies on
