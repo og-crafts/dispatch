@@ -123,6 +123,8 @@ button.icon:hover { color: var(--ink); background: var(--primary-soft); }
 .menuList > button { border: 0; background: none; color: var(--ink); text-align: left; padding: 8px 8px; border-radius: 6px; cursor: pointer; font: inherit; }
 .menuList > button:hover { background: var(--primary-soft); }
 .menuList > button.danger { color: var(--danger); }
+.menuList > button:has(kbd) { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.menuList > button kbd { font: inherit; font-size: 11px; color: var(--muted); background: none; border: 0; padding: 0; }
 .menuRow { display: flex; align-items: center; gap: 8px; justify-content: space-between; padding: 6px 8px; }
 .menuRow input[type="number"] { width: 80px; }
 .menuRow:has(input[type="checkbox"]) { justify-content: flex-start; }
