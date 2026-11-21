@@ -75,13 +75,16 @@ fn chain(e: &dyn std::error::Error) -> String {
 }
 
 fn pool_from_proto(src: &str) -> Result<DescriptorPool, String> {
-    let dir = std::env::temp_dir().join(format!("dispatch-proto-{}", std::process::id()));
+    // A folder per compile: two at once (two requests, or parallel tests) must not delete each other's file.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("dispatch-proto-{}-{n}", std::process::id()));
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let file = dir.join("request.proto");
-    std::fs::write(&file, src).map_err(|e| e.to_string())?;
-    let set = protox::compile([&file], [&dir]).map_err(|e| format!("The .proto didn’t compile: {e}"))?;
-    let _ = std::fs::remove_file(&file);
-    DescriptorPool::from_file_descriptor_set(set).map_err(|e| e.to_string())
+    let set = std::fs::write(&file, src).map_err(|e| e.to_string())
+        .and_then(|_| protox::compile([&file], [&dir]).map_err(|e| format!("The .proto didn’t compile: {e}")));
+    let _ = std::fs::remove_dir_all(&dir); // also after a failed compile
+    DescriptorPool::from_file_descriptor_set(set?).map_err(|e| e.to_string())
 }
 
 /// Every message/enum full name a file defines (nested ones too).
@@ -462,6 +465,14 @@ mod end_to_end {
         let v = json(&grpc_call(call(&addr, PROTO, "LotsOfReplies", r#"{"greeting":"x"}"#)).await.unwrap());
         assert_eq!(v["code"], 0, "{v}");
         assert_eq!(v["responses"], serde_json::json!([{ "reply": "hello x #1" }, { "reply": "hello x #2" }, { "reply": "hello x #3" }]));
+    }
+
+    #[test]
+    fn compiles_protos_side_by_side() {
+        // Each compile used to share one temp file; a parallel one could delete it mid-compile.
+        let threads: Vec<_> = (0..8).map(|_| std::thread::spawn(|| (0..5).all(|_| pool_from_proto(PROTO).is_ok()))).collect();
+        assert!(threads.into_iter().all(|t| t.join().unwrap()));
+        assert!(pool_from_proto("syntax = \"proto3\"; message {").unwrap_err().contains("didn’t compile"));
     }
 
     #[tokio::test]
