@@ -61,7 +61,7 @@ about each, without naming or disparaging anyone.
 - Share as HTML: `core/share.ts` builds sanitized data (Sanitizer: secret-named values, JWT/bearer/AWS keys,
   emails, IPs, server address → `{{baseUrl}}`, sampled lists; variables stay `{{name}}`), `core/shareHtml.ts`
   renders one self-contained page (CSP, data embedded as JSON, DOM built with textContent). `ui/ShareDialog.tsx`
-  asks for title/version/author/contact/description. Entry points: request Share button, request/folder/collection menus.
+  asks for title/version/author/contact/description. Entry points: the request title row's ⋯ menu (Share as HTML…), request/folder/collection menus.
 - Opt-in usage (Aptabase) and error reports (Sentry), feedback: `src/ui/telemetry.ts` (consent-gated `track()`,
   `redact()`/`scrubEvent()`), `src/ui/PrivacyDialogs.tsx` (first-launch question, Send feedback). Keys come from
   `VITE_APTABASE_APP_KEY` / `VITE_SENTRY_DSN` at build time; without them nothing is offered. Rules and set-up:
@@ -169,34 +169,47 @@ see "Look" above), warm problem-led copy on the site and README with every compa
 rule at the top of this file) and the one-click Windows setup (#35, see "Windows setup" below).
 Since 2026-11-19 also the audit fixes (#36 hygiene, #37 CI, #38 version + tests). Since 2026-11-20: the site refresh
 and promo video (#46), Dispatch's own script API `dx` with `pm` kept for Postman scripts (#47, `docs/SCRIPTS.md`) and
-the new logo "Plane in motion" with the amber accent (#48, see "Logo" below). All merged by Claude on the owner's
-word; `main` = ddf4fce, CI green on every job (updater skipped as always).
-**Open PRs: only Dependabot #39–#45** (owner to review). Branches were cleaned up 2026-11-20: every merged branch was
-deleted on GitHub and locally. Left on purpose: `docs/after-installers` (PR #11 closed unmerged), the old local branches
+the new logo "Plane in motion" with the amber accent (#48, see "Logo" below). Since 2026-11-21: this status (#49),
+Share as HTML in the Dispatch look + clearer focus ring (#50), Rust tests for the MCP endpoint checks (#51), stable
+legal-page dates (#52), the gRPC crates moved up together with end-to-end tests (#53), the borderless installer splash
+(#54, see "Windows setup" below), dropdown menus that close on an outside click / Escape / window blur (#55,
+`src/ui/menus.ts` `useMenuDismiss`) and a calmer request title row (#56: `{{ }}`, Code, a ⋯ menu with Save as…,
+Share as HTML… and Parameterize…, then Save). All merged by Claude on the owner's word; #54, #55 and #56 were
+installed and tried by the owner on the Predator first. `main` = 793026f, CI green on every job (updater skipped as
+always); 363 vitest tests.
+**Open PRs: only Dependabot #39, #40, #41, #43, #45** (owner to review; #42/#44 were closed by Dependabot once #53
+merged). Merged branches were deleted on GitHub and locally (2026-11-20 and 2026-11-21, incl. the throwaway
+`test/windows-2026-11-21`). Left on purpose: `docs/after-installers` (PR #11 closed unmerged), the old local branches
 that are copies of the `archive` remote (`feature/flows`, `feature/inbox`, `feature/v0.3`, …), `site/0.5.0-ogcrafts`
 (local, unmerged), and `site/0.5.1-ogcrafts`, checked out in the worktree `../onelifestack-dispatch-site` with staged,
 uncommitted changes (LICENSE, `scripts/publish-site.sh`, `site/*`): look before touching it.
-**2026-11-21 (owner: "do everything you can without me"):** the open audit items became four PRs, all open for the
-owner: #50 Share as HTML in the Dispatch look + clearer focus ring + `cssTokens.test.ts`; #51 MCP endpoint checks
+**2026-11-21 (owner: "do everything you can without me"):** the open audit items became four PRs (all merged the
+same evening): #50 Share as HTML in the Dispatch look + clearer focus ring + `cssTokens.test.ts`; #51 MCP endpoint checks
 moved unchanged into `gate()` with Rust tests; #52 legal pages keep the date their wording changed (`UPDATED` in
 `site/build.py`) and the finished `docs/PLAN*.md` removed; #53 the gRPC crates moved up together (tonic 0.14, prost
-0.14, prost-reflect 0.16, protox 0.9; replaces Dependabot #42/#44, close those after #53 merges) with end-to-end tests;
+0.14, prost-reflect 0.16, protox 0.9; replaced Dependabot #42/#44) with end-to-end tests;
 those tests caught a race already on `main`: every `.proto` compile shared one temp file, so two at once could delete
 each other's (fixed in #53: a folder per compile).
 Dependabot: #39, #41, #45 pass CI as they are; fixes pushed onto #40 (Tauri CLI 2.12.5: its NSIS template is unchanged,
 only the `TAURI-CLI-VERSION` line moved) and #43 (jsdom 31 joins inline text in accessible names: a spoken space after
 the method tag in sidebar rows and tabs). `'unsafe-eval'` was kept on purpose (see Gotchas). Windows desktop check
 of #50+#51+#53 together (Predator, CI build of the throwaway branch `test/windows-2026-11-21`, MSI unpacked, the
-installed app's data backed up and restored; delete that branch once the PRs merge): app starts in the new look; MCP
+installed app's data backed up and restored): app starts in the new look; MCP
 endpoint answers 401 (no/wrong token), 403 (Origin, foreign Host), 404, 405, 200; it found that the URL field still had
 the faint focus halo (an older `input:focus` rule in the Look section won) and that the roomy Grove look showed no
 focus on the URL at all, both fixed in #50. gRPC over the internet couldn't be checked: grpcb.in doesn't answer (port
 9000/9001 time out from the homelab and the Predator) and grpc.postman-echo.com fails the TLS handshake
 ("InvalidContentType") with the old crates on `main` exactly as with #53, so TLS behaves as before; the local
 end-to-end and grpc-js tests cover plaintext.
-**Resume here (next session):** merge order suggestion: #49 (this file), #50–#53, then the Dependabot PRs (#40 and #43
-after CI is green on the pushed fixes). The snapshot tag still waits on the owner's Aptabase/Sentry keys.
-Not yet seen for real: the new icons and installer art in an actual install (Windows setup, .dmg).
+**Resume here (next session, after 2026-11-21):** nothing of Claude's is open. Options: the Dependabot PRs (#39, #41,
+#45 pass as they are; #40 and #43 carry Claude's fixes; #45 is vitest 2 → 5, a major bump: check it before merging);
+items from the Kan "To do" list. The snapshot tag still waits on the owner's Aptabase/Sentry keys.
+Seen for real on 2026-11-21: the new icon, the splash and the app in a real install on the Predator (owner). Not yet:
+the .dmg window, the splash at 125/150/200 % scaling.
+The Predator (2026-11-21 evening): Dispatch installed by the owner from the #56 build (current main minus #49–#54);
+`Downloads` holds three test setups (`Dispatch_0.1.0_x64-setup.exe` = #54, `-menu-fix.exe` = #55, `-toolbar.exe` =
+#56) the owner may delete; earlier app data (before the .msi test and from Claude's splash runs) is in
+`C:\Users\ompra\dispatch-data-backup-2026-11-21`, the owner deletes it when no longer needed.
 - **Blocking the snapshot tag:** the owner's Aptabase App Key and Sentry DSN → repo variables `APTABASE_APP_KEY`,
   `SENTRY_DSN` (a build without them offers and sends nothing). Then tag, the owner publishes the pre-release,
   Claude publishes the site from the tag (policy page + opt-in privacy policy + 0.1.0 changelog go live).
@@ -257,12 +270,19 @@ native `<dialog>` elements; picking the open library section folds the panel; im
 `DataTransfer` file on `input[aria-label="Import file"]` and dispatching `change`.
 
 **Windows setup (one-click, #35; checked on the Predator 2026-11-19).** `src-tauri/installer/installer.nsi` is
-Tauri's NSIS template (CLI 2.12.4) with five blocks marked `DISPATCH:`; `tests/installer.test.ts` fails when the
+Tauri's NSIS template (CLI 2.12.4) with seven blocks marked `DISPATCH:`; `tests/installer.test.ts` fails when the
 Tauri CLI is bumped without re-applying them (`docs/RELEASING.md`). A plain double-click forces passive mode: one
 window ("Installing Dispatch", a progress bar, only Cancel), a per-user install with no admin prompt, shortcuts, then
 the app opens. `/WIZARD` brings the pages back; `/S`, `/P` and `/UPDATE` runs are as Tauri made them. Seen working
 on Windows 11 with the CI build 4e5ff68 (left installed there in `%LOCALAPPDATA%\Dispatch`): fresh install, install
 over a running app (closed, replaced, reopened), `/WIZARD`, `/S`. Not run: the uninstall, an in-app update.
+- **Borderless splash (#54, 2026-11-21).** On a one-click run, `OneClickSplash` (the install page's SHOW function)
+  turns that window into a 400×240 rounded graphite card: logo (`splash-logo-{100,125,150,200}.bmp`, picked by DPI,
+  from `scripts/make-installer-art.mjs splash`), "Installing Dispatch", a note and a thin amber progress bar; then
+  "Opening Dispatch" until the app starts. All Win32 calls go through the NSIS System plugin. `/WIZARD`, `/S`, `/P`,
+  `/UPDATE` and the `.msi` (WiX wizard) are unchanged, so a person who runs the `.msi` sees the classic wizard: point
+  them at the setup `.exe`. Checked by Claude on the Predator at 100 % (a stray Back button at "Opening" was fixed) and
+  installed by the owner by hand.
 - The first start of every new unsigned build blocks about 27 s inside the setup's launch call (Windows checking the
   file; a repeat install of the same build takes under 1 s), so the window then says "Opening Dispatch. The first
   time, Windows may take a moment to check it." A new setup exe also took 30-40 s to start. Signing should end both.
@@ -319,7 +339,7 @@ comes, fix in a PR, bump the version everywhere `tests/version.test.ts` checks, 
   blocks named "End" can't be told apart in flow selects; importing a
   backup into the same workspace duplicates everything; error texts include Rust internals (`os error 10061`).
 - Issue #9: the next Windows round (see above).
-- Open PRs (2026-11-21): #49–#53 (Claude's, for the owner) and Dependabot #39–#45.
+- Open PRs (2026-11-21 evening): only Dependabot #39, #40, #41, #43, #45.
 - Flaky CI: `tests/browser.test.ts` ("The browser didn't start in time") and the Linux `linuxdeploy` step each
   failed once and passed on `gh run rerun --failed`. The browser test failed again on PR #18 (2026-11-16).
 - The macOS job (universal build) hit its 15-minute limit on every run 2026-11-16/17 (#26, #27, #28, `main`), so no
