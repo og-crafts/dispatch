@@ -1,6 +1,7 @@
 // Draws the installer artwork (src-tauri/installer/*) from the app icon and the site fonts.
 // Dev tool, not part of the build: run it after changing the look, then commit the images.
-//   PLAYWRIGHT=<dir of the playwright-core package> [CHROMIUM=<path to a chromium binary>] node scripts/make-installer-art.mjs
+//   PLAYWRIGHT=<dir of the playwright-core package> [CHROMIUM=<path to a chromium binary>] node scripts/make-installer-art.mjs [name-prefix]
+// With a name prefix (e.g. splash) only those images are drawn.
 // PLAYWRIGHT is needed unless playwright-core can be required from the repo; CHROMIUM only when playwright's own
 // browser isn't installed (see CLAUDE.md, "Visual check without a desktop").
 import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
@@ -53,7 +54,10 @@ const jobs = [
       <div style="position:absolute;top:70px;left:0;right:0;text-align:center;font-weight:700;font-size:13px;color:#5E5E66">Then open it from Launchpad. Your data stays on this Mac.</div>
       <svg style="position:absolute;left:268px;top:158px" width="124" height="64" viewBox="0 0 124 64" fill="none" stroke="#D98E00" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 32h104M84 8l28 24-28 24" stroke-dasharray="0 0"/></svg>
       <div style="position:absolute;bottom:26px;left:0;right:0;text-align:center;font-weight:700;font-size:11px;letter-spacing:.7px;color:#9A9AA2;text-transform:uppercase">OGCrafts</div>`, '#FFF9F2') },
-]
+  // The one-click setup's splash logo (installer.nsi, OneClickSplash), on its graphite card, for 100/125/150/200 % scaling.
+  ...[[100, 64], [125, 80], [150, 96], [200, 128]].map(([pct, px]) => ({ name: `splash-logo-${pct}`, w: px, h: px, bmp: true,
+    html: html(px, px, `<img src="${icon}" style="position:absolute;inset:0;width:${px}px;height:${px}px">`, '#1C1C1E') })),
+].filter((j) => !process.argv[2] || j.name.startsWith(process.argv[2]))
 
 /** Marks a PNG as 144 dpi (a pHYs chunk after IHDR) so Finder shows a 2x image at half size: sharp on Retina. */
 function retinaPng(png) {

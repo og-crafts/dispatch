@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const nsi = readFileSync('src-tauri/installer/installer.nsi', 'utf8')
@@ -35,17 +35,21 @@ describe('Windows installer template', () => {
   it('is plain ASCII, so makensis reads it the same everywhere', () => {
     expect(/[^\x00-\x7F]/.test(nsi)).toBe(false)
   })
-  it('hides the wizard buttons only on a one-click run, and keeps Cancel', () => {
-    const start = nsi.indexOf('Function OneClickHideWizardButtons')
+  it('shows a borderless splash only on a one-click run, with logo files for each scaling', () => {
+    const start = nsi.indexOf('Function OneClickSplash')
     const fn = nsi.slice(start, nsi.indexOf('FunctionEnd', start))
-    expect(nsi).toContain('!define MUI_PAGE_CUSTOMFUNCTION_SHOW OneClickHideWizardButtons')
-    expect(fn).toContain('${If} $OneClick = 1')
-    expect(fn).toContain('GetDlgItem $0 $HWNDPARENT 3')
-    expect(fn).toContain('GetDlgItem $0 $HWNDPARENT 1')
-    expect(fn).not.toContain('$HWNDPARENT 2')
+    expect(nsi).toContain('!define MUI_PAGE_CUSTOMFUNCTION_SHOW OneClickSplash')
+    expect(fn.indexOf('${If} $OneClick <> 1')).toBeLessThan(fn.indexOf('Return')) // other runs keep Tauri's window
+    expect(fn.indexOf('Return')).toBeLessThan(fn.indexOf('SetWindowLongW'))
+    expect(fn).toContain('IntOp $0 $0 | 0x80000000') // WS_POPUP: no title bar or frame
+    expect(fn).toContain('GetDlgItem $7 $9 1004') // the progress bar stays
+    for (const pct of [100, 125, 150, 200]) {
+      expect(fn).toContain(`splash-logo-${pct}.bmp`)
+      expect(existsSync(`src-tauri/installer/splash-logo-${pct}.bmp`)).toBe(true)
+    }
     // while Windows checks a new build before its first start, the window says so
     const done = nsi.slice(nsi.indexOf('Function .onInstSuccess'))
-    expect(done.indexOf('"Opening Dispatch"')).toBeGreaterThan(done.indexOf('${ElseIf} $OneClick = 1'))
-    expect(done.indexOf('"Opening Dispatch"')).toBeLessThan(done.indexOf('RunAsUser "$INSTDIR\\${MAINBINARYNAME}.exe" ""'))
+    expect(done.indexOf('Opening Dispatch')).toBeGreaterThan(done.indexOf('${ElseIf} $OneClick = 1'))
+    expect(done.indexOf('Opening Dispatch')).toBeLessThan(done.indexOf('RunAsUser "$INSTDIR\\${MAINBINARYNAME}.exe" ""'))
   })
 })
