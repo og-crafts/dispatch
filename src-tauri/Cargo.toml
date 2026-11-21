@@ -29,7 +29,7 @@ tonic = { version = "0.12", features = ["tls", "tls-webpki-roots"] }
 tonic-reflection = "0.12"
 prost = "0.13"
 prost-types = "0.13"
-prost-reflect = { version = "0.14", features = ["serde"] }
+prost-reflect = { version = "0.16", features = ["serde"] }
 protox = "0.7"
 serde_json = "1"
 tokio-stream = "0.1"
