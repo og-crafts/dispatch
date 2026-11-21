@@ -134,3 +134,12 @@ describe('renderShareHtml', () => {
     w.close()
   })
 })
+
+describe('the shared page look', () => {
+  it('uses the Dispatch look: graphite and amber, no glass or gradients', async () => {
+    const { renderShareHtml } = await import('../src/core/shareHtml')
+    const html = renderShareHtml({ scope: 'request', collection: 'Shop', meta: { title: 'Orders' }, requests: [], generatedAt: new Date(0).toISOString() } as never)
+    expect(html).toContain('#FFB020')
+    expect(html).not.toMatch(/radial-gradient|backdrop-filter|#6247F0|text-transform:uppercase/i)
+  })
+})
