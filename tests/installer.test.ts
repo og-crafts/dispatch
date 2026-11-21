@@ -50,6 +50,8 @@ describe('Windows installer template', () => {
     // while Windows checks a new build before its first start, the window says so
     const done = nsi.slice(nsi.indexOf('Function .onInstSuccess'))
     expect(done.indexOf('Opening Dispatch')).toBeGreaterThan(done.indexOf('${ElseIf} $OneClick = 1'))
+    const opening = done.slice(done.indexOf('${ElseIf} $OneClick = 1'), done.indexOf('Opening Dispatch'))
+    for (const id of [1, 2, 3]) expect(opening).toContain(`GetDlgItem $0 $HWNDPARENT ${id}`) // no buttons come back
     expect(done.indexOf('Opening Dispatch')).toBeLessThan(done.indexOf('RunAsUser "$INSTDIR\\${MAINBINARYNAME}.exe" ""'))
   })
 })
