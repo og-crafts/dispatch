@@ -74,8 +74,9 @@ about each, without naming or disparaging anyone.
   `grpc.rs` — gRPC (tonic + prost-reflect + protox); `mcp_host.rs` — local MCP endpoint (127.0.0.1 only,
   bearer token, refuses Origin and foreign Host headers, POST only) that relays JSON-RPC to the frontend
   (`src/ui/mcpHost.ts`, turned on in Settings → AI assistants).
-- `tests/` — vitest (jsdom; `cli.test.ts` builds and runs the real CLI in Node). `src-tauri/tests/grpc_live.rs` —
-  live gRPC test (needs `examples/grpc`); `network_live.rs` — mTLS/proxy (needs `examples/tls`);
+- `tests/` — vitest (jsdom; `cli.test.ts` builds and runs the real CLI in Node; `cssTokens.test.ts` keeps each dark colour
+  set equal in its two copies). Rust: `grpc::end_to_end` (a tonic server on 127.0.0.1, runs in CI) and `mcp_host` `gate()`
+  tests (token, Origin, Host); `src-tauri/tests/grpc_live.rs` — live gRPC test (needs `examples/grpc`); `network_live.rs` — mTLS/proxy (needs `examples/tls`);
   `collection_files.rs` — folder write/prune/escape.
 - `examples/` — demo API, demo collection, data file, gRPC test server.
 
@@ -140,11 +141,15 @@ unpack it from `apt-get download libasound2t64` with `dpkg-deb -x` and set `LD_L
   need `CREATE_NO_WINDOW` (`no_console`). `shellWords` keeps a backslash before an ordinary character, for Windows
   paths.
 - Don't `npx` remote packages from tool calls; that's blocked here. Local examples (`examples/*.mjs`) cover MCP.
+- The desktop CSP keeps `'unsafe-eval'` (`tauri.conf.json`). Only user scripts need it: `compileWithFunction` runs
+  `new Function` inside the script Worker (ajv and handlebars compile there too); the main bundle has no eval. Whether a
+  worker loaded from the app gets the page's CSP differs between engines, and the macOS/Linux webviews (WebKit) couldn't
+  be tested on 2026-11-21, so it stays until scripts are checked with it removed on all three OSes.
 - MCP sign-in redirects to `http://127.0.0.1:33418/callback`, which a registered client is bound to; tests use 33419.
 
 ## Where we left off
 
-Updated 2026-11-19. **Pending work is tracked on the Kan board "Dispatch"**
+Updated 2026-11-21. **Pending work is tracked on the Kan board "Dispatch"**
 (https://kanban.gautamlabs.io/boards/mb7hut0k7z77; CLI: `KAN_BOARD=mb7hut0k7z77 ~/bin/kan show|card|move|note|desc`).
 Lists: Waiting on you (owner actions), To do, In progress, Testing, Done; labels Release, Feature, Bug, Testing,
 Infra. Keep the cards current at the end of each session (as with the Native Android Apps board).
@@ -162,10 +167,36 @@ focuses the open window and quits; `tauri-plugin-single-instance`, first plugin 
 since 2026-11-19 themes (#33: Dispatch, Grove, Grove classic; the Grove colours follow the owner's canvas exactly,
 see "Look" above), warm problem-led copy on the site and README with every comparison to other tools removed (#34,
 rule at the top of this file) and the one-click Windows setup (#35, see "Windows setup" below).
-**No PRs are open** (2026-11-19: #33, #34, #35 merged by Claude on the owner's word; `main` = 2ee3999, CI green).
-Follow-ups from the 2026-11-19 audit of the repo and site are on the Kan card "Audit 2026-11-19: follow-ups" (old
-screenshots and og.png, Share as HTML still in the old look, OFL notices for Manrope and Nunito, CI
-permissions, no Rust tests in CI, SECURITY.md, hand-bumped version constants).
+Since 2026-11-19 also the audit fixes (#36 hygiene, #37 CI, #38 version + tests). Since 2026-11-20: the site refresh
+and promo video (#46), Dispatch's own script API `dx` with `pm` kept for Postman scripts (#47, `docs/SCRIPTS.md`) and
+the new logo "Plane in motion" with the amber accent (#48, see "Logo" below). All merged by Claude on the owner's
+word; `main` = ddf4fce, CI green on every job (updater skipped as always).
+**Open PRs: only Dependabot #39–#45** (owner to review). Branches were cleaned up 2026-11-20: every merged branch was
+deleted on GitHub and locally. Left on purpose: `docs/after-installers` (PR #11 closed unmerged), the old local branches
+that are copies of the `archive` remote (`feature/flows`, `feature/inbox`, `feature/v0.3`, …), `site/0.5.0-ogcrafts`
+(local, unmerged), and `site/0.5.1-ogcrafts`, checked out in the worktree `../onelifestack-dispatch-site` with staged,
+uncommitted changes (LICENSE, `scripts/publish-site.sh`, `site/*`): look before touching it.
+**2026-11-21 (owner: "do everything you can without me"):** the open audit items became four PRs, all open for the
+owner: #50 Share as HTML in the Dispatch look + clearer focus ring + `cssTokens.test.ts`; #51 MCP endpoint checks
+moved unchanged into `gate()` with Rust tests; #52 legal pages keep the date their wording changed (`UPDATED` in
+`site/build.py`) and the finished `docs/PLAN*.md` removed; #53 the gRPC crates moved up together (tonic 0.14, prost
+0.14, prost-reflect 0.16, protox 0.9; replaces Dependabot #42/#44, close those after #53 merges) with end-to-end tests;
+those tests caught a race already on `main`: every `.proto` compile shared one temp file, so two at once could delete
+each other's (fixed in #53: a folder per compile).
+Dependabot: #39, #41, #45 pass CI as they are; fixes pushed onto #40 (Tauri CLI 2.12.5: its NSIS template is unchanged,
+only the `TAURI-CLI-VERSION` line moved) and #43 (jsdom 31 joins inline text in accessible names: a spoken space after
+the method tag in sidebar rows and tabs). `'unsafe-eval'` was kept on purpose (see Gotchas). Windows desktop check
+of #50+#51+#53 together (Predator, CI build of the throwaway branch `test/windows-2026-11-21`, MSI unpacked, the
+installed app's data backed up and restored; delete that branch once the PRs merge): app starts in the new look; MCP
+endpoint answers 401 (no/wrong token), 403 (Origin, foreign Host), 404, 405, 200; it found that the URL field still had
+the faint focus halo (an older `input:focus` rule in the Look section won) and that the roomy Grove look showed no
+focus on the URL at all, both fixed in #50. gRPC over the internet couldn't be checked: grpcb.in doesn't answer (port
+9000/9001 time out from the homelab and the Predator) and grpc.postman-echo.com fails the TLS handshake
+("InvalidContentType") with the old crates on `main` exactly as with #53, so TLS behaves as before; the local
+end-to-end and grpc-js tests cover plaintext.
+**Resume here (next session):** merge order suggestion: #49 (this file), #50–#53, then the Dependabot PRs (#40 and #43
+after CI is green on the pushed fixes). The snapshot tag still waits on the owner's Aptabase/Sentry keys.
+Not yet seen for real: the new icons and installer art in an actual install (Windows setup, .dmg).
 - **Blocking the snapshot tag:** the owner's Aptabase App Key and Sentry DSN → repo variables `APTABASE_APP_KEY`,
   `SENTRY_DSN` (a build without them offers and sends nothing). Then tag, the owner publishes the pre-release,
   Claude publishes the site from the tag (policy page + opt-in privacy policy + 0.1.0 changelog go live).
@@ -202,14 +233,7 @@ reset; rail folds and reopens the library; Settings tabs; MCP endpoint starts, r
 foreign Host (403), GET (401); all #16 tools (create, update, send, copy, delete own; update/delete of a user
 request refused with the copy_request hint; POST refused under GET,HEAD); the "AI assistant" workspace shows what
 the assistant made; Share dialog opens with `{{baseUrl}}` and the secret check. Not covered: the native save dialog
-behind "Save HTML file", drag and drop, installers, scaling/monitors. Small findings (all fixed in #20):
-- The rail label "Environments" is cut off ("Environm…").
-- Home's "Pick up where you left off" says no open requests while a blank New request tab is open.
-- Opening a request from the tree closes the Settings page tab (maybe intended: pages are one transient tab).
-- The request title above the URL is clipped without an ellipsis.
-- Switching workspace keeps the other workspace's request tabs open.
-- copy_request on a request with no auth says "its inherited none auth was copied onto it".
-- The Share dialog counts 0 sample responses for a request just sent through MCP.
+behind "Save HTML file", drag and drop, installers, scaling/monitors. Its 7 small findings were fixed in #20.
 How it was driven, for next time: run the exe in the owner's desktop session via a temporary scheduled task (a
 `.bat` that sets `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222` then starts it; the owner must
 be logged in), `ssh -L 19222:127.0.0.1:9222` and drive it over CDP (`Runtime.evaluate`, `Input.dispatchMouseEvent`,
@@ -282,43 +306,20 @@ in the private archive repo (drafts up to v0.4.4) and in the notes below. Versio
   as HTML, the UX refresh, the MCP assistant workspace). Previews can't update to it: export a backup, uninstall,
   install 0.1.0, import.
 
-**Windows test (issue #2; rounds 1–2 in archive #8).**
-- An agent on the owner's Windows machine follows `docs/TESTING-WINDOWS.md`, which is copied into the issue body,
-  and posts reports as comments on #2. The repo is public, so the guide tells it to strip personal details.
-- Round 1 (on 0.4.1, built from source): 29 of 35 checks passed and it found archive #9 (fixed in 0.4.2).
-- Round 2 (installed 0.4.3, 2026-11-05): 35 of 42 passed, 2 failed (archive #14, #15, both fixed in 0.4.4), 5 partial.
-  Not covered: 150%/200% scaling, multiple monitors, 6.4d step 9 (a real provider), SmartScreen text.
-- Round 3 (installed 0.5.0 over 0.4.3, issue #2, 2026-11-05): 24 of 26 passed, 0 failed, 2 partial. Data survived
-  the upgrade; both retests pass. Found: a copied workspace folder with an edited id moved the original's items and
-  secrets (fixed in 0.5.1 with `reIdTaken`); guide 6.6b step 5 described the wrong behaviour (corrected, new step 6);
-  import message skipped flows, long commands overflowed the confirm dialog, workspace names wrapped (all fixed in
-  0.5.1). Flows deleted in 0.4.x stay in the data after upgrading (noted in the 0.5.1 release notes).
-- Round 4 (install 0.5.1 over 0.5.0; retest 6.6b step 6 and the round 3 fixes) was requested on #2 on 2026-11-05.
-  No report yet as of 2026-11-10. The installers are on the v0.5.1 draft release.
-- **Issue #9 (2026-11-10)** is the next Windows round and replaces the round 4 request on #2: part A repeats round 4
-  on the installed 0.5.1; part B tests a build from `main` (CI run 42783403452, commit e8f9dc2, artifact
-  `dispatch-windows`, still says 0.5.1) for the MCP endpoint (curl checks for 401/403/405, port field, token,
-  port in use) and drag and drop; part C covers 150%/200% scaling, multiple monitors and SmartScreen text. The
-  report goes on #9, not #2. Artifacts expire 2027-02-08.
-- As of 2026-11-16 no tester report on #9 (and none new on #2). Part B is partly covered by Claude's desktop check
-  above (MCP endpoint; not drag and drop).
-- **Next step:** read the newest comment on #9 and any `[Windows] …` issues or `test/windows-*` branches the agent
-  opened. Then fix in a PR, bump the version (package.json + lock, tauri.conf.json, Cargo.toml + lock, the version in
-  `docs/TESTING-WINDOWS.md`), tag, add
-  release notes, and refresh #2's body from the guide.
+**Windows test (issues #2 and #9).** An agent on a Windows PC follows `docs/TESTING-WINDOWS.md` (copied into the issue
+body; the guide tells it to strip personal details) and reports as comments. Rounds 1–3 (0.4.1–0.5.0, 2026-11-04/05)
+found archive #9, #14, #15 and the copied-folder bug, all fixed by 0.5.1. Issue #9 (2026-11-10) asks for the next round
+(0.5.1 retest, the MCP endpoint and drag and drop on a `main` build, scaling/monitors/SmartScreen); no report as of
+2026-11-21. Since 2026-11-16 Claude checks desktop builds on the Predator itself (method above). Next: when a report
+comes, fix in a PR, bump the version everywhere `tests/version.test.ts` checks, and refresh the issue body from the guide.
 
 **Open on GitHub.**
 - Minor findings from round 2, not filed yet: no Duplicate in the collection menu; static-token servers show the
   Sign in banner and the Auth tab can't be reached for MCP; MCP results from the previous tab stay visible; two
   blocks named "End" can't be told apart in flow selects; importing a
   backup into the same workspace duplicates everything; error texts include Rust internals (`os error 10061`).
-- Issue #2: the Windows test (rounds 1–3 done; round 4 moved into #9). Issue #9: the next Windows round.
-- No PRs open (2026-11-19). PR #10, branded installers (`src-tauri/installer/`, `scripts/make-installer-art.mjs`),
-  is merged; its look has only been seen as images on Linux.
-- Merged 2026-11-10, in `main` but not in any tag: the desktop app's local MCP endpoint (#6; Settings → AI
-  assistants; `src-tauri/src/mcp_host.rs`, `src/core/mcpHandler.ts`, `src/ui/mcpHost.ts`; the port applies on
-  blur/Enter and start/stop are serialised) and drag and drop between views (#7; Ctrl/Alt-drag copies in the
-  sidebar, tabs onto collections, requests onto flow canvases and the Runner; `src/ui/dnd.ts`).
+- Issue #9: the next Windows round (see above).
+- Open PRs (2026-11-21): #49–#53 (Claude's, for the owner) and Dependabot #39–#45.
 - Flaky CI: `tests/browser.test.ts` ("The browser didn't start in time") and the Linux `linuxdeploy` step each
   failed once and passed on `gh run rerun --failed`. The browser test failed again on PR #18 (2026-11-16).
 - The macOS job (universal build) hit its 15-minute limit on every run 2026-11-16/17 (#26, #27, #28, `main`), so no
