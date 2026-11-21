@@ -180,7 +180,9 @@ uncommitted changes (LICENSE, `scripts/publish-site.sh`, `site/*`): look before 
 owner: #50 Share as HTML in the Dispatch look + clearer focus ring + `cssTokens.test.ts`; #51 MCP endpoint checks
 moved unchanged into `gate()` with Rust tests; #52 legal pages keep the date their wording changed (`UPDATED` in
 `site/build.py`) and the finished `docs/PLAN*.md` removed; #53 the gRPC crates moved up together (tonic 0.14, prost
-0.14, prost-reflect 0.16, protox 0.9; replaces Dependabot #42/#44, close those after #53 merges) with end-to-end tests.
+0.14, prost-reflect 0.16, protox 0.9; replaces Dependabot #42/#44, close those after #53 merges) with end-to-end tests;
+those tests caught a race already on `main`: every `.proto` compile shared one temp file, so two at once could delete
+each other's (fixed in #53: a folder per compile).
 Dependabot: #39, #41, #45 pass CI as they are; fixes pushed onto #40 (Tauri CLI 2.12.5: its NSIS template is unchanged,
 only the `TAURI-CLI-VERSION` line moved) and #43 (jsdom 31 joins inline text in accessible names: a spoken space after
 the method tag in sidebar rows and tabs). `'unsafe-eval'` was kept on purpose (see Gotchas). Windows desktop check
