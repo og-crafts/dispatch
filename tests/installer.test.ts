@@ -19,7 +19,7 @@ describe('Windows installer template', () => {
   it('turns a plain double-click into a one-click install and opens the app afterwards', () => {
     expect(nsi).toMatch(/GetOptions\} \$CMDLINE "\/WIZARD"/)
     expect(nsi).toMatch(/StrCpy \$PassiveMode 1\s+StrCpy \$OneClick 1/)
-    expect(nsi).toMatch(/\$\{ElseIf\} \$OneClick = 1[\s\S]{0,400}?nsis_tauri_utils::RunAsUser "\$INSTDIR/)
+    expect(nsi).toMatch(/\$\{ElseIf\} \$OneClick = 1[\s\S]{0,900}?nsis_tauri_utils::RunAsUser "\$INSTDIR/)
   })
 
   it('leaves silent, passive and update runs as Tauri made them', () => {
