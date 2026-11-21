@@ -47,6 +47,8 @@ const BODY_KINDS: [BodyKind, string][] = [
   ['urlencoded', 'Form (urlencoded)'], ['formdata', 'Form-data (files)'], ['binary', 'Binary file'], ['graphql', 'GraphQL'],
 ]
 
+const closeMenu = (e: React.MouseEvent) => { (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open') }
+
 export function RequestPane({ ws, onSave, notify, authActions, scriptHelp, renderDocs, onShare, onSaveAs }: Props & { onShare?: () => void; onSaveAs?: () => void }) {
   const { draft, setDraft, sending } = ws
   const [tab, setTab] = useState<Tab>('params')
@@ -98,11 +100,19 @@ export function RequestPane({ ws, onSave, notify, authActions, scriptHelp, rende
         <input className="reqName" value={draft.name} aria-label="Request name" title={draft.name} onChange={(e) => set({ name: e.target.value })} />
         {ws.dirty && <span className="dot" title="Unsaved changes" aria-label="Unsaved changes" />}
         <span className="grow" />
-        <button type="button" className="btn small ghost" aria-expanded={paramOpen} onClick={() => setParamOpen(!paramOpen)} title="Turn hard-coded values into variables">Parameterize</button>
         <VarsHelp ws={ws} notify={notify} />
         <CodePanel ws={ws} notify={notify} />
-        {onShare && <button type="button" className="btn small ghost" onClick={onShare} title="Save this request, a sample response and curl as an HTML page to share">Share</button>}
-        {onSaveAs && <button type="button" className="btn small ghost" onClick={onSaveAs} title="Save a copy under a new name or place (Ctrl+Shift+S)">Save as…</button>}
+        <details className="menu reqMore">
+          <summary className="btn small ghost" aria-label="More request actions" title="More: save as, share, parameterize">⋯</summary>
+          <div className="menuList right" role="menu">
+            {onSaveAs && <button type="button" role="menuitem" aria-label="Save as…" onClick={(e) => { closeMenu(e); onSaveAs() }} title="Save a copy under a new name or place">
+              <span>Save as…</span><kbd>Ctrl Shift S</kbd></button>}
+            {onShare && <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); onShare() }} title="Save this request, a sample response and curl as an HTML page to share">
+              <span>Share as HTML…</span></button>}
+            <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setParamOpen(true) }} title="Turn hard-coded values into variables">
+              <span>Parameterize…</span></button>
+          </div>
+        </details>
         <button type="button" className="btn ghost" onClick={onSave}>Save <kbd>Ctrl S</kbd></button>
       </div>
       {paramOpen && <ParameterizePanel ws={ws} notify={notify} onClose={() => setParamOpen(false)} />}
