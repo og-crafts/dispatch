@@ -15,6 +15,8 @@ SRC, DIST = ROOT / "src", ROOT / "dist"
 BASE = "https://dispatch.ogcrafts.cloud"
 EMAIL = "hello@ogcrafts.cloud"
 DAY = datetime.date.today().isoformat()
+# When each legal page's wording last changed. Change the date with the text, never on a plain rebuild.
+UPDATED = {"privacy": "2026-11-20", "code-signing": "2026-11-16", "terms": "2026-11-14"}
 VERSION = json.loads((REPO / "package.json").read_text())["version"]
 STRICT = "--strict" in sys.argv
 e = html.escape
@@ -326,7 +328,7 @@ def support():
 
 # ---------- legal ----------
 def privacy():
-    return f"""<h1>Privacy policy</h1><p class="updated">Last updated {DAY}.</p>
+    return f"""<h1>Privacy policy</h1><p class="updated">Last updated {UPDATED["privacy"]}.</p>
 <p>Dispatch is built so that we never receive your data: your collections, requests and responses stay with you. If you agree, it sends us a little anonymous information about how it is used and about its own errors. This page says exactly what.</p>
 <h2>What Dispatch stores</h2>
 <p>Your collections, requests, environments, variables, history, cookies, settings and backups. They stay on your device: in your browser&rsquo;s local storage (IndexedDB) for the web app, in the app&rsquo;s local storage for the desktop app, and in a folder you choose if you link a workspace or collection to one. We have no server that receives any of it.</p>
@@ -353,7 +355,7 @@ def privacy():
 <p>If this policy changes, the date above changes and the changelog says so. Questions: <a href="mailto:{EMAIL}">{EMAIL}</a>.</p>"""
 
 def code_signing():
-    return f"""<h1>Code signing policy</h1><p class="updated">Last updated {DAY}.</p>
+    return f"""<h1>Code signing policy</h1><p class="updated">Last updated {UPDATED["code-signing"]}.</p>
 <p>Free code signing provided by <a href="https://about.signpath.io">SignPath.io</a>, certificate by <a href="https://signpath.org">SignPath Foundation</a>.</p>
 <p>Windows installers of Dispatch are signed so that Windows can check they come from this project and were not changed on the way. Signing starts with the first release after the project is accepted by SignPath Foundation; earlier releases are unsigned.</p>
 <h2>What is signed</h2>
@@ -370,7 +372,7 @@ def code_signing():
 <p>If you think a signed Dispatch file is harmful or was not built from this project&rsquo;s source, write to <a href="mailto:{EMAIL}">{EMAIL}</a>. You can also report it to SignPath at <a href="mailto:support@signpath.io">support@signpath.io</a>.</p>"""
 
 def terms():
-    return f"""<h1>Terms of use</h1><p class="updated">Last updated {DAY}.</p>
+    return f"""<h1>Terms of use</h1><p class="updated">Last updated {UPDATED["terms"]}.</p>
 <p>These terms cover your use of Dispatch, its website and its web app. By using them you agree to these terms.</p>
 <h2>What you get</h2>
 <p>Dispatch is free software provided by OGCrafts. You may use it for personal and commercial work, and you may use the command-line runner in your own build pipelines.</p>
