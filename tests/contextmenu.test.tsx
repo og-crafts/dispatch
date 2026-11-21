@@ -45,7 +45,7 @@ describe('tab right-click menu', () => {
     fireEvent.change(screen.getByLabelText('URL'), { target: { value: 'https://api.test/one' } })
     fireEvent.contextMenu(tabEl(0))
     await pick(/^Duplicate tab/)
-    expect(tabs()).toEqual(['GETNew request', 'GETNew request copy', 'GETNew request', 'GETNew request'])
+    expect(tabs()).toEqual(['GET New request', 'GET New request copy', 'GET New request', 'GET New request'])
     expect((screen.getByLabelText('URL') as HTMLInputElement).value).toBe('https://api.test/one')
   })
 
@@ -88,7 +88,7 @@ describe('sidebar right-click', () => {
     expect(items().map(([l]) => l)).toEqual(expect.arrayContaining(['Rename', 'Duplicate', 'Move to…', 'Delete']))
     await pick(/^Duplicate$/)
     await side.findByRole('button', { name: /^GET Items copy/ })
-    expect(side.getAllByRole('button', { name: /^GET Items/ }).map((b) => b.textContent)).toEqual(['GETItems', 'GETItems copy'])
+    expect(side.getAllByRole('button', { name: /^GET Items/ }).map((b) => b.textContent)).toEqual(['GET Items', 'GET Items copy'])
     // On a collection header too.
     fireEvent.contextMenu(side.getByRole('button', { name: 'Shop' }))
     expect(items().map(([l]) => l)).toEqual(expect.arrayContaining(['New request', 'Run collection…', 'Delete']))
