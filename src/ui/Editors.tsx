@@ -3,6 +3,7 @@ import type { Auth, Collection, Environment, Folder, Scripts } from '../core/typ
 import { KVTable } from './KVTable'
 import { AuthEditor, authLabel } from './AuthEditor'
 import { CodeArea } from './CodeArea'
+import { FolderIssues } from './FolderIssues'
 import type { WorkspaceApi } from './useWorkspace'
 import type { AuthActions } from './RequestPane'
 import { effectiveAuth } from '../core/prepare'
@@ -94,20 +95,13 @@ function FilesSection({ ws, c, setC }: { ws: WorkspaceApi; c: Collection; setC: 
     {c.linkedDir ? <>
       <p className="small">Saved as files in <code>{c.linkedDir}</code>. Changes are written there as you work, ready to commit with git.</p>
       {status?.error && <p className="small badText">{status.error}</p>}
-      {!!status?.conflicts.length && <div className="note warn small" role="status">
-        <p><b>{status.conflicts.length} file{status.conflicts.length > 1 ? 's' : ''} changed outside Dispatch</b> and {status.conflicts.length > 1 ? 'were' : 'was'} left alone: <code>{status.conflicts.slice(0, 3).join(', ')}{status.conflicts.length > 3 ? ', …' : ''}</code></p>
-      </div>}
+      <FolderIssues ws={ws} statusKey={`collection:${c.id}`} dir={c.linkedDir} notify={setNote} />
       <div className="actions">
         <button type="button" className="btn small" onClick={run(async () => {
           const { desktopFolders, reloadCollection } = await import('./linkedDirs')
           const r = await reloadCollection(ws, desktopFolders, c)
           return `Read ${r.requests.length} requests from the folder.${r.warnings.length ? ` ${r.warnings.join(' ')}` : ''}`
-        })}>{status?.conflicts.length ? 'Use the folder’s version' : 'Reload from folder'}</button>
-        {!!status?.conflicts.length && <button type="button" className="btn small" onClick={run(async () => {
-          const { desktopFolders, syncCollection } = await import('./linkedDirs')
-          await syncCollection(ws, desktopFolders, c, true)
-          return 'Wrote this collection’s version to the folder.'
-        })}>Keep mine</button>}
+        })}>Reload from folder</button>
         <button type="button" className="btn small ghost" onClick={run(async () => {
           const { unlinkCollection } = await import('./linkedDirs')
           await unlinkCollection(ws, c)

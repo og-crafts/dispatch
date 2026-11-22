@@ -15,7 +15,7 @@ export function useRequestHistory(ws: WorkspaceApi): HistoryEntry[] {
 const asText = (r: HttpResponse | null) => (r ? (r.binary ? `(binary, ${formatBytes(r.size)})` : prettyJson(r.body) ?? r.body) : '(no response)')
 const headersText = (r: HttpResponse | null) => (r ? [...r.headers].map(([k, v]) => `${k.toLowerCase()}: ${v}`).sort().join('\n') : '')
 
-function Diff({ a, b }: { a: string; b: string }) {
+export function Diff({ a, b }: { a: string; b: string }) {
   const lines = useMemo(() => withContext(diffLines(a, b), 3), [a, b])
   if (lines.every((l) => l.type === 'same' || l.type === 'gap')) return <p className="muted small">No differences.</p>
   return (

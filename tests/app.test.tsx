@@ -88,6 +88,12 @@ describe('Dispatch app', () => {
     expect(side().getByRole('button', { name: 'Shop API' })).toBeTruthy()
     expect(side().getByRole('button', { name: /Who am I/ })).toBeTruthy()
     expect(screen.queryByLabelText('Unsaved changes')).toBeNull()
+    // Nothing changed since the save: the button waits for the next edit.
+    expect((screen.getByRole('button', { name: /^Saved Ctrl/ }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('Request name'), { target: { value: 'Who am I now' } })
+    expect((screen.getByRole('button', { name: /^Save Ctrl/ }) as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.change(screen.getByLabelText('Request name'), { target: { value: 'Who am I' } })
+    expect((screen.getByRole('button', { name: /^Saved Ctrl/ }) as HTMLButtonElement).disabled).toBe(true)
 
     // set collection auth to bearer
     fireEvent.click(side().getByRole('button', { name: 'Shop API' }))
@@ -485,8 +491,8 @@ describe('Dispatch app', () => {
     await waitFor(() => expect(side().queryByRole('button', { name: 'Home API' })).toBeNull())
     fireEvent.change(screen.getByRole('combobox', { name: 'Workspace' }), { target: { value: '__manage' } })
     const view = await screen.findByRole('region', { name: 'Workspaces' })
-    const workRow = within(view).getByText('Work').closest('tr')!
-    expect(within(workRow).getAllByRole('cell')[1].textContent).toBe('2')
+    const workRow = within(view).getByRole('listitem', { name: 'Work' })
+    expect(workRow.textContent).toContain('2 collections')
     fireEvent.click(within(workRow).getByRole('button', { name: 'Remove' }))
     expect(await screen.findByText(/Move or delete Work’s collections/)).toBeTruthy()
   })

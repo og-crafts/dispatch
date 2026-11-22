@@ -339,9 +339,13 @@ Run these from the repo folder in PowerShell.
    2. YAML files appear, one per request. Edit a request in the app and check the file changes.
    3. Edit a `.req.yaml` in Notepad, then **Reload from folder**: the change shows in the app.
    4. Check how Windows path separators and long names behave.
-   5. Edit a `.req.yaml` in Notepad, then edit the same request in the app **without** reloading. The file keeps
-      the Notepad edit, and the collection page says "1 file changed outside Dispatch" with **Use the folder's
-      version** and **Keep mine**. Try both.
+   5. Edit a `.req.yaml` in Notepad and save, with nothing changed in the app: within about a second the app shows
+      the change on its own (a note says "Updated from … 1 request"). If that request is open in a tab with no
+      unsaved edits, the tab shows the new version too.
+   6. Edit a `.req.yaml` in Notepad, then edit the same request in the app before saving in Notepad is noticed
+      (or close Dispatch, edit both). The file keeps the Notepad edit, and the collection page lists the file under
+      "changed both in the folder and in Dispatch" with **Use the file's version**, **Keep mine** and **Show
+      differences**. Try all three.
 
 6.6b. **Workspaces as files:**
    1. Menu → Workspaces → **Link to a folder…** on your workspace, and pick an empty folder such as
@@ -349,13 +353,22 @@ Run these from the repo folder in PowerShell.
       `dispatch.workspace.yaml`, `collections\…`, `environments\*.env.yaml`, `flows\*.flow.yaml`. No secret value
       appears in any file (search the folder for a secret you know).
    2. Rename a flow in the app: its file is renamed. Change an environment variable: its file changes.
-   3. In Notepad, change a flow's `name:`, then change the same flow in the app. The Workspaces page shows the
-      conflict and the file keeps the Notepad edit. **Use the folder's version**: the app shows the Notepad name.
-   4. Close Dispatch, edit an environment file in Notepad, reopen Dispatch: the Workspaces page reports it.
-   5. **Unlink**, then use **Open a workspace folder…** on `C:\Temp\dispatch-ws`. Dispatch recognises its own
+   3. In Notepad, change a flow's `name:`, then change the same flow in the app. The Workspaces page says "Needs
+      your choice" and lists the file below the table; the file keeps the Notepad edit. **Show differences**, then
+      **Use the file's version**: the app shows the Notepad name.
+   4. Close Dispatch, edit an environment file in Notepad, reopen Dispatch: the change is in the app (nothing was
+      changed there meanwhile, so there is nothing to choose).
+   5. Delete a flow file in Explorer: the flow disappears from the app and the note offers **Undo**.
+   6. Copy an environment file in Explorer (`staging - Copy.env.yaml`): no second environment appears; the
+      Workspaces page lists it as a copy with **Show differences** and **Delete the copy**.
+   7. Put `<<<<<<< HEAD` on a line of an environment file: the page says the file can't be read and the app keeps its
+      version. Remove the line: the message goes away.
+   8. Optional, with OneDrive or Dropbox on two computers: link the same workspace folder inside it on both, change a
+      request on one, and watch it arrive on the other.
+   9. **Unlink**, then use **Open a workspace folder…** on `C:\Temp\dispatch-ws`. Dispatch recognises its own
       workspace and asks "You already have this workspace… Link it to this folder and use the folder's version?".
       Accept: it is linked again and the secret values are still there.
-   6. Copy `C:\Temp\dispatch-ws` to `C:\Temp\dispatch-copy` and, in the copy's `dispatch.workspace.yaml`, change
+   10. Copy `C:\Temp\dispatch-ws` to `C:\Temp\dispatch-copy` and, in the copy's `dispatch.workspace.yaml`, change
       `id:` to any new text and `name:` to "Copy". **Open a workspace folder…** on the copy: it opens as its own
       workspace "Copy" with the same collections, environments and flows, and secret values are empty there. The
       original workspace still has everything, with its secrets (it lost them in 0.5.0). In "Copy", a flow's request
