@@ -63,6 +63,7 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState('')
   const [text, setText] = useState('')
   const [details, setDetails] = useState(true)
+  const [mailNote, setMailNote] = useState<string | null>(null)
   const close = () => { ref.current?.close?.(); onClose() }
   const subject = title.trim() || KIND_LABEL[kind]
   const body = feedbackBody(kind, text, details)
@@ -73,7 +74,11 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
   }
   const viaEmail = async () => {
     track('feedback_sent', { via: 'email', kind })
-    await openExternal(`mailto:${EMAIL}?subject=${encodeURIComponent(`Dispatch: ${subject}`)}&body=${encodeURIComponent(body)}`); close()
+    try { await openExternal(`mailto:${EMAIL}?subject=${encodeURIComponent(`Dispatch: ${subject}`)}&body=${encodeURIComponent(body)}`); close() } catch {
+      // No mail app (or it refused): copy the message so it can be pasted into any mail.
+      try { await navigator.clipboard.writeText(`To: ${EMAIL}\nSubject: Dispatch: ${subject}\n\n${body}`) } catch { /* shown below either way */ }
+      setMailNote(`Couldn’t open a mail app. The message was copied: paste it into an e-mail to ${EMAIL}.`)
+    }
   }
   return (
     <dialog ref={ref} className="dialog feedbackDialog" aria-labelledby="feedback-title" onClose={onClose} onCancel={onClose}>
@@ -88,6 +93,7 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
         <label className="field"><span>Title</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={KIND_LABEL[kind]} /></label>
         <label className="field"><span>Tell us more</span><textarea rows={6} value={text} onChange={(e) => setText(e.target.value)} placeholder={kind === 'problem' ? 'What did you do, what did you expect, and what happened instead?' : ''} required /></label>
         <label className="toggle"><input type="checkbox" checked={details} onChange={(e) => setDetails(e.target.checked)} /> Add the Dispatch version and system details</label>
+        {mailNote && <p className="note warn small" role="status">{mailNote}</p>}
         <div className="actions end">
           <button type="button" className="btn ghost" onClick={close}>Cancel</button>
           <button type="button" className="btn" disabled={!text.trim()} onClick={() => void viaEmail()}>E-mail</button>

@@ -80,3 +80,11 @@ fn text_hash_matches_the_app() {
     assert_eq!(text_hash("dispatch"), "4592850c14d1d82b");
     assert_eq!(text_hash("id: a\nname: Café ✈\n"), "117831fc4b033caa");
 }
+
+/// Send feedback's E-mail button opens a mailto: link (it was refused before 2026-11-22); other schemes stay refused.
+#[test]
+fn opens_web_and_mail_links_only() {
+    use dispatch_lib::openable_link;
+    for ok in ["https://dispatch.ogcrafts.cloud", "http://localhost:3000", "mailto:hello@ogcrafts.cloud?subject=Dispatch"] { assert!(openable_link(ok), "{ok}"); }
+    for bad in ["file:///etc/passwd", "javascript:alert(1)", "ms-settings:", "C:\\Windows\\notepad.exe", ""] { assert!(!openable_link(bad), "{bad}"); }
+}
