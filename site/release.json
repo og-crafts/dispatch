@@ -1,78 +1,78 @@
 {
- "version": "0.5.1",
- "date": "2026-11-05",
+ "version": "0.1.0 (snapshot)",
+ "date": "2026-11-22",
  "assets": [
   {
    "os": "windows",
    "arch": "x64",
    "kind": "Installer (.exe)",
-   "url": "https://github.com/og-crafts/dispatch/releases/download/v0.5.1/Dispatch_0.5.1_x64-setup.exe",
-   "size_mb": 4.1,
-   "sha256": "a7d749c93745ee190702ae0fa56441932472654182e7424fc02c217e3eb3210d"
+   "url": "https://github.com/og-crafts/dispatch/releases/download/v0.1.0-SNAPSHOT/Dispatch_0.1.0_x64-setup.exe",
+   "size_mb": 4.5,
+   "sha256": "7f280368709090ee571b860ab2f228738357510359eac020fcc17ae307668f70"
   },
   {
    "os": "windows",
    "arch": "x64",
    "kind": "Installer for all users (.msi, needs admin)",
-   "url": "https://github.com/og-crafts/dispatch/releases/download/v0.5.1/Dispatch_0.5.1_x64_en-US.msi",
-   "size_mb": 5.4,
-   "sha256": "28ccd10c064bd769f40ff70ea84ef4af739f709bd147cebe137019c3b190b64f"
+   "url": "https://github.com/og-crafts/dispatch/releases/download/v0.1.0-SNAPSHOT/Dispatch_0.1.0_x64_en-US.msi",
+   "size_mb": 6.4,
+   "sha256": "5d69b0c062f71671ecd2c878a3ab171c387b81906da85b14a057ea901a413eb4"
   },
   {
    "os": "macos",
    "arch": "Intel and Apple silicon",
    "kind": "Disk image (.dmg)",
-   "url": "https://github.com/og-crafts/dispatch/releases/download/v0.5.1/Dispatch_0.5.1_universal.dmg",
-   "size_mb": 9.5,
-   "sha256": "1b276437d966159ac0976b5b1fc452b73424a9991fa27e60663d30858d2a755b"
+   "url": "https://github.com/og-crafts/dispatch/releases/download/v0.1.0-SNAPSHOT/Dispatch_0.1.0_universal.dmg",
+   "size_mb": 10.6,
+   "sha256": "2cd770b31bff5f8687bdece2776d701e3c2b39201a2907d75d6ec512241cf648"
   },
   {
    "os": "linux",
    "arch": "x64",
    "kind": "AppImage",
-   "url": "https://github.com/og-crafts/dispatch/releases/download/v0.5.1/Dispatch_0.5.1_amd64.AppImage",
-   "size_mb": 83.7,
-   "sha256": "ec926b89ed1dc2646e6c8cbbec938b97f49b85f9e82a88c09c51bf040c7c8a16"
+   "url": "https://github.com/og-crafts/dispatch/releases/download/v0.1.0-SNAPSHOT/Dispatch_0.1.0_amd64.AppImage",
+   "size_mb": 80.5,
+   "sha256": "dbddc6d47de5fc1406ebdda7461e513edaa2f1c478f2dcedfa7712e4ef8a50cc"
   },
   {
    "os": "linux",
    "arch": "x64",
    "kind": "Debian/Ubuntu (.deb)",
-   "url": "https://github.com/og-crafts/dispatch/releases/download/v0.5.1/Dispatch_0.5.1_amd64.deb",
-   "size_mb": 5.4,
-   "sha256": "f6de6004a647d2dd8d92e1e06470b2e7b9d06d5ae9fd74af1b19c9745c9403c9"
+   "url": "https://github.com/og-crafts/dispatch/releases/download/v0.1.0-SNAPSHOT/Dispatch_0.1.0_amd64.deb",
+   "size_mb": 5.8,
+   "sha256": "f0152bc01da7bf8cad69686dc1a7266e96d8273a39bf18951ff551138bff992e"
   },
   {
    "os": "linux",
    "arch": "x64",
    "kind": "Fedora/RHEL (.rpm)",
-   "url": "https://github.com/og-crafts/dispatch/releases/download/v0.5.1/Dispatch-0.5.1-1.x86_64.rpm",
-   "size_mb": 5.4,
-   "sha256": "0f27de929e5ba7289283a8ba1fae9ec263fcc6296597f0dc71650fe1bb479ca8"
+   "url": "https://github.com/og-crafts/dispatch/releases/download/v0.1.0-SNAPSHOT/Dispatch-0.1.0-1.x86_64.rpm",
+   "size_mb": 5.8,
+   "sha256": "b6d981df4624459d78594eefc4e6a152443d8816d82ff8a21ecc2e632cf748c8"
   },
   {
    "os": "linux",
    "arch": "ARM64",
    "kind": "AppImage",
-   "url": "https://github.com/og-crafts/dispatch/releases/download/v0.5.1/Dispatch_0.5.1_aarch64.AppImage",
-   "size_mb": 81.7,
-   "sha256": "d8acc47492d65486cc8e981e62136a390bd925225d487ac5743adf9f662cce70"
+   "url": "https://github.com/og-crafts/dispatch/releases/download/v0.1.0-SNAPSHOT/Dispatch_0.1.0_aarch64.AppImage",
+   "size_mb": 78.5,
+   "sha256": "71004a10b6eb25dae0e8c475e9c3836fe81c3d4b1c720d0cd297bf0d1e68490b"
   },
   {
    "os": "linux",
    "arch": "ARM64",
    "kind": "Debian/Ubuntu (.deb)",
-   "url": "https://github.com/og-crafts/dispatch/releases/download/v0.5.1/Dispatch_0.5.1_arm64.deb",
-   "size_mb": 5.2,
-   "sha256": "0cd5247a5dad572ec3f65fde8d8bb53ae776765df0b175dfe6865063bae86bbe"
+   "url": "https://github.com/og-crafts/dispatch/releases/download/v0.1.0-SNAPSHOT/Dispatch_0.1.0_arm64.deb",
+   "size_mb": 5.6,
+   "sha256": "9a634bac7f5c62234229987b8caf3977d3f8b9776928d5bd3afb4afbe7a023c6"
   },
   {
    "os": "linux",
    "arch": "ARM64",
    "kind": "Fedora/RHEL (.rpm)",
-   "url": "https://github.com/og-crafts/dispatch/releases/download/v0.5.1/Dispatch-0.5.1-1.aarch64.rpm",
-   "size_mb": 5.2,
-   "sha256": "c32c6a398b28bdb3547fb35670a34864f884b47f6469cead535e2a1ce353c553"
+   "url": "https://github.com/og-crafts/dispatch/releases/download/v0.1.0-SNAPSHOT/Dispatch-0.1.0-1.aarch64.rpm",
+   "size_mb": 5.6,
+   "sha256": "63315001b5163f5a1ac856d028d6cbaea2fb1d9c49bdc4b0c3bfc2bdad300e84"
   }
  ]
 }

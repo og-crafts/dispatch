@@ -208,20 +208,26 @@ focus on the URL at all, both fixed in #50. gRPC over the internet couldn't be c
 9000/9001 time out from the homelab and the Predator) and grpc.postman-echo.com fails the TLS handshake
 ("InvalidContentType") with the old crates on `main` exactly as with #53, so TLS behaves as before; the local
 end-to-end and grpc-js tests cover plaintext.
-**Resume here (next session, after 2026-11-22):** nothing is open on GitHub. Options: items from the Kan "To do" list.
-Dependabot tip: after one npm PR merges, the others conflict in `package-lock.json`; Dependabot rebases its own PRs
+**Resume here (next session, after 2026-11-22):** **v0.1.0-SNAPSHOT is out.** The tag is on `main` 0a46658 (#60
+About + changelog.json, #61 friendly update-check message, #62 site look picker). CI was green on every job, and the owner
+published it on 2026-11-22 as a **pre-release, not Latest**, on purpose: GitHub "Latest" is still v0.5.1, which has no
+`latest.json`, so Check for updates says "No update found" (#61). A plain 0.1.0 becomes Latest together with removing the
+0.5.x releases (owner's OK needed). After that, updates work for real.
+The site was published from the tag on 2026-11-22 (worktree at the tag; `site/release.json` regenerated from the release
+API, using the `digest` field for checksums; `VITE_APTABASE_APP_KEY`/`VITE_SENTRY_DSN` from the repo variables,
+`VITE_DISPATCH_CHANNEL=snapshot`). dispatch.ogcrafts.cloud has the Look menu, /download/ shows "0.1.0 (snapshot)", and
+/changelog/ is live. ogcrafts.cloud (repo og-crafts/site) `apps.json` lists Dispatch 0.1.0. `site/release.json` on
+`main` matches the published snapshot.
+Nothing is open on GitHub except this status PR. Options: items from the Kan "To do" list.
+Dependabot tip: after one npm PR merges, the others conflict in `package-lock.json`. Dependabot rebases its own PRs
 (even over a pushed merge commit, as it did with #45), and a branch Claude pushed to is fixed by merging `main`,
-taking main's lockfile and running `npm install`. The snapshot tag still waits on the owner's Aptabase/Sentry keys.
-Seen for real on 2026-11-21: the new icon, the splash and the app in a real install on the Predator (owner). Not yet:
-the .dmg window, the splash at 125/150/200 % scaling.
-The Predator (2026-11-21 evening): Dispatch installed by the owner from the #56 build (current main minus #49–#54);
-`Downloads` holds three test setups (`Dispatch_0.1.0_x64-setup.exe` = #54, `-menu-fix.exe` = #55, `-toolbar.exe` =
-#56) the owner may delete; earlier app data (before the .msi test and from Claude's splash runs) is in
-`C:\Users\ompra\dispatch-data-backup-2026-11-21`, the owner deletes it when no longer needed.
-- **Blocking the snapshot tag:** the owner's Aptabase App Key and Sentry DSN → repo variables `APTABASE_APP_KEY`,
-  `SENTRY_DSN` (a build without them offers and sends nothing). Then tag, the owner publishes the pre-release,
-  Claude publishes the site from the tag (policy page + opt-in privacy policy + 0.1.0 changelog go live).
-- **Windows signing:** SignPath Foundation chosen; the owner applies once the policy page is live (`docs/SIGNING.md`).
+taking main's lockfile and running `npm install`.
+Seen for real: the new icon, the splash and the app in a real install on the Predator (owner, 2026-11-21); the snapshot
+setup from 0a46658 is in the Predator's `Downloads` as `Dispatch_0.1.0_x64-setup-snapshot.exe`. Not yet checked: the
+.dmg window, the splash at 125/150/200 % scaling. Older test setups in `Downloads` and
+`C:\Users\ompra\dispatch-data-backup-2026-11-21` are for the owner to delete.
+- **Owner to-dos:** secret scanning + push protection (repo settings); SignPath Foundation application now that the
+  site and policy page are live (`docs/SIGNING.md`); decisions on sync, macOS signing and the email extras.
 - Preview (0.5.x) installs can't update to 0.1.0 (different bundle ID, no updater): export backup, uninstall,
   install, import (the download page says so).
 
