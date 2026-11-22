@@ -122,6 +122,30 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman, onSh
     onDragLeave: () => setDropAt((d) => (d === key ? null : d)),
     onDrop: (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); void drop(e, parent, beforeId) },
   })
+  /** Move up / Move down: one place among the folders and requests next to it (the keyboard way to reorder). */
+  const siblingsOf = (collectionId: string, parent: string | null) => [
+    ...ws.folders.filter((x) => x.collectionId === collectionId && x.parentId === parent).map((x) => ({ id: x.id, sort: x.sort, name: x.name })),
+    ...ws.requests.filter((r) => r.collectionId === collectionId && (r.folderId ?? null) === parent).map((r) => ({ id: r.id, sort: r.sort, name: r.name })),
+  ].sort(bySort)
+  const moveBy = (kind: 'request' | 'folder', id: string, collectionId: string, parent: string | null, delta: -1 | 1) => {
+    const sib = siblingsOf(collectionId, parent)
+    const i = sib.findIndex((x) => x.id === id)
+    if (i < 0 || i + delta < 0 || i + delta >= sib.length) return
+    const before = delta < 0 ? sib[i - 1].id : sib[i + 2]?.id ?? null
+    void ws.placeItems([{ kind, id }], { collectionId, folderId: parent }, before)
+  }
+  const position = (collectionId: string, parent: string | null, id: string) => {
+    const sib = siblingsOf(collectionId, parent)
+    const i = sib.findIndex((x) => x.id === id)
+    return { first: i <= 0, last: i === sib.length - 1 }
+  }
+  const moveItems = (kind: 'request' | 'folder', id: string, collectionId: string, parent: string | null): [string, () => void][] => {
+    const p = position(collectionId, parent, id)
+    return [
+      ...(p.first ? [] : [['Move up', () => moveBy(kind, id, collectionId, parent, -1)] as [string, () => void]]),
+      ...(p.last ? [] : [['Move down', () => moveBy(kind, id, collectionId, parent, 1)] as [string, () => void]]),
+    ]
+  }
   const toggle = (id: string) => setClosed((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
   const openTabIds = new Set(ws.tabs.map((t) => t.draft.id))
   /** "Hand to AI assistant": desktop with the assistant's workspace on, for the user's own HTTP requests. */
@@ -150,6 +174,7 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman, onSh
         ['Rename', async () => { const name = await ask('Rename request', r.name); if (name) await ws.renameRequest(r, name) }],
         ['Duplicate', async () => ws.openRequest(await ws.duplicateRequest(r))],
         ['Move to…', async () => { const to = await pickPlace(`Move “${r.name}”`, r); if (to) await ws.moveRequest(r, to.collectionId, to.folderId) }],
+        ...(r.collectionId ? moveItems('request', r.id, r.collectionId, r.folderId ?? null) : []),
         ['Load test…', () => ws.setView({ kind: 'load', requestId: r.id })],
         ...(canHand(r) ? [['Hand to AI assistant…', () => void handOver(r)] as [string, () => void]] : []),
         ...(onShare && r.protocol === 'http' ? [['Share as HTML…', () => onShare({ kind: 'request', requestId: r.id })] as [string, () => void]] : []),
@@ -184,6 +209,8 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman, onSh
             ['New subfolder', async () => { const n = await ask('New folder'); if (n) await ws.addFolder(c.id, n, fo.id) }],
             ['Run folder…', () => ws.setView({ kind: 'runner', collectionId: c.id, folderId: fo.id })],
             ...(onShare ? [['Share as HTML…', () => onShare({ kind: 'folder', folderId: fo.id })] as [string, () => void]] : []),
+            ...moveItems('folder', fo.id, c.id, fo.parentId),
+            ['Sort by name', () => void ws.sortByName(c.id, fo.id)],
             ['Rename', async () => { const n = await ask('Rename folder', fo.name); if (n) await ws.updateFolder({ ...fo, name: n }) }],
             ['Delete', async () => { if (await confirm(`Delete folder “${fo.name}” and everything in it?`)) await ws.removeFolder(fo.id) }, 'danger'],
           ]} />
@@ -257,6 +284,7 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman, onSh
                     ['New request', () => ws.startNew(c.id)],
                     ['New folder', async () => { const n = await ask('New folder'); if (n) await ws.addFolder(c.id, n) }],
                     ['Run collection…', () => ws.setView({ kind: 'runner', collectionId: c.id, folderId: null })],
+                    ['Sort by name', () => void ws.sortByName(c.id, null)],
                     ['View docs', () => ws.setView({ kind: 'docs', collectionId: c.id })],
                     ['Mock server…', () => ws.setView({ kind: 'mock', collectionId: c.id })],
                     ['Rename', async () => { const n = await ask('Rename collection', c.name); if (n) await ws.updateCollection({ ...c, name: n }) }],

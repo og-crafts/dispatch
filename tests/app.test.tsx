@@ -310,6 +310,37 @@ describe('Dispatch app', () => {
     expect(side().getByRole('button', { name: 'Keep me' })).toBeTruthy()
   })
 
+  it('sorts folders by name in natural order and moves items up and down (#72)', async () => {
+    await start()
+    const file = new File([JSON.stringify({
+      info: { name: 'Plans', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+      item: [
+        { name: '1 Read-only', item: [{ name: '1.10 Last', request: { method: 'GET', url: 'https://s.test/z' } }, { name: '1.2 Second', request: { method: 'GET', url: 'https://s.test/b' } }] },
+        { name: '10 Extra', item: [] },
+        { name: '5 Cleanup', item: [] },
+        { name: '0 Auth', item: [] },
+        { name: '2 Create', item: [] },
+      ],
+    })], 'plans.json', { type: 'application/json' })
+    await act(async () => { fireEvent.change(document.querySelector('input[aria-label="Import file"]')!, { target: { files: [file] } }) })
+    await screen.findByText(/Imported 1 collection/)
+    const names = () => [...document.querySelectorAll('.tree .rowName')].map((e) => e.textContent)
+    expect(names()).toEqual(['1 Read-only', '1.10 Last', '1.2 Second', '10 Extra', '5 Cleanup', '0 Auth', '2 Create'])
+    // Each ⋯ menu is a <details>; its items are in the page even while closed.
+    const menuOf = (label: string) => side().getByLabelText(`More for ${label}`).closest('details')!
+    const menu = (label: string, item: string) => fireEvent.click(within(menuOf(label)).getByRole('menuitem', { name: item, hidden: true }))
+    // Move up / Move down, one place at a time; the first item has no Move up.
+    await act(async () => { menu('0 Auth', 'Move up') })
+    await waitFor(() => expect(names()).toEqual(['1 Read-only', '1.10 Last', '1.2 Second', '10 Extra', '0 Auth', '5 Cleanup', '2 Create']))
+    await act(async () => { menu('1 Read-only', 'Move down') })
+    await waitFor(() => expect(names()).toEqual(['10 Extra', '1 Read-only', '1.10 Last', '1.2 Second', '0 Auth', '5 Cleanup', '2 Create']))
+    expect(within(menuOf('10 Extra')).queryByRole('menuitem', { name: 'Move up', hidden: true })).toBeNull()
+    expect(within(menuOf('10 Extra')).getByRole('menuitem', { name: 'Move down', hidden: true })).toBeTruthy()
+    // Sort by name on the collection: natural order (2 before 10), all the way down.
+    await act(async () => { menu('Plans', 'Sort by name') })
+    await waitFor(() => expect(names()).toEqual(['0 Auth', '1 Read-only', '1.2 Second', '1.10 Last', '2 Create', '5 Cleanup', '10 Extra']))
+  })
+
   it('moves and reorders with drag and drop, multi-selects, and searches bodies', async () => {
     await start()
     const file = new File([JSON.stringify({

@@ -222,11 +222,16 @@ async fn save_base64_file(app: tauri::AppHandle, file_name: String, base64: Stri
 }
 
 /// Opens a URL in the system browser (OAuth login pages).
+/// Links the app may hand to the system: web pages, and e-mail links for Send feedback (they open the person's mail
+/// app with the message filled in). Never file:, javascript: or other schemes.
+pub fn openable_link(url: &str) -> bool {
+    let lower = url.trim_start().to_ascii_lowercase();
+    lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:")
+}
+
 #[tauri::command]
 fn open_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
-    if !(url.starts_with("https://") || url.starts_with("http://")) {
-        return Err("Only http(s) links can be opened.".into());
-    }
+    if !openable_link(&url) { return Err("Only web and e-mail links can be opened.".into()); }
     use tauri_plugin_opener::OpenerExt;
     app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
 }

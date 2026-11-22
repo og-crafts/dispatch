@@ -740,6 +740,29 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     return true
   }, [folders, requests])
 
+  /**
+   * "Sort by name": the folders and requests under a collection or folder, and everything below, in natural name order
+   * (2 before 10), folders first. It sets the manual order once; dragging and Move up/down still work afterwards.
+   */
+  const sortByName = useCallback(async (collectionId: string, folderId: string | null) => {
+    const natural = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+    const nextFolders = new Map(folders.map((f) => [f.id, f]))
+    const nextRequests = new Map(requests.map((r) => [r.id, r]))
+    const level = (parent: string | null) => {
+      const subs = folders.filter((f) => f.collectionId === collectionId && f.parentId === parent).sort(natural)
+      const reqs = requests.filter((r) => r.collectionId === collectionId && (r.folderId ?? null) === parent).sort(natural)
+      subs.forEach((f, i) => nextFolders.set(f.id, { ...f, sort: i + 1 }))
+      reqs.forEach((r, i) => nextRequests.set(r.id, { ...r, sort: subs.length + i + 1 }))
+      for (const f of subs) level(f.id)
+    }
+    level(folderId)
+    const changedF = [...nextFolders.values()].filter((f) => f.sort !== folders.find((x) => x.id === f.id)!.sort)
+    const changedR = [...nextRequests.values()].filter((r) => r.sort !== requests.find((x) => x.id === r.id)!.sort)
+    setFolders([...nextFolders.values()]); setRequests([...nextRequests.values()])
+    setTabs((ts) => ts.map((t) => { const r = changedR.find((x) => x.id === t.draft.id); return r ? { ...t, draft: { ...t.draft, sort: r.sort } } : t }))
+    await db.putMany({ folders: changedF, requests: changedR })
+  }, [folders, requests])
+
   /** Copies requests and folders (with everything in them) under `parent`. Copies next to their original get “ copy”. */
   const copyItems = useCallback(async (items: { kind: 'request' | 'folder'; id: string }[], parent: { collectionId: string; folderId: string | null }, beforeId: string | null = null) => {
     const now = Date.now()
@@ -878,7 +901,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   }, [snapshot])
 
   return {
-    trash, undoDelete, backups, backupNow, restoreBackup, placeItems, copyItems, saveTabTo, removeRequests, replaceCollection,
+    trash, undoDelete, backups, backupNow, restoreBackup, placeItems, sortByName, copyItems, saveTabTo, removeRequests, replaceCollection,
     flows: visibleFlows, allFlows: flows, addFlow, updateFlow, duplicateFlow, removeFlow, runFlowNow,
     spaces, activeSpaceId, switchSpace, addSpace, addSpaceFrom, setSpaceFolder, setSpaceFolderId, renameSpace, removeSpace, moveToSpace, setSpaceAi,
     replaceSpaceContents, folderStatus, setFolderStatus,
