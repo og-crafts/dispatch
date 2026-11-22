@@ -77,6 +77,8 @@ per collection; a mock server that serves saved examples (desktop, or `dispatch-
 **CLI** (`dispatch-run`): run collections, folders and suites with environments, data files and reporters;
 `dispatch-run load` for load tests with pass/fail thresholds; `dispatch-run mock` to serve examples;
 `dispatch-run flow` to run a flow from an export; `dispatch-run mcp` to let AI assistants (Claude and others) list, send and run your requests over MCP.
+It also runs a **workspace folder** as the desktop app keeps it (`dispatch-run ./my-workspace --env Staging`), with
+secret values from `DISPATCH_SECRET_<KEY>` or the folder's encrypted secrets file (`DISPATCH_VAULT_PASSPHRASE`).
 
 ## Desktop vs web
 

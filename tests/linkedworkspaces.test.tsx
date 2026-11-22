@@ -4,7 +4,7 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { useWorkspace } from '../src/ui/useWorkspace'
 import { type FolderApi, changePassphrase, checkFolders, keepMineFile, linkSpace, openSpaceFolder, reloadSpace, resolveVault, takeFile, turnOnSecrets, useFolderSync } from '../src/ui/linkedDirs'
 import { getVaultRecord, resetForTests } from '../src/core/db'
-import { sealVault } from '../src/core/secretsVault'
+import { sealVault, setVaultRoundsForTests } from '../src/core/secretsVault'
 import { kv, newCollection, newRequest } from '../src/core/types'
 import { newFlow, newNode } from '../src/core/flows'
 import type { Transport } from '../src/core/transport'
@@ -270,6 +270,8 @@ describe('linked workspaces: changes made in the folder (phase 2)', () => {
 })
 
 describe('linked workspaces: secrets that travel with the folder (opt-in, encrypted)', () => {
+  beforeEach(() => setVaultRoundsForTests(1000))
+  afterEach(() => setVaultRoundsForTests(600_000))
   const secretOf = (ws: ReturnType<typeof useWorkspace>) => ws.allEnvironments.find((e) => e.name === 'Staging')?.variables.find((v) => v.key === 'token')?.value
   const check = async () => { await act(async () => { checkFolders() }) }
 

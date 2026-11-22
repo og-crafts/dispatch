@@ -37,8 +37,8 @@ beforeAll(async () => {
 }, 60_000)
 afterAll(() => server?.close())
 
-const exec = async (args: string[]) => {
-  try { const r = await run(process.execPath, [cli, ...args], { env: { ...process.env, NO_COLOR: '1' } }); return { code: 0, out: r.stdout + r.stderr } }
+const exec = async (args: string[], env: Record<string, string> = {}) => {
+  try { const r = await run(process.execPath, [cli, ...args], { env: { ...process.env, NO_COLOR: '1', ...env } }); return { code: 0, out: r.stdout + r.stderr } }
   catch (e) { const x = e as { code: number; stdout: string; stderr: string }; return { code: x.code, out: x.stdout + x.stderr } }
 }
 
@@ -66,6 +66,53 @@ describe('dispatch-run', () => {
     expect(JSON.parse(readFileSync(join(dir, 'flow-report.json'), 'utf8')).steps).toHaveLength(4)
     expect((await exec(['flow', join(dir, 'flow.json'), '--flow', 'Nope'])).code).toBe(2)
   })
+
+  it('runs a workspace folder: --env by name, --flow, and secrets from DISPATCH_SECRET_* or the encrypted file', async () => {
+    const { mkdirSync } = await import('node:fs')
+    const { stringify } = await import('yaml')
+    const { workspaceToFiles } = await import('../src/core/workspaceFiles')
+    const { deriveKeys, sealVault } = await import('../src/core/secretsVault')
+    const { newCollection, newEnvironment, newRequest, kv } = await import('../src/core/types')
+    const { newFlow, newNode } = await import('../src/core/flows')
+    const col = { ...newCollection('Shop'), variables: [kv('base', `http://127.0.0.1:${port}`)] }
+    const req = { ...newRequest({ name: 'who', url: '{{base}}/ok', collectionId: col.id }), headers: [kv('X-Who', '{{who}}')],
+      scripts: { pre: '', post: "test('the secret was sent', () => expect(dx.response.json().who).to.equal('ann'))" } }
+    const env = { ...newEnvironment('Staging'), variables: [kv('who', 'ann', true, { secret: true })] }
+    const flow = newFlow('Smoke')
+    const node = { ...newNode('request', 0, 0), label: 'who', config: { requestId: req.id } }
+    flow.nodes.push(node); flow.edges.push({ id: 'e1', from: flow.nodes[0].id, port: 'next', to: node.id })
+    const d = join(dir, 'workspace')
+    for (const f of workspaceToFiles({ space: { id: 'ws1', name: 'Shop work' }, collections: [col], folders: [], requests: [req], environments: [env], flows: [flow] }, (v) => stringify(v, { lineWidth: 0 }))) {
+      mkdirSync(join(d, f.path, '..'), { recursive: true }); writeFileSync(join(d, f.path), f.text)
+    }
+    expect(readFileSync(join(d, 'environments', 'staging.env.yaml'), 'utf8')).not.toContain('ann') // the files never hold it
+
+    // Without the secret the test fails; DISPATCH_SECRET_WHO fills it.
+    expect((await exec([d, '--env', 'Staging'])).code).toBe(1)
+    let r = await exec([d, '--env', 'Staging'], { DISPATCH_SECRET_WHO: 'ann' })
+    expect(r.out).toMatch(/✓ GET\s+who Shop/)
+    expect(r.out).toContain('tests 1 passed')
+    expect(r.code).toBe(0)
+    // An unknown environment name is a usage error that lists the ones there are.
+    r = await exec([d, '--env', 'Prod'])
+    expect(r.code).toBe(2); expect(r.out).toContain('Found: Staging')
+    // --flow on a workspace folder.
+    r = await exec([d, '--env', 'Staging', '--flow', 'Smoke'], { DISPATCH_SECRET_WHO: 'ann' })
+    expect(r.out).toContain('Flow: Smoke'); expect(r.code).toBe(0)
+
+    // The encrypted secrets file from "Sync secrets", opened with DISPATCH_VAULT_PASSPHRASE.
+    const keys = await deriveKeys('ci passphrase here', undefined, 1000)
+    writeFileSync(join(d, 'secrets.dispatch-vault'), await sealVault({ environments: { [env.id]: { who: 'ann' } }, collections: {} }, keys))
+    r = await exec([d, '--env', 'Staging'])
+    expect(r.out).toContain('set DISPATCH_VAULT_PASSPHRASE'); expect(r.code).toBe(1)
+    r = await exec([d, '--env', 'Staging'], { DISPATCH_VAULT_PASSPHRASE: 'ci passphrase here' })
+    expect(r.out).toContain('tests 1 passed'); expect(r.code).toBe(0)
+    r = await exec([d, '--env', 'Staging'], { DISPATCH_VAULT_PASSPHRASE: 'not it' })
+    expect(r.code).toBe(2); expect(r.out).toContain('passphrase')
+    // DISPATCH_SECRET_* wins over the file.
+    r = await exec([d, '--env', 'Staging'], { DISPATCH_VAULT_PASSPHRASE: 'ci passphrase here', DISPATCH_SECRET_WHO: 'bo' })
+    expect(r.code).toBe(1)
+  }, 60_000)
 
   it('runs a collection folder', async () => {
     const { mkdirSync } = await import('node:fs')

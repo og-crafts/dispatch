@@ -1,6 +1,6 @@
 # Linked workspaces: a workspace kept as a folder of files
 
-Status: **accepted** (2026-11-05); phase 1 built; phase 2 (watching and conflicts) built 2026-11-22. The owner chose option B from the gap analysis against the UX redesign canvas:
+Status: **accepted** (2026-11-05); phase 1 built; phase 2 (watching and conflicts), the secrets file and phase 3 (CLI) built 2026-11-22. The owner chose option B from the gap analysis against the UX redesign canvas:
 workspaces stay as they are, and any workspace can *optionally* be linked to a folder on disk. This replaces the
 canvas's "Desk" (every workspace is always a folder).
 
@@ -222,3 +222,15 @@ then phase 3 (CLI). Each is its own PR.
   key (`db.getVaultRecord`). Turning it on over a folder that has the file unlocks it (passphrase checked first).
 - UI: the Secrets line on each linked workspace card (`SpacesView`), `PassphraseDialog` (new / unlock / change; at
   least 10 characters, typed twice, "can't be recovered" said plainly).
+
+## Phase 3 as built (2026-11-22)
+
+- `dispatch-run <workspace-folder>`: a folder with `dispatch.workspace.yaml` loads through `filesToWorkspace` (all its
+  collections, environments and flows). `--env` is short for `--environment` and picks an environment by name (an
+  unknown name lists the ones there are); `--collection` as before; `--flow <name>` on a folder runs that flow (same
+  as `dispatch-run flow`). `dispatch-run mcp <workspace-folder>` serves every collection in it.
+- Secrets (`fillSecrets` in `src/cli/main.ts`, for workspace and collection folders): first the encrypted
+  `secrets.dispatch-vault` with `DISPATCH_VAULT_PASSPHRASE` (a wrong one is a usage error, exit 2; without it a note
+  says the file is there), then `DISPATCH_SECRET_<KEY>` for secret variables (exact key, or capitals with `_`), which
+  win. Only variables marked secret are filled.
+- Tests: `tests/cli.test.ts` runs the real bundle on a workspace folder written by `workspaceToFiles`.
