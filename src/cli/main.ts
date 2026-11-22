@@ -5,6 +5,9 @@
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { filesToCollection } from '../core/fileFormat'
+import { WORKSPACE_FILE, filesToWorkspace } from '../core/workspaceFiles'
+import { VAULT_FILE, applySecrets, deriveKeys, openVault, vaultHeader } from '../core/secretsVault'
+import { existsSync } from 'node:fs'
 import { basename } from 'node:path'
 import vm from 'node:vm'
 import { importFileAsync, type ImportResult } from '../core/backup'
@@ -33,7 +36,8 @@ const green = c(32), red = c(31), dim = c(2), bold = c(1), yellow = c(33)
 const HELP = `dispatch-run ${VERSION} — run API collections from the command line
 
 Usage:
-  dispatch-run <file|folder> [options]   run a collection (Dispatch backup, Postman/Insomnia file, or a collection folder)
+  dispatch-run <file|folder> [options]   run a collection (Dispatch backup, Postman/Insomnia file, a collection folder,
+                                         or a workspace folder linked in the desktop app)
   dispatch-run load <file> [options]     load-test a request or a collection
   dispatch-run mock <file> [options]     serve a collection's saved examples (mock server)
   dispatch-run mcp <file|folder> [opts]  serve a collection to AI assistants over MCP (stdio)
@@ -42,7 +46,7 @@ Usage:
 Run options:
   -c, --collection <name>      collection to run (default: the only/first one)
   -f, --folder <path>          folder to run, "Parent/Child"; repeat to run a suite
-  -e, --environment <file|name>  environment file (Dispatch/Postman) or name inside <file>
+  -e, --env, --environment <name|file>  environment by name (in the file or workspace folder) or an environment file
   -g, --globals <file>         Postman globals or Dispatch backup with globals
       --env-var <key=value>    set a variable (repeatable; wins over the environment)
   -d, --data <file>            CSV or JSON data file: one iteration per row
@@ -70,7 +74,15 @@ Load options:
       --i-have-permission      required: you own the server or may load-test it
 
 Flow options (also -e, -g, --env-var, -k, --timeout, --json from above):
-      --flow <name>            flow to run (default: the only/first one)
+      --flow <name>            flow to run (default: the only/first one); with a workspace folder,
+                               dispatch-run <folder> --flow <name> works too
+
+Secrets in CI (workspace and collection folders keep secret values out of the files):
+  DISPATCH_SECRET_<KEY>        fills the secret variable <key> (environments and collection variables). The name is
+                               the key in capitals with anything but letters and digits as "_": apiKey → APIKEY,
+                               api-key → API_KEY. Wins over the secrets file.
+  DISPATCH_VAULT_PASSPHRASE    opens the folder's encrypted secrets file (secrets.dispatch-vault, from
+                               "Sync secrets" in the desktop app)
 
 Mock options:
       --port <n>               port to listen on (default 4319, 127.0.0.1 only)
@@ -89,7 +101,7 @@ class Usage extends Error {}
 function parseArgs(argv: string[]) {
   const opts: Record<string, string[]> = {}
   const pos: string[] = []
-  const alias: Record<string, string> = { c: 'collection', f: 'folder', e: 'environment', g: 'globals', d: 'data', n: 'iterations', k: 'insecure', r: 'reporters', u: 'vus', h: 'help' }
+  const alias: Record<string, string> = { c: 'collection', f: 'folder', e: 'environment', env: 'environment', g: 'globals', d: 'data', n: 'iterations', k: 'insecure', r: 'reporters', u: 'vus', h: 'help' }
   const flags = new Set(['bail', 'insecure', 'no-scripts', 'help', 'version', 'i-have-permission'])
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
@@ -121,8 +133,59 @@ const read = (path: string) => { try { return readFileSync(path, 'utf8') } catch
 /** Scripts compile in a separate V8 context (no require/process); collections are your own files. */
 const compileInVm: Compile = (code, params) => vm.compileFunction(code, params, { parsingContext: vm.createContext({ atob, btoa, URL, URLSearchParams, TextEncoder, TextDecoder, setTimeout, clearTimeout }) }) as (...args: unknown[]) => unknown
 
+/** The Dispatch files under a folder (relative paths), skipping .git and node_modules. */
+function folderFiles(root: string, ours: RegExp) {
+  const files: { path: string; text: string }[] = []
+  const walk = (dir: string) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.isDirectory()) { if (e.name !== '.git' && e.name !== 'node_modules') walk(join(dir, e.name)); continue }
+      if (ours.test(e.name)) files.push({ path: relative(root, join(dir, e.name)).replace(/\\/g, '/'), text: readFileSync(join(dir, e.name), 'utf8') })
+    }
+  }
+  walk(root)
+  return files
+}
+
+/** CI secrets: the secret variable `key` from DISPATCH_SECRET_<KEY> (exact, or capitals with "_" for anything else). */
+export function secretFromEnv(key: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return env[`DISPATCH_SECRET_${key}`] ?? env[`DISPATCH_SECRET_${key.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`]
+}
+
+/**
+ * Fills the blank secret values of a workspace or collection folder: first from its encrypted secrets file (with
+ * DISPATCH_VAULT_PASSPHRASE), then from DISPATCH_SECRET_<KEY> variables, which win.
+ */
+async function fillSecrets(root: string, ws: ImportResult) {
+  const vaultPath = join(root, VAULT_FILE)
+  if (existsSync(vaultPath)) {
+    const pass = process.env.DISPATCH_VAULT_PASSPHRASE
+    if (!pass) ws.warnings.push(`${VAULT_FILE} found; set DISPATCH_VAULT_PASSPHRASE to use its secret values.`)
+    else {
+      const text = readFileSync(vaultPath, 'utf8')
+      const h = vaultHeader(text)
+      if (!h) throw new Usage(`${VAULT_FILE} can’t be read (is it complete?).`)
+      let payload
+      try { payload = await openVault(text, await deriveKeys(pass, h.kdf.salt, Number(h.kdf.iterations))) } catch (e) { throw new Usage(`${VAULT_FILE}: ${e instanceof Error ? e.message : String(e)} (DISPATCH_VAULT_PASSPHRASE)`) }
+      const r = applySecrets(payload, ws.environments, ws.collections)
+      ws.environments = ws.environments.map((e) => r.environments.find((x) => x.id === e.id) ?? e)
+      ws.collections = ws.collections.map((c) => r.collections.find((x) => x.id === c.id) ?? c)
+    }
+  }
+  const fill = <T extends { variables: KV[] }>(x: T): T => ({ ...x, variables: x.variables.map((v) => { const s = v.secret ? secretFromEnv(v.key) : undefined; return s === undefined ? v : { ...v, value: s } }) })
+  ws.environments = ws.environments.map(fill)
+  ws.collections = ws.collections.map(fill)
+}
+
 async function loadWorkspace(file: string): Promise<ImportResult> {
   try {
+    if (statSync(file, { throwIfNoEntry: false })?.isDirectory() && existsSync(join(file, WORKSPACE_FILE))) {
+      // A workspace kept as files by the desktop app: its collections, environments and flows.
+      const { parse } = await import('yaml')
+      const r = filesToWorkspace(folderFiles(file, /(\.req\.yaml|_folder\.yaml|dispatch\.collection\.yaml|\.env\.yaml|\.flow\.yaml|dispatch\.workspace\.yaml)$/), parse, { collections: [], folders: [], requests: [], environments: [] })
+      const ws: ImportResult = { source: 'dispatch', collections: r.collections, folders: r.folders, requests: r.requests, environments: r.environments, flows: r.flows, globals: [], warnings: r.warnings }
+      await fillSecrets(file, ws)
+      return ws
+    }
     if (statSync(file, { throwIfNoEntry: false })?.isDirectory()) {
       // A collection kept as files (dispatch.collection.yaml + *.req.yaml).
       const files: { path: string; text: string }[] = []
@@ -134,7 +197,9 @@ async function loadWorkspace(file: string): Promise<ImportResult> {
       }
       walk(file)
       const { parse } = await import('yaml')
-      return filesToCollection(files, parse)
+      const ws = { ...filesToCollection(files, parse), source: 'dispatch' as const } as ImportResult
+      await fillSecrets(file, ws)
+      return ws
     }
     return await importFileAsync(read(file))
   } catch (e) { throw new Usage(`${file}: ${e instanceof Error ? e.message : String(e)}`) }
@@ -144,6 +209,7 @@ async function pickEnvironment(ws: ImportResult, spec: string | undefined): Prom
   if (!spec) return ws.environments.length === 1 ? ws.environments[0] : null
   const named = ws.environments.find((e) => e.name === spec)
   if (named) return named
+  if (!existsSync(spec)) throw new Usage(`No environment named "${spec}"${ws.environments.length ? `. Found: ${ws.environments.map((e) => e.name).join(', ')}` : ''}.`)
   const r = await loadWorkspace(spec)
   if (!r.environments.length) throw new Usage(`${spec} has no environment.`)
   return r.environments[0]
@@ -171,8 +237,9 @@ async function main(argv: string[]): Promise<number> {
   const isLoad = pos[0] === 'load'
   const isMock = pos[0] === 'mock'
   const isMcp = pos[0] === 'mcp'
-  const isFlow = pos[0] === 'flow'
-  const file = isLoad || isMock || isMcp || isFlow ? pos[1] : pos[0]
+  // `dispatch-run flow <file>`, or `dispatch-run <workspace-folder> --flow <name>`.
+  const isFlow = pos[0] === 'flow' || (!isLoad && !isMock && !isMcp && !!one(opts, 'flow'))
+  const file = isLoad || isMock || isMcp || pos[0] === 'flow' ? pos[1] : pos[0]
   if (!file) throw new Usage('Give a collection file.')
   const ws = await loadWorkspace(file)
   for (const w of ws.warnings) console.error(yellow(`note: ${w}`)) // stderr: safe in MCP mode too
@@ -230,7 +297,7 @@ async function main(argv: string[]): Promise<number> {
     const name = one(opts, 'flow')
     const flows = ws.flows ?? []
     const flow = name ? flows.find((f) => f.name === name) : flows[0]
-    if (!flow) throw new Usage(name ? `No flow named "${name}"${flows.length ? ` (have: ${flows.map((f) => f.name).join(', ')})` : ''}.` : 'The file has no flows (export a workspace or backup from Dispatch).')
+    if (!flow) throw new Usage(name ? `No flow named "${name}"${flows.length ? ` (have: ${flows.map((f) => f.name).join(', ')})` : ''}.` : 'The file has no flows (use a workspace folder, or export a workspace or backup from Dispatch).')
     console.log(bold(`Flow: ${flow.name}`))
     const r = await runFlow(flow, { collections: ws.collections, folders: ws.folders, requests: ws.requests, environment, globals, settings }, transport, pipeline,
       new InlineEngine(compileInVm), {

@@ -17,6 +17,9 @@ import type { Collection, Environment } from './types'
 export const VAULT_FILE = 'secrets.dispatch-vault'
 export const VAULT_FORMAT = 1
 export const VAULT_ITERATIONS = 600_000
+let rounds = VAULT_ITERATIONS
+/** Tests only: fewer rounds keep the suite quick. Files carry their own rounds, so they still open everywhere. */
+export function setVaultRoundsForTests(n: number) { rounds = n }
 
 /** Secret values by item id, then variable key. */
 export interface VaultPayload { environments: Record<string, Record<string, string>>; collections: Record<string, Record<string, string>> }
@@ -33,7 +36,7 @@ const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0))
 const utf8 = (s: string) => new TextEncoder().encode(s)
 
 /** Makes the keys from a passphrase: a new random salt, or the salt of an existing file (to unlock it). */
-export async function deriveKeys(passphrase: string, salt?: string, iterations = VAULT_ITERATIONS): Promise<VaultKeys> {
+export async function deriveKeys(passphrase: string, salt?: string, iterations = rounds): Promise<VaultKeys> {
   const s = salt ? unb64(salt) : globalThis.crypto.getRandomValues(new Uint8Array(16))
   const base = await subtle().importKey('raw', utf8(passphrase.normalize('NFC')), 'PBKDF2', false, ['deriveBits'])
   const bits = new Uint8Array(await subtle().deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: s, iterations }, base, 512))
