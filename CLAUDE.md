@@ -208,7 +208,19 @@ focus on the URL at all, both fixed in #50. gRPC over the internet couldn't be c
 9000/9001 time out from the homelab and the Predator) and grpc.postman-echo.com fails the TLS handshake
 ("InvalidContentType") with the old crates on `main` exactly as with #53, so TLS behaves as before; the local
 end-to-end and grpc-js tests cover plaintext.
-**Resume here (next session, after 2026-11-22):** **v0.1.0-SNAPSHOT is out.** The tag is on `main` 0a46658 (#60
+**Resume here (2026-11-22 evening, read first):** four PRs are open and wait for the owner's test on the Predator,
+then a merge on the owner's word: #67 linked folders phase 2 (folder watcher, per-file conflicts, cloud-drive copies,
+unreadable files; Workspaces page as one card per workspace), #68 Save disabled ("Saved") until the request changes,
+#69 response viewer (every text body up to 5 MB in CodeMirror by language, JSON/XML(`prettyXml`)/HTML/JS, Collapse
+all/Expand all, a note at the top for bigger bodies), #70 Share button in the response toolbar (Share as HTML with
+the response, opens on Response, JSON tree with folding). A throwaway branch `test/windows-2026-11-22` merges all
+four (387 tests); its CI was started by hand (`gh workflow run build.yml --ref <branch>`: build.yml only runs on
+`main`, tags and PRs, so a pushed test branch builds nothing) and its setup goes to the Predator's Downloads as
+`Dispatch_0.1.0_x64-setup-test-2026-11-22.exe`. Delete that branch after the test. Merge order: #67 first (biggest),
+then #68, #69, #70; #69 and #70 both touch `ResponsePane.tsx` imports and the end of `app.css` (keep both sides).
+Next after that: the opt-in encrypted secrets file, then phase 3 (CLI on workspace folders).
+
+**Earlier on 2026-11-22:** **v0.1.0-SNAPSHOT is out.** The tag is on `main` 0a46658 (#60
 About + changelog.json, #61 friendly update-check message, #62 site look picker). CI was green on every job, and the owner
 published it on 2026-11-22 as a **pre-release, not Latest**, on purpose: GitHub "Latest" is still v0.5.1, which has no
 `latest.json`, so Check for updates says "No update found" (#61). A plain 0.1.0 becomes Latest together with removing the
