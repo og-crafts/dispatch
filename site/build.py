@@ -16,7 +16,7 @@ BASE = "https://dispatch.ogcrafts.cloud"
 EMAIL = "hello@ogcrafts.cloud"
 DAY = datetime.date.today().isoformat()
 # When each legal page's wording last changed. Change the date with the text, never on a plain rebuild.
-UPDATED = {"privacy": "2026-11-20", "code-signing": "2026-11-16", "terms": "2026-11-14"}
+UPDATED = {"privacy": "2026-11-22", "code-signing": "2026-11-16", "terms": "2026-11-14"}
 VERSION = json.loads((REPO / "package.json").read_text())["version"]
 STRICT = "--strict" in sys.argv
 e = html.escape
@@ -31,9 +31,6 @@ CLI = CLI_FILE.exists()
 NAV = [("/#features", "Features"), ("/download/", "Download"), ("/cli/", "CLI"), ("/changelog/", "Changelog"), ("/support/", "Support")]
 SHOTS = {  # file -> (alt text, caption)
     "request": ("Dispatch in light theme: a POST request that creates an order, its 201 Created response with a JSON body and 2 of 2 tests passed", "Send a request and read the response, with the JSON folded and filterable."),
-    "request-dark": ("Dispatch in dark theme: the same request and response", "The same request in the dark theme."),
-    "grove": ("Dispatch in the Grove look, light: mint and forest green, pill-shaped tabs and a large request title", "The Grove look: roomier, in mint and forest green."),
-    "grove-dark": ("Dispatch in the Grove look, dark", "Grove in the dark."),
     "scripts": ("A post-response script with test, expect and dx.collection, and the passing test listed under the response", "Scripts and tests run in a sandbox. The response shows each test."),
     "runner": ("The collection runner results: fifteen requests across three data rows, 18 tests passed and none failed", "The runner sends a collection once per data row and lists every result."),
     "load": ("A passed load test with request count, median, p95 and error rate, and charts of response time and requests per second", "A load test with charts, thresholds and a per-status breakdown."),
@@ -56,16 +53,30 @@ def inline(t):
     return t
 def ul(items): return "<ul>" + "".join(f"<li>{inline(i)}</li>" for i in items) + "</ul>"
 
-def picture(name, lazy=True, dark=None):
+# Every screenshot comes in each look and in light and dark: request.png (Dispatch, light), request-dark.png,
+# request-grove.png, request-grove-dark.png, request-grove-classic.png, request-grove-classic-dark.png
+# (scripts/screenshots.mjs site). The page names the Dispatch pair; look.js swaps in the visitor's look.
+LOOK_SUFFIX = {"dispatch": "", "grove": "-grove", "grove-classic": "-grove-classic"}
+def shot_file(name, look="dispatch", dark=False): return f"/assets/shots/{name}{LOOK_SUFFIX[look]}{'-dark' if dark else ''}.png"
+def picture(name, lazy=True, look="dispatch"):
     alt, _ = SHOTS[name]
     l = ' loading="lazy"' if lazy else ""
-    img = f'<img src="/assets/shots/{name}.png" width="1440" height="900" alt="{e(alt)}"{l}>'
-    if dark: img = f'<picture><source srcset="/assets/shots/{dark}.png" media="(prefers-color-scheme: dark)">{img}</picture>'
-    return img
-def figure(name, lazy=True, dark=None):
-    pic = picture(name, lazy, dark)
-    if lazy: pic = f'<a href="/assets/shots/{name}.png" aria-label="Open the full-size screenshot: {e(SHOTS[name][0])}">{pic}</a>'
-    return f'<figure class="shot">{pic}<figcaption>{e(SHOTS[name][1])}</figcaption></figure>'
+    img = f'<img src="{shot_file(name, look)}" data-shot="{name}" width="1440" height="900" alt="{e(alt)}"{l}>'
+    return f'<picture><source srcset="{shot_file(name, look, True)}" media="(prefers-color-scheme: dark)">{img}</picture>'
+def figure(name, lazy=True, look=None, caption=None):
+    """look: show this look whatever the visitor picked (the Themes section shows Grove)."""
+    pic = picture(name, lazy, look or "dispatch")
+    if lazy: pic = f'<a class="full" href="{shot_file(name, look or "dispatch")}" aria-label="Open the full-size screenshot: {e(SHOTS[name][0])}">{pic}</a>'
+    fixed = f' data-look="{look}"' if look else ""
+    return f'<figure class="shot"{fixed}>{pic}<figcaption>{e(caption or SHOTS[name][1])}</figcaption></figure>'
+
+LOOK_PICKER = """<details class="lookPicker" hidden><summary aria-label="Look and colours">Look</summary><div class="lookMenu">
+<fieldset><legend>Look</legend><label><input type="radio" name="look" value="dispatch"> Dispatch <span class="sw sw-dispatch"></span></label>
+<label><input type="radio" name="look" value="grove"> Grove <span class="sw sw-grove"></span></label>
+<label><input type="radio" name="look" value="grove-classic"> Grove classic <span class="sw sw-grove"></span></label></fieldset>
+<fieldset><legend>Colours</legend><label><input type="radio" name="theme" value="system"> System</label>
+<label><input type="radio" name="theme" value="light"> Light</label><label><input type="radio" name="theme" value="dark"> Dark</label></fieldset>
+<p>The same looks as in the app (Settings, Themes). Kept in this browser only.</p></div></details>"""
 
 # ---------- page shell ----------
 def shell(path, title, desc, body, current="", noindex=False):
@@ -90,12 +101,13 @@ def shell(path, title, desc, body, current="", noindex=False):
 <meta property="og:description" content="{e(desc)}"><meta property="og:url" content="{canon}"><meta property="og:image" content="{BASE}/assets/og.png">
 <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="Dispatch by OGCrafts: an API client with no account and no cloud">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{e(title)}"><meta name="twitter:description" content="{e(desc)}"><meta name="twitter:image" content="{BASE}/assets/og.png">{ld}
+<script src="/assets/look.js"></script>
 <link rel="stylesheet" href="/assets/site.css">
 <script src="/assets/site.js" defer></script>
 </head><body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site"><div class="wrap"><a class="brand" href="/"><img src="/assets/icon-32.png" width="32" height="32" alt="">Dispatch</a>
-<nav class="main" aria-label="Main">{navs}{'<a href="/app/">Web app</a>' if WEB else ""}</nav></div></header>
+<nav class="main" aria-label="Main">{navs}{'<a href="/app/">Web app</a>' if WEB else ""}</nav>{LOOK_PICKER}</div></header>
 <main id="main">
 {body}
 </main>
@@ -203,7 +215,7 @@ def home():
 <p class="lead">Dispatch is an API client that stays out of your way. Nothing to sign up for, nothing to log in to, and your collections stay on your own machine.</p>
 <div class="cta-row">{app_buttons()}</div>
 <p class="note">Free and open source. For Windows, macOS and Linux, in your browser, and on the command line for CI.</p></div>
-{figure("request", lazy=False, dark="request-dark")}</div></section>
+{figure("request", lazy=False)}</div></section>
 <div class="promise"><div class="wrap"><ul><li>No sign-up, ever</li><li>Your data stays with you</li><li>Nothing behind a paywall</li><li>Plain files that live in git</li><li>Open source (MIT)</li></ul></div></div>
 <section id="watch"><div class="wrap"><div class="section-head"><p class="eyebrow">A short tour</p><h2>See it in under a minute.</h2><p class="lead">Send a request, test it, run it for every row, load test it, and pick a look. The video has captions.</p></div>
 <figure class="video"><video controls preload="none" playsinline width="1920" height="1080" poster="/assets/video/dispatch-promo-poster.jpg"><source src="/assets/video/dispatch-promo-16x9.mp4" type="video/mp4"><track kind="captions" src="/assets/video/dispatch-promo.vtt" srclang="en" label="English" default>Your browser can&rsquo;t play this video. <a href="/assets/video/dispatch-promo-16x9.mp4">Download it</a> instead.</video></figure></div></section>
@@ -214,7 +226,7 @@ def home():
 <div class="split flip"><div><p class="eyebrow">Runner</p><h2>Run it again for every row.</h2><p>Run a whole collection, a folder or several collections as a suite. Give it a CSV or JSON file and it runs once per row, with the columns as variables. Export the results as JSON or JUnit.</p><p>The same run works from the command line, so CI can do it too.</p></div>{figure("runner")}</div>
 <div class="split"><div><p class="eyebrow">Load testing</p><h2>See how it holds up.</h2><p>Send the same request, or a whole flow, from up to 200 virtual users. Set pass and fail thresholds for p95 latency, error rate and throughput, and watch the charts.</p><p>Load test only servers you own or have permission to test. Dispatch asks you to confirm that before it starts.</p></div>{figure("load")}</div>
 <div class="split flip"><div><p class="eyebrow">Docs and mocks</p><h2>Documentation comes with the collection.</h2><p>Dispatch writes Markdown documentation from your requests, parameters, bodies and saved examples, and leaves secret values out. Save a response as an example and a mock server can serve it back.</p></div>{figure("docs")}</div>
-<div class="split"><div><p class="eyebrow">Themes</p><h2>Pick the look that suits you.</h2><p>Dispatch comes in graphite with one amber accent. Grove is roomier, in mint and forest green, and Grove classic keeps those colours on the compact layout. Each look has a light and a dark side, or follows your system.</p><p>Change it any time in Settings, Themes.</p></div>{figure("grove", dark="grove-dark")}</div>
+<div class="split"><div><p class="eyebrow">Themes</p><h2>Pick the look that suits you.</h2><p>Dispatch comes in graphite with one amber accent. Grove is roomier, in mint and forest green, and Grove classic keeps those colours on the compact layout. Each look has a light and a dark side, or follows your system.</p><p>Change it any time in Settings, Themes.</p></div>{figure("request", look="grove", caption="The Grove look: roomier, in mint and forest green.")}</div>
 </div></section>
 <section id="features"><div class="wrap"><div class="section-head"><p class="eyebrow">Also in the box</p><h2>The whole job, in one app.</h2><p class="lead">Send requests, check the responses, run them in bulk, and write up the result. All of it is included.</p></div>
 <div class="grid">{feats}</div></div></section>
@@ -325,7 +337,7 @@ def privacy():
 <p>When you press Send, Dispatch sends that request to the address you typed, with the headers and body you set. That is the only network traffic Dispatch makes. What the other server does with it is up to that server. Scripts you write can send requests too (<code>dx.send</code>), to the places you tell them to.</p>
 <p>A Browser login request opens your installed Chrome or Edge with a new, empty profile that is deleted afterwards, with sync and background networking turned off. It visits the pages in your steps. The values it keeps, such as cookies or a token, are stored as secret variables on this device.</p>
 <h2>What Dispatch does not do</h2>
-<ul><li>No account, sign-in or sync.</li><li>No analytics or error reports unless you opt in (below).</li><li>No update check unless you turn it on. The desktop app looks for a new version only when you choose <strong>Menu, Check for updates</strong>, or turn on <strong>Check for updates when Dispatch starts</strong> in Settings (off by default). The check asks GitHub, where the releases are published, for a small file that names the newest version; GitHub sees your IP address, as with any download. Nothing about you or your data is sent, and nothing is installed unless you agree.</li><li>No advertising and no trackers.</li><li>No fonts, scripts or images loaded from other sites, in the app or on this website.</li></ul>
+<ul><li>No account, sign-in or sync.</li><li>No analytics or error reports unless you opt in (below).</li><li>No update check unless you turn it on. The desktop app looks for a new version only when you choose <strong>Menu, Check for updates</strong>, or turn on <strong>Check for updates when Dispatch starts</strong> in Settings (off by default). The check asks GitHub, where the releases are published, for a small file that names the newest version; GitHub sees your IP address, as with any download. Nothing about you or your data is sent, and nothing is installed unless you agree.</li><li>No advertising and no trackers.</li><li>No fonts, scripts or images loaded from other sites, in the app or on this website.</li><li>This website sets no cookies. If you pick a look with the Look menu, your browser keeps that choice in its local storage, on your device only.</li></ul>
 <h2 id="opt-in">Usage and error reports (only if you agree)</h2>
 <p>The first time you open Dispatch it asks whether to share two things. Both are off unless you tick them, and you can change them any time in <strong>Settings, General, Privacy</strong>.</p>
 <ul><li><strong>Anonymous usage</strong>, sent to <a href="https://aptabase.com">Aptabase</a> (an analytics service built for privacy, EU or US hosting): the name of an action, such as &ldquo;sent a request&rdquo;, &ldquo;imported a file&rdquo; or &ldquo;checked for updates&rdquo;, with fixed labels like the request type (HTTP, gRPC&hellip;) or the import format; the Dispatch version, desktop or web, operating system and language; and a random session number that changes every time Dispatch starts. No user id, no cookies, and never your URLs, requests, responses, names, variables or files. See <a href="https://aptabase.com/legal/privacy">Aptabase&rsquo;s privacy policy</a>.</li>
@@ -382,17 +394,24 @@ def lum(h):
 def ratio(a, b):
     la, lb = sorted((lum(a), lum(b)), reverse=True); return (la + .05) / (lb + .05)
 def tokens():
+    """Every palette in site.css, by the name in its "/* tokens: <name> */" comment. A name may appear twice (the
+    system-dark block and the forced-dark copy); the copies must match."""
     css = (SRC / "site.css").read_text()
-    blocks = re.findall(r":root \{(.*?)\n\s*\}", css, re.S)
-    if len(blocks) != 2: raise SystemExit("site.css must have a light :root block and a dark :root block")
-    return [dict(re.findall(r"--([\w-]+):\s*(#[0-9A-Fa-f]{6})", b)) for b in blocks]
+    found = {}
+    for name, body in re.findall(r"/\* tokens: ([\w-]+) \*/\s*[^{]+\{(.*?)\}", css, re.S):
+        t = dict(re.findall(r"--([\w-]+):\s*(#[0-9A-Fa-f]{6})", body))
+        if name in found and found[name] != t: raise SystemExit(f"site.css: the two '{name}' blocks differ")
+        found[name] = t
+    want = {"dispatch-light", "dispatch-dark", "grove-light", "grove-dark"}
+    if set(found) != want: raise SystemExit(f"site.css must have the palettes {sorted(want)}, found {sorted(found)}")
+    return found
 PAIRS = [("ink", "bg"), ("ink", "surface"), ("ink", "sunken"), ("ink", "primary-soft"), ("muted", "bg"), ("muted", "surface"), ("muted", "sunken"),
          ("link", "bg"), ("link", "surface"), ("link", "sunken"), ("link", "primary-soft"), ("on-primary", "primary"),
          ("good", "surface"), ("good", "good-soft"), ("good", "bg"), ("warn", "warn-soft"), ("warn", "surface"), ("muted", "good-soft"),
          ("m-get", "surface"), ("m-post", "surface"), ("m-put", "surface"), ("m-patch", "surface"), ("m-delete", "surface"), ("danger", "surface")]
 def check_contrast():
     out = []
-    for mode, t in zip(("light", "dark"), tokens()):
+    for mode, t in tokens().items():
         for fg, bg in PAIRS:
             if fg not in t or bg not in t: out.append(f"contrast: token missing {fg}/{bg} ({mode})"); continue
             r = ratio(t[fg], t[bg])
@@ -406,7 +425,7 @@ def main():
     if DIST.exists(): shutil.rmtree(DIST)
     A = DIST / "assets"
     (A / "fonts").mkdir(parents=True); (A / "shots").mkdir()
-    shutil.copy(SRC / "site.css", A / "site.css"); shutil.copy(SRC / "site.js", A / "site.js")
+    shutil.copy(SRC / "site.css", A / "site.css"); shutil.copy(SRC / "site.js", A / "site.js"); shutil.copy(SRC / "look.js", A / "look.js")
     for f in (SRC / "assets/fonts").glob("*.*"): shutil.copy(f, A / "fonts" / f.name)
     for f in (SRC / "assets/icons").glob("*.*"): shutil.copy(f, A / f.name)
     shutil.copy(SRC / "assets/og.png", A / "og.png")

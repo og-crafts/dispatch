@@ -28,10 +28,12 @@ const SITE = join(REPO, 'site/src/assets/shots')
 const PROMO = join(REPO, 'promo/public/shots')
 const RUNS = target === 'site'
   ? [
-      { scheme: 'light', look: 'dispatch', which: ['request', 'scripts', 'runner', 'load', 'docs'], name: (s) => `${SITE}/${s}.png` },
-      { scheme: 'dark', look: 'dispatch', which: ['request'], name: () => `${SITE}/request-dark.png` },
-      { scheme: 'light', look: 'grove', which: ['request'], name: () => `${SITE}/grove.png` },
-      { scheme: 'dark', look: 'grove', which: ['request'], name: () => `${SITE}/grove-dark.png` },
+      // Every figure in every look, light and dark: request.png, request-dark.png, request-grove.png, … (site/build.py
+      // and site/src/look.js pick the visitor's).
+      ...['dispatch', 'grove', 'grove-classic'].flatMap((look) => ['light', 'dark'].map((scheme) => ({
+        scheme, look, which: ['request', 'scripts', 'runner', 'load', 'docs'],
+        name: (s) => `${SITE}/${s}${look === 'dispatch' ? '' : `-${look}`}${scheme === 'dark' ? '-dark' : ''}.png`,
+      }))),
     ].map((r) => ({ ...r, dpr: 1 }))
   : [
       { scheme: 'light', look: 'dispatch', which: ['request', 'scripts', 'docs'], prefix: 'light' },

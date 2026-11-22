@@ -1,27 +1,69 @@
-/* dispatch.ogcrafts.cloud. Tokens follow the app's Dispatch look (src/ui/app.css): graphite and white surfaces,
-   hairlines, one amber accent (the logo's): amber fills with graphite text, a deeper amber (--mark) for focus
-   rings and outlines. The app's translucent tints are flattened to hex here so build.py can read the two
-   token blocks below (light, then dark) and check every text/background pair in both against WCAG AA 4.5:1.
-   Keep each block one level deep. Manrope is the app's Grove face; Geist Mono for code. */
+/* dispatch.ogcrafts.cloud. Colours follow the app's looks (src/ui/app.css): Dispatch (graphite and white
+   surfaces, hairlines, one amber accent with graphite text on it) and Grove (mint and forest green, terracotta).
+   The app's translucent tints are flattened to hex here so build.py can read every "tokens:" block below and check
+   each text/background pair against WCAG AA 4.5:1. Keep each block one level deep. Manrope everywhere (the app's
+   Grove face), Geist Mono for code. */
 @font-face { font-family: Manrope; font-weight: 200 800; font-display: swap; src: url(/assets/fonts/manrope-latin.woff2) format("woff2"); }
 @font-face { font-family: "Geist Mono"; font-weight: 400; font-display: swap; src: url(/assets/fonts/geist-mono-400.ttf) format("truetype"); }
 
+/* Looks, as in the app (Settings → Themes): Dispatch (default), Grove and Grove classic (same colours, Grove is
+   roomier). look.js sets data-look and data-theme on <html> from the visitor's pick; without it the site follows
+   the system's light or dark. Each palette appears as the system-dark block and again for a forced "Dark";
+   build.py checks that the copies match and that every palette passes WCAG AA. */
+/* tokens: dispatch-light */
 :root {
   --bg: #F7F7F8; --surface: #FFFFFF; --sunken: #EFEFF1; --outline: #E2E2E6; --ink: #171717; --muted: #525252;
   --primary: #FFB020; --on-primary: #1C1C1E; --primary-soft: #FFF2DB; --link: #8A5300; --mark: #A86500;
   --good: #15803D; --good-soft: #F0F7F2; --warn: #8A4D00; --warn-soft: #F6F0E8; --danger: #C4262B; --info: #1D5FA8;
   --m-get: #15803D; --m-post: #8A4D00; --m-put: #1D5FA8; --m-patch: #6B3FA0; --m-delete: #C4262B;
-  --shadow: 0 8px 24px rgba(0, 0, 0, .08), 0 1px 2px rgba(0, 0, 0, .05);
+  --shadow: 0 8px 24px rgba(0, 0, 0, .08), 0 1px 2px rgba(0, 0, 0, .05); --wash: transparent;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  /* tokens: dispatch-dark */
+  :root:not([data-theme="light"]) {
     --bg: #0F0F10; --surface: #1C1C1E; --sunken: #141415; --outline: #2C2C2F; --ink: #EDEDED; --muted: #A1A1A6;
     --primary: #FFB020; --on-primary: #1C1C1E; --primary-soft: #3C311E; --link: #FFC24D; --mark: #FFB020;
     --good: #4CC38A; --good-soft: #15211D; --warn: #E2A336; --warn-soft: #241E14; --danger: #F0686C; --info: #6AA8F0;
     --m-get: #4CC38A; --m-post: #E2A336; --m-put: #6AA8F0; --m-patch: #B59CFF; --m-delete: #F0686C;
-    --shadow: 0 12px 32px rgba(0, 0, 0, .5);
+    --shadow: 0 12px 32px rgba(0, 0, 0, .5); --wash: transparent;
   }
 }
+/* tokens: dispatch-dark */
+:root[data-theme="dark"] {
+  --bg: #0F0F10; --surface: #1C1C1E; --sunken: #141415; --outline: #2C2C2F; --ink: #EDEDED; --muted: #A1A1A6;
+  --primary: #FFB020; --on-primary: #1C1C1E; --primary-soft: #3C311E; --link: #FFC24D; --mark: #FFB020;
+  --good: #4CC38A; --good-soft: #15211D; --warn: #E2A336; --warn-soft: #241E14; --danger: #F0686C; --info: #6AA8F0;
+  --m-get: #4CC38A; --m-post: #E2A336; --m-put: #6AA8F0; --m-patch: #B59CFF; --m-delete: #F0686C;
+  --shadow: 0 12px 32px rgba(0, 0, 0, .5); --wash: transparent;
+}
+/* tokens: grove-light */
+:root[data-look^="grove"] {
+  --bg: #F2F6EF; --surface: #FFFFFF; --sunken: #E7ECE5; --outline: #D5E2D3; --ink: #1C2A22; --muted: #4A5A50;
+  --primary: #1C2A22; --on-primary: #F2F6EF; --primary-soft: #DCE7DC; --link: #2C6E3F; --mark: #2C6E3F;
+  --good: #2C6E3F; --good-soft: #DEE8DD; --warn: #A04A1A; --warn-soft: #EBE7DC; --danger: #7A2E1C; --info: #4A5A50;
+  --m-get: #2C6E3F; --m-post: #A04A1A; --m-put: #A04A1A; --m-patch: #A04A1A; --m-delete: #7A2E1C;
+  --shadow: 0 8px 30px rgba(44, 110, 63, .1); --wash: #CFE6CF;
+}
+@media (prefers-color-scheme: dark) {
+  /* tokens: grove-dark */
+  :root[data-look^="grove"]:not([data-theme="light"]) {
+    --bg: #0A0D0B; --surface: #131D18; --sunken: #161916; --outline: #2A3F34; --ink: #F2F6EF; --muted: #A7B5AC;
+    --primary: #6EE7A0; --on-primary: #0A1A11; --primary-soft: #16271D; --link: #6EE7A0; --mark: #6EE7A0;
+    --good: #6EE7A0; --good-soft: #14231A; --warn: #F0A070; --warn-soft: #211C15; --danger: #F08A78; --info: #A7B5AC;
+    --m-get: #6EE7A0; --m-post: #F0A070; --m-put: #F0A070; --m-patch: #F0A070; --m-delete: #F08A78;
+    --shadow: 0 12px 32px rgba(0, 0, 0, .5); --wash: #12291D;
+  }
+}
+/* tokens: grove-dark */
+:root[data-look^="grove"][data-theme="dark"] {
+  --bg: #0A0D0B; --surface: #131D18; --sunken: #161916; --outline: #2A3F34; --ink: #F2F6EF; --muted: #A7B5AC;
+  --primary: #6EE7A0; --on-primary: #0A1A11; --primary-soft: #16271D; --link: #6EE7A0; --mark: #6EE7A0;
+  --good: #6EE7A0; --good-soft: #14231A; --warn: #F0A070; --warn-soft: #211C15; --danger: #F08A78; --info: #A7B5AC;
+  --m-get: #6EE7A0; --m-post: #F0A070; --m-put: #F0A070; --m-patch: #F0A070; --m-delete: #F08A78;
+  --shadow: 0 12px 32px rgba(0, 0, 0, .5); --wash: #12291D;
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 
 *, *::before, *::after { box-sizing: border-box; }
 html { color-scheme: light dark; scroll-behavior: smooth; scroll-padding-top: 76px; }
@@ -159,3 +201,30 @@ ul.dl { list-style: none; padding: 0; margin: 0; }
 ul.dl li { display: flex; gap: 12px 20px; justify-content: space-between; align-items: center; flex-wrap: wrap; padding: 12px 0; border-top: 1px solid var(--outline); margin: 0; }
 ul.dl li:first-child { border-top: 0; }
 .dl-main { display: grid; gap: 2px; min-width: 0; flex: 1 1 260px; }
+
+/* Look picker (look.js shows it; hidden without scripts) */
+.lookPicker[hidden] { display: none; }
+.lookPicker { position: relative; }
+.lookPicker summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; font-weight: 700; font-size: .95rem; border: 1px solid var(--outline); background: var(--surface); }
+.lookPicker summary::-webkit-details-marker { display: none; }
+.lookPicker summary::after { content: "▾"; font-size: .85em; color: var(--muted); }
+.lookPicker[open] summary::after { content: "▴"; }
+.lookPicker[open] summary, .lookPicker summary:hover { background: var(--primary-soft); }
+.lookMenu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: 250px; background: var(--surface); border: 1px solid var(--outline); border-radius: 12px; box-shadow: var(--shadow); padding: 8px 14px 4px; }
+.lookMenu fieldset { border: 0; margin: 0 0 6px; padding: 0; }
+.lookMenu legend { font-weight: 800; font-size: .82rem; color: var(--muted); padding: 6px 0 2px; }
+.lookMenu label { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-weight: 600; font-size: .95rem; cursor: pointer; }
+.lookMenu input { accent-color: var(--mark); margin: 0; }
+.lookMenu p { font-size: .8rem; color: var(--muted); border-top: 1px solid var(--outline); padding-top: 8px; margin: 4px 0 6px; line-height: 1.4; }
+.sw { margin-left: auto; width: 34px; height: 14px; border-radius: 99px; border: 1px solid var(--outline); }
+.sw-dispatch { background: linear-gradient(90deg, #1C1C1E 0 50%, #FFB020 50%); }
+.sw-grove { background: linear-gradient(90deg, #CFE6CF 0 33%, #2C6E3F 33% 66%, #A04A1A 66%); }
+@media (max-width: 520px) { .lookMenu { right: auto; left: 0; } }
+
+/* Grove looks: the soft corner wash; "grove" (not classic) is roomier and rounder, as in the app. */
+[data-look^="grove"] body { background: radial-gradient(900px 520px at 92% 8%, var(--wash) 0%, transparent 70%), var(--bg); background-attachment: fixed; }
+[data-look^="grove"] header.site { background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); }
+[data-look="grove"] .btn { border-radius: 999px; }
+[data-look="grove"] :is(.card, .panel, details, .table-wrap, pre, .lookMenu, .callout) { border-radius: 22px; }
+[data-look="grove"] .shot img, [data-look="grove"] .video video { border-radius: 22px; }
+[data-look="grove"] .lookPicker summary, [data-look="grove"] nav.main a { border-radius: 999px; }
