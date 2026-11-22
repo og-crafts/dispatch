@@ -304,19 +304,22 @@ def cli_page():
 def changelog():
     def rel(v, d, title, items): return f'<div class="release"><h2 id="v{v.replace(".", "-")}">{v} <span class="muted">{d}</span></h2><p>{title}</p>{ul(items)}</div>'
     return "<h1>Changelog</h1><p class=\"lead\">What changed in each release, newest first.</p>" + \
-    rel("0.1.0", "2026-11-16", "The first release of Dispatch by OGCrafts.", [
+    rel("0.1.0", "2026-11-22", "The first release of Dispatch by OGCrafts.", [
         "Requests: HTTP with params, path variables, headers, every body type (JSON, form-data with files, binary, XML, GraphQL) and auth (Basic, Bearer, Digest, OAuth 2.0, JWT, AWS Signature v4); GraphQL schema tools, WebSocket, MQTT, server-sent events, Socket.IO, and gRPC on desktop.",
         "Collections with nested folders, tabs, environments, globals and workspaces; each workspace keeps its own tabs. Undo for every delete, daily local backups, and search across everything (Ctrl+K).",
         "A code editor with `{{variable}}` and `dx.` completion; pre-request and post-response scripts with tests in a sandbox, with lodash, moment, crypto-js, uuid, ajv and handlebars; 70 fake-data variables.",
         "The runner (iterations, delays, CSV or JSON data, JUnit reports), load tests with charts, scheduled runs with notifications, response history with compare, saved examples, generated docs and a local mock server.",
         "Flows: wire requests together on a canvas with If, Script, Set variable, For each, Delay and End blocks.",
         "Browser login requests that drive Chrome or Edge through a login page and keep the cookies or token as secrets.",
-        "MCP: test MCP servers (HTTP or a local command, with OAuth sign-in), and let AI assistants on your computer list and send your requests through a local endpoint, with an optional workspace of their own to build requests in.",
+        "MCP: test MCP servers (HTTP or a local command, with OAuth sign-in), and let AI assistants on your computer list and send your requests through a local endpoint, with an optional workspace of their own to build requests in. Hand a request to your assistant with a note, let it edit an open workspace only when you allow it, and let it read the console and history if you turn that on; secrets stay hidden from it.",
         "Share a request, folder or collection as one self-contained HTML page, with secrets and server addresses left out.",
         "Import Postman, OpenAPI 3, Swagger 2, HAR, Insomnia and Bruno; export to Postman; code in 12 languages; paste curl.",
         "Workspaces and collections can live in folders of plain files for git (desktop).",
         "Secrets encrypted at rest with a device key; client certificates, CA certificates, proxy and a cookie manager on desktop.",
         "The desktop app can update itself: Menu, Check for updates. Updates are verified with Dispatch&rsquo;s signing key before they install.",
+        "Three looks, each in light and dark: Dispatch (graphite and amber), Grove and Grove classic (Settings, Themes). Right-click menus on tabs and sidebar rows; menus close when you click elsewhere or press Esc.",
+        "Optional and off by default: anonymous usage counts and error reports, asked once at first launch and changeable any time in Settings. Send feedback from the menu.",
+        "A one-click Windows setup: double-click, a small window shows the progress, and Dispatch opens. No administrator rights needed; the `.msi` is there for managed installs.",
         "Desktop for Windows, macOS (Intel and Apple silicon) and Linux (x64 and ARM64), the web app, and the `dispatch-run` command-line runner.",
     ])
 

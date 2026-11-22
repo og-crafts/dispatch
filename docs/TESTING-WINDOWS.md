@@ -1,12 +1,13 @@
-# Testing Dispatch 0.1.0 on Windows
+# Testing Dispatch 0.1.0 (snapshot) on Windows
 
 Instructions for a tester (a person or an AI agent) on a Windows 10/11 machine. Work through each section, record
 **PASS / FAIL / BLOCKED** for every numbered check, and write the results into a report (template at the end).
 
 Dispatch is OGCrafts' local-first API client: a desktop app (Tauri 2, WebView2), a web build and a command-line
-tool, `dispatch-run`. This is the **first time the desktop app has ever been opened on a real machine**. Everything
-below has passed automated tests on Linux and in a headless browser, but nobody has clicked through the desktop app
-yet. Expect to find real bugs; that's the point.
+tool, `dispatch-run`. You are testing the **`v0.1.0-SNAPSHOT`** pre-release: the build that has to give solid
+evidence before a plain 0.1.0. It passes automated tests on Linux, Windows and macOS in CI, and parts of it were
+clicked through on one Windows 11 PC, but most of it has never been tried by hand on Windows. Expect to find real
+bugs; that's the point.
 
 ## Ground rules
 
@@ -28,7 +29,7 @@ yet. Expect to find real bugs; that's the point.
 ## 0. Setup
 
 You need: Windows 10 or 11 (x64), PowerShell, Git, the GitHub CLI (`gh`) logged in with write access to
-`og-crafts/dispatch` (the repo is public, but the draft release isn't), Node.js 20 or newer, and Microsoft Edge (built into Windows; Chrome works too).
+`og-crafts/dispatch` while the release is still a draft (once it's published, any account works), Node.js 20 or newer, and Microsoft Edge (built into Windows; Chrome works too).
 
 ```powershell
 winget install --id Git.Git -e
@@ -48,10 +49,11 @@ cd dispatch           # stay on main: it has the demo login page and example fil
 npm ci
 npm run build:cli          # builds dist-cli\dispatch-run.mjs
 mkdir ..\installers
-gh release download v0.1.0 --repo og-crafts/dispatch -p "*x64-setup.exe" -p "*x64_en-US.msi" -D ..\installers
+gh release download v0.1.0-SNAPSHOT --repo og-crafts/dispatch -p "*x64-setup.exe" -p "*x64_en-US.msi" -D ..\installers
 ```
 
-The release is a **draft**, so it's only visible to accounts with write access to the repo. If `gh release download`
+The release starts as a **draft**, visible only to accounts with write access to the repo, and is then published
+as a pre-release. If `gh release download`
 says "release not found", run `gh release list --repo og-crafts/dispatch`: the draft must be listed
 with its installers (the build can take 20+ minutes after the tag). Also check `gh auth status`. If only an older
 draft is there, stop and report that rather than testing a build you made yourself.
@@ -76,17 +78,25 @@ What the demo API offers:
 
 ## 1. Install, first launch, uninstall
 
-1.1. Run `Dispatch_0.1.0_x64-setup.exe`. SmartScreen will warn because the installer isn't code-signed yet: click
-     "More info" → "Run anyway". Record the exact warning text. The install must finish without errors.
+1.1. Double-click `Dispatch_0.1.0_x64-setup.exe`. SmartScreen will warn because the installer isn't code-signed
+     yet: click "More info" → "Run anyway". Record the exact warning text. Then expect:
+   - no administrator (UAC) prompt;
+   - a small borderless dark card (no title bar, no buttons) with the logo, "Installing Dispatch" and a thin amber
+     progress bar, centred on the screen;
+   - the card changes to "Opening Dispatch", then closes, and Dispatch opens by itself. The first time this can take
+     about 30 seconds while Windows checks the unsigned app; record how long it took.
 
-1.2. Start Dispatch from the Start menu. A window titled Dispatch opens and shows the request editor (URL field,
-     Send button, sidebar with Collections / Flows / History / Environments).
-   - Note how long the launch took.
+1.2. The first launch asks "Help make Dispatch better?" with two boxes (usage counts, error reports), both
+     unticked. Answer it either way and record what you chose; it must not come back on the next launch. Then the
+     app shows the left rail (Home, Collections, Flows, History, Environments, then Runner, Load test, Schedules,
+     Workspaces, Settings), the request editor (URL field, Send button) and the response area.
    - Note any blank or white window.
+   - Start Dispatch again from the Start menu while it is open: the open window must come to the front, and no
+     second copy may start (Task Manager shows one Dispatch).
 
-1.3. Check that both themes work: switch Windows between light and dark mode (Settings → Personalization →
-     Colors), or use the app's own Settings.
-   - Text must stay readable in both.
+1.3. Themes: Settings → Themes. Try each look (Dispatch, Grove, Grove classic) in light and in dark, and also
+     switch Windows itself between light and dark (Settings → Personalization → Colors) with "System" picked.
+   - Text must stay readable in every combination.
    - Nothing should be invisible, such as dark text on a dark background.
 
 1.4. Check the display at 100%, 150% and 200% scaling, and with the window resized to its narrowest. Look for:
@@ -99,7 +109,9 @@ What the demo API offers:
    2. Close the app completely.
    3. Reopen it. History, open tabs and settings must still be there.
 
-1.6. *(Do this at the very end.)* Uninstall from Settings → Apps and confirm it's gone from the Start menu. Then
+1.6. *(Do this at the very end.)* Uninstall from Settings → Apps and confirm it's gone from the Start menu. Run the
+     setup once more with `/WIZARD` (`.\Dispatch_0.1.0_x64-setup.exe /WIZARD`): the classic installer pages must
+     appear instead of the small card. Uninstall again. Then
      install the `.msi` instead, launch it once, and uninstall it too. The msi installs for all users, so it needs
      administrator rights (a UAC prompt; a non-elevated `msiexec /qn` fails with Error 1925). Record whether your
      data survived a reinstall. Either outcome is acceptable, but write down which happened.
@@ -142,7 +154,7 @@ What the demo API offers:
      PowerShell. The cURL snippet is multi-line bash (`\` continuations), so it's for Git Bash or WSL, not
      PowerShell. That's a known limitation; just note whether it runs in Git Bash if you have it.
 
-## 3. Browser login (new in 0.4; fixed for the desktop app in 0.4.2)
+## 3. Browser login
 
 This drives Microsoft Edge (or Chrome) in the background to log in through a web form and keep the token.
 
@@ -184,9 +196,9 @@ This drives Microsoft Edge (or Chrome) in the background to log in through a web
 
 3.7. Run the collection with **Run collection…**. Both requests must pass, with the browser step shown as `WEB`.
 
-## 4. Flows (new in 0.4, never tried on Windows)
+## 4. Flows (never tried on Windows)
 
-4.1. Sidebar → **Flows** tab → open "Login then orders". The canvas shows Start → Login → Orders, wired together.
+4.1. Left rail → **Flows** → open "Login then orders". The canvas shows Start → Login → Orders, wired together.
 
 4.2. Click **Run flow**. While it runs, each block turns blue and then green. The log underneath lists 3 steps and
      says **Passed**.
@@ -331,7 +343,7 @@ Run these from the repo folder in PowerShell.
       the Notepad edit, and the collection page says "1 file changed outside Dispatch" with **Use the folder's
       version** and **Keep mine**. Try both.
 
-6.6b. **Workspaces as files** (new in 0.5):
+6.6b. **Workspaces as files:**
    1. Menu → Workspaces → **Link to a folder…** on your workspace, and pick an empty folder such as
       `C:\Temp\dispatch-ws`. If a collection was linked in 6.6, accept moving it in. Files appear:
       `dispatch.workspace.yaml`, `collections\…`, `environments\*.env.yaml`, `flows\*.flow.yaml`. No secret value
@@ -380,6 +392,35 @@ Run these from the repo folder in PowerShell.
 - **Leftovers:** after closing the app, Task Manager shows no `Dispatch.exe`, `msedge.exe` (from browser logins) or
   `node.exe` (from MCP) processes it started.
 
+## 8. New in 0.1.0
+
+8.1. **Menus:** open the ☰ menu (top right), then click anywhere else in the window: it must close. Open it again
+     and press Esc: it must close. Do the same with a sidebar row's **⋯** menu.
+
+8.2. **Right-click:** right-click a request tab and a sidebar row: a menu appears at the pointer. Shift+F10 on a
+     focused row opens the same menu from the keyboard.
+
+8.3. **Request ⋯ menu** (next to Save, above the URL): **Save as…** saves a copy under a new name (Ctrl+Shift+S
+     does the same); **Parameterize…** offers to turn hard-coded values into variables; **Share as HTML…** saves one
+     HTML page. Open that page in Edge: secrets and the server address must not appear in it.
+
+8.4. **Workspaces:** Workspaces page → make a second workspace and switch to it. Its tabs are its own; switch back
+     and the first workspace's tabs are as you left them.
+
+8.5. **Send feedback:** ☰ → Send feedback… opens a form. Don't send anything real; check that it says what will be
+     sent, then cancel.
+
+8.6. **Updates:** ☰ → Check for updates… must answer within a few seconds ("you're up to date" or a clear message).
+     A snapshot is a pre-release, so it is not offered as an update; record what it says.
+
+8.7. **AI assistants** (optional; needs Claude Desktop, Claude Code or another MCP client): Settings → AI
+     assistants → turn the local endpoint on and follow the on-screen steps. The assistant lists your requests and
+     can send one. Right-click a request → **Hand to AI assistant…** puts a copy in the assistant's inbox.
+
+8.8. **Coming from a 0.5.x preview** (only if one was installed before): the preview can't update to 0.1.0. Export a
+     backup from the preview (☰ → Export backup), uninstall it, install 0.1.0 and import the backup. Record whether
+     everything came back.
+
 ## Report template
 
 Post the report as a comment on the GitHub issue that pointed you here, with screenshots attached to the
@@ -388,7 +429,7 @@ comment (drag them into the comment box, or `gh issue comment <number> --repo og
 failure, titled `[Windows] <problem>`, and link it from the report.
 
 ```markdown
-# Dispatch 0.1.0 — Windows test report
+# Dispatch 0.1.0-SNAPSHOT — Windows test report
 
 - Date / tester:
 - Windows version (winver) and build:
