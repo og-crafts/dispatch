@@ -11,8 +11,13 @@ https://signpath.org/terms; the points that apply to Dispatch are below.
 - [x] Privacy policy says what the optional update check does.
 - [x] CI: the Windows job of a release tag sends the installers to SignPath and waits for the signed files, when the
       `SIGNPATH_API_TOKEN` secret is set (`.github/workflows/build.yml`).
-- [ ] Owner: multi-factor authentication on GitHub (og-crafterr) and on SignPath.
-- [ ] Owner: apply at https://signpath.org/apply (draft answers below).
+- [x] Owner: multi-factor authentication on GitHub (done 2026-11-22). SignPath MFA: set it up when the account is created.
+- [x] Owner applied at https://signpath.org/apply on 2026-11-22 ("Form submitted, we'll be in touch soon"). Category
+      Developer Tools, build system GitHub Actions, company OGCrafts. Reputation answered honestly (new project, no
+      stars yet). Waiting for SignPath's reply by email.
+- [x] Download page names SignPath ("Free code signing provided by SignPath.io, certificate by SignPath Foundation"),
+      as the form requires (PR #63).
+- [x] Secret scanning + push protection on (2026-11-22).
 - [ ] After approval: SignPath project, artifact configuration, API token and repo settings (below).
 
 ## What SignPath requires (from their terms, 2026-11)

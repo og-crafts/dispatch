@@ -226,8 +226,9 @@ Seen for real: the new icon, the splash and the app in a real install on the Pre
 setup from 0a46658 is in the Predator's `Downloads` as `Dispatch_0.1.0_x64-setup-snapshot.exe`. Not yet checked: the
 .dmg window, the splash at 125/150/200 % scaling. Older test setups in `Downloads` and
 `C:\Users\ompra\dispatch-data-backup-2026-11-21` are for the owner to delete.
-- **Owner to-dos:** secret scanning + push protection (repo settings); SignPath Foundation application now that the
-  site and policy page are live (`docs/SIGNING.md`); decisions on sync, macOS signing and the email extras.
+- **Done 2026-11-22:** secret scanning + push protection on; SignPath Foundation application submitted (waiting for
+  their email; next steps in `docs/SIGNING.md` "After approval"). **Owner to-dos:** decisions on sync, macOS signing
+  and the email extras.
 - Preview (0.5.x) installs can't update to 0.1.0 (different bundle ID, no updater): export backup, uninstall,
   install, import (the download page says so).
 
