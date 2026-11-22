@@ -189,6 +189,23 @@ pre.out { margin: 0; padding: 12px 12px; background: var(--sunken); border-radiu
 
 /* Dialog + toast */
 .dialog { border: 1px solid var(--outline); border-radius: 14px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow); padding: 20px; width: min(440px, calc(100vw - 32px)); }
+.aboutDialog { width: min(560px, calc(100vw - 32px)); }
+.aboutHead { display: flex; align-items: center; gap: 12px; }
+.aboutHead > div { flex: 1; min-width: 0; }
+.aboutHead img { border-radius: 10px; flex: none; }
+.aboutHead h2 { margin: 0; }
+.aboutVersion { margin: 2px 0 0; }
+.aboutDialog > p.muted { margin: 12px 0 0; }
+.aboutLinks { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 8px 0 4px; }
+.linkBtn { border: 0; background: none; padding: 0; color: var(--link, var(--primary)); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.aboutWhatsNew { margin: 16px 0 8px; font-size: 14px; }
+.aboutReleases { max-height: min(50vh, 420px); overflow: auto; border: 1px solid var(--outline); border-radius: 10px; padding: 4px 12px; }
+.aboutRelease { padding: 8px 0; }
+.aboutRelease + .aboutRelease { border-top: 1px solid var(--outline); }
+.aboutRelease summary { cursor: pointer; display: flex; align-items: baseline; gap: 8px; }
+.aboutRelease ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+.aboutRelease p { margin: 6px 0 0; }
+.aboutYours { margin-left: auto; color: var(--muted); }
 .dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .dialog h2 { margin-top: 0; }
 .dialog p { overflow-wrap: anywhere; white-space: pre-wrap; } /* long commands and paths wrap instead of scrolling */

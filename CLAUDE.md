@@ -62,6 +62,9 @@ about each, without naming or disparaging anyone.
   emails, IPs, server address → `{{baseUrl}}`, sampled lists; variables stay `{{name}}`), `core/shareHtml.ts`
   renders one self-contained page (CSP, data embedded as JSON, DOM built with textContent). `ui/ShareDialog.tsx`
   asks for title/version/author/contact/description. Entry points: the request title row's ⋯ menu (Share as HTML…), request/folder/collection menus.
+- About and changelog: `changelog.json` (repo root, newest release first) is the one changelog: Menu → About Dispatch
+  (`src/ui/AboutDialog.tsx`, via `src/core/changelog.ts`) shows the version, channel and every release, and
+  `site/build.py` builds /changelog/ from it. Add an entry with every version bump (`tests/about.test.tsx` checks it).
 - Opt-in usage (Aptabase) and error reports (Sentry), feedback: `src/ui/telemetry.ts` (consent-gated `track()`,
   `redact()`/`scrubEvent()`), `src/ui/PrivacyDialogs.tsx` (first-launch question, Send feedback). Keys come from
   `VITE_APTABASE_APP_KEY` / `VITE_SENTRY_DSN` at build time; without them nothing is offered. Rules and set-up:
