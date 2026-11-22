@@ -485,8 +485,8 @@ describe('Dispatch app', () => {
     await waitFor(() => expect(side().queryByRole('button', { name: 'Home API' })).toBeNull())
     fireEvent.change(screen.getByRole('combobox', { name: 'Workspace' }), { target: { value: '__manage' } })
     const view = await screen.findByRole('region', { name: 'Workspaces' })
-    const workRow = within(view).getByText('Work').closest('tr')!
-    expect(within(workRow).getAllByRole('cell')[1].textContent).toBe('2')
+    const workRow = within(view).getByRole('listitem', { name: 'Work' })
+    expect(workRow.textContent).toContain('2 collections')
     fireEvent.click(within(workRow).getByRole('button', { name: 'Remove' }))
     expect(await screen.findByText(/Move or delete Work’s collections/)).toBeTruthy()
   })
