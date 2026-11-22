@@ -947,3 +947,9 @@ body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: 
    actions wrapped at 1280px. */
 [data-look="grove"] .titleRow .protoPick { flex: none; width: 104px; min-width: 0; }
 [data-look="grove"] :is(.titleRow, .resHead) .btn.ghost { padding-inline: 9px; }
+
+/* Response body tools and the note for very big bodies (ResponsePane.tsx) */
+.bodyTools { margin-left: auto; display: flex; align-items: center; gap: 4px 8px; flex-wrap: wrap; }
+.bodyTools .jsonFilter { margin-left: 0; width: 220px; }
+.bigBody { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 8px 12px; margin-bottom: 8px; border: 1px solid var(--outline); border-radius: 8px; background: var(--sunken); }
+.bigBody > span { margin-right: auto; }

@@ -5,7 +5,7 @@
 import { EditorState, Compartment, Prec, type Extension } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, placeholder as ph, Decoration, MatchDecorator, ViewPlugin, type DecorationSet, type ViewUpdate } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { bracketMatching, foldGutter, foldKeymap, indentOnInput, syntaxHighlighting, HighlightStyle } from '@codemirror/language'
+import { bracketMatching, foldAll, foldGutter, foldKeymap, indentOnInput, syntaxHighlighting, unfoldAll, HighlightStyle } from '@codemirror/language'
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, type CompletionContext, type CompletionResult, type Completion } from '@codemirror/autocomplete'
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
 import { json } from '@codemirror/lang-json'
@@ -149,7 +149,7 @@ async function langExt(o: EditorOptions): Promise<Extension> {
   }
 }
 
-export interface Editor { view: EditorView; setSchema: (s: GraphQLSchema | null) => void; destroy: () => void }
+export interface Editor { view: EditorView; setSchema: (s: GraphQLSchema | null) => void; destroy: () => void; collapseAll: () => void; expandAll: () => void }
 
 export async function createEditor(parent: HTMLElement, o: EditorOptions): Promise<Editor> {
   const lang = new Compartment()
@@ -177,6 +177,8 @@ export async function createEditor(parent: HTMLElement, o: EditorOptions): Promi
     view,
     setSchema: async (s) => { if (o.lang === 'graphql') view.dispatch({ effects: lang.reconfigure(await langExt({ ...o, schema: s })) }) },
     destroy: () => view.destroy(),
+    collapseAll: () => { foldAll(view) },
+    expandAll: () => { unfoldAll(view) },
   }
 }
 
