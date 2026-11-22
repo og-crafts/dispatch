@@ -4,7 +4,7 @@
 ; (sha256 d00089d3b1a2..., the same file at tauri-cli-v2.12.6). Tauri is MIT or Apache-2.0 licensed.
 ; Every change is marked "DISPATCH:"; there are seven. When @tauri-apps/cli is bumped, diff Tauri's new template
 ; against the old one, re-apply the marked blocks and update the version above (tests/installer.test.ts checks it).
-; TAURI-CLI-VERSION: 2.12.4
+; TAURI-CLI-VERSION: 2.12.5
 ;
 Unicode true
 ManifestDPIAware true
