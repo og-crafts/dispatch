@@ -4,6 +4,7 @@ import type { FolderStatus, WorkspaceApi } from './useWorkspace'
 import { FolderIssues } from './FolderIssues'
 
 /** True when a linked folder has files waiting for a choice. */
+const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 const needsChoice = (st?: FolderStatus) => !!st && !!(st.conflicts.length || st.copies?.length || st.strays?.length || st.unreadable?.length)
 
 /** Add, rename and remove workspaces (groups of collections, environments and flows), and link them to folders. */
@@ -43,55 +44,51 @@ export function SpacesView({ ws, ask, confirm, notify }: { ws: WorkspaceApi; ask
     <section className="editor" aria-label="Workspaces">
       <h1 className="titleInput">Workspaces</h1>
       <p className="muted small">Group collections, environments and flows, e.g. one workspace per product or client. Switch from the top bar. Globals and history are shared by all workspaces. To move a collection or environment, use its ⋯ menu.</p>
-      <table className="resultTable" aria-label="Workspaces list">
-        <thead><tr><th>Name</th><th>Collections</th><th>Environments</th><th>Flows</th><th>Folder</th>{showAi && <th title="MCP assistants may change requests, collection variables and scripts here">AI can edit</th>}<th /></tr></thead>
-        <tbody>
-          {ws.spaces.map((x) => {
-            const cols = ws.allCollections.filter((c) => spaceOf(c) === x.id).length
-            const envs = ws.allEnvironments.filter((e) => spaceOf(e) === x.id).length
-            const flows = ws.allFlows.filter((f) => spaceOf(f) === x.id).length
-            const st = ws.folderStatus[`space:${x.id}`]
-            return (
-              <tr key={x.id} className={x.id === ws.activeSpaceId ? 'on' : ''}>
-                <td style={{ whiteSpace: 'nowrap' }}><b>{x.name}</b>{x.id === ws.activeSpaceId && <span className="pill">open</span>}</td>
-                <td>{cols}</td>
-                <td>{envs}</td>
-                <td>{flows}</td>
-                <td className="small">
-                  {x.linkedDir ? <>
-                    <code style={{ overflowWrap: 'anywhere' }}>{x.linkedDir}</code>
-                    {st?.error ? <p className="badText">Couldn’t write: {st.error}</p>
-                      : needsChoice(st) ? <p><b>Needs your choice</b>, see below.</p>
-                      : st ? <p className="muted">In step with the folder.</p> : null}
-                  </> : <span className="muted">—</span>}
-                </td>
-                {showAi && <td>
-                  {x.id === ASSISTANT_SPACE.id
-                    ? <span className="muted small">Its own</span>
-                    : <label className="check"><input type="checkbox" checked={!!x.aiEdit} disabled={busy} onChange={toggleAi(x)} aria-label={`AI assistants can edit ${x.name}`} /></label>}
-                </td>}
-                <td className="rowActions">
-                  {x.id !== ws.activeSpaceId && <button type="button" className="btn small" onClick={() => ws.switchSpace(x.id)}>Open</button>}
+      <ul className="spaceCards" aria-label="Workspaces list">
+        {ws.spaces.map((x) => {
+          const cols = ws.allCollections.filter((c) => spaceOf(c) === x.id).length
+          const envs = ws.allEnvironments.filter((e) => spaceOf(e) === x.id).length
+          const flows = ws.allFlows.filter((f) => spaceOf(f) === x.id).length
+          const st = ws.folderStatus[`space:${x.id}`]
+          const open = x.id === ws.activeSpaceId
+          return (
+            <li key={x.id} className={`spaceCard${open ? ' on' : ''}`} aria-label={x.name}>
+              <div className="spaceHead">
+                <b className="spaceName">{x.name}</b>{open && <span className="pill">open</span>}
+                <span className="muted small">{count(cols, 'collection')} · {count(envs, 'environment')} · {count(flows, 'flow')}</span>
+                <span className="spaceActions">
+                  {!open && <button type="button" className="btn small" onClick={() => ws.switchSpace(x.id)}>Open</button>}
                   <button type="button" className="btn small ghost" onClick={async () => { const n = await ask('Rename workspace', x.name); if (n) await ws.renameSpace(x.id, n) }}>Rename</button>
-                  {desktop && (x.linkedDir
-                    ? <>
-                      <button type="button" className="btn small ghost" disabled={busy} onClick={useFolder(x)} title="Make this workspace exactly what the folder holds (a backup is taken first)">Reload from folder</button>
-                      <button type="button" className="btn small ghost" disabled={busy} onClick={unlink(x)}>Unlink</button>
-                    </>
-                    : <button type="button" className="btn small ghost" disabled={busy} onClick={link(x)}>Link to a folder…</button>)}
-                  {x.id !== DEFAULT_SPACE.id && <button type="button" className="btn small danger" onClick={async () => {
+                  {x.id !== DEFAULT_SPACE.id && <button type="button" className="btn small ghost danger" onClick={async () => {
                     notify((await ws.removeSpace(x.id)) ? `Removed ${x.name}.` : `Move or delete ${x.name}’s collections and environments first.`)
                   }}>Remove</button>}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-      {ws.spaces.filter((x) => x.linkedDir && needsChoice(ws.folderStatus[`space:${x.id}`])).map((x) => <section key={x.id} aria-label={`Folder of ${x.name}`}>
-        <h2>{x.name}: <code>{x.linkedDir}</code></h2>
-        <FolderIssues ws={ws} statusKey={`space:${x.id}`} dir={x.linkedDir!} notify={notify} />
-      </section>)}
+                </span>
+              </div>
+              {desktop && <div className="spaceFolder">
+                {x.linkedDir ? <>
+                  <span className="spaceFolderPath"><span className="muted">Folder</span> <code>{x.linkedDir}</code></span>
+                  {st?.error ? <span className="folderState bad">Couldn’t write: {st.error}</span>
+                    : needsChoice(st) ? <span className="folderState warn">Needs your choice</span>
+                    : st ? <span className="folderState">In step</span> : null}
+                  <span className="actions">
+                    <button type="button" className="btn small ghost" disabled={busy} onClick={useFolder(x)} title="Make this workspace exactly what the folder holds (a backup is taken first)">Reload from folder</button>
+                    <button type="button" className="btn small ghost" disabled={busy} onClick={unlink(x)}>Unlink</button>
+                  </span>
+                </> : <>
+                  <span className="muted">Not kept in a folder.</span>
+                  <span className="actions"><button type="button" className="btn small ghost" disabled={busy} onClick={link(x)}>Link to a folder…</button></span>
+                </>}
+              </div>}
+              {x.linkedDir && needsChoice(st) && <FolderIssues ws={ws} statusKey={`space:${x.id}`} dir={x.linkedDir} notify={notify} />}
+              {showAi && <div className="spaceAi small">
+                {x.id === ASSISTANT_SPACE.id
+                  ? <span className="muted">AI assistants’ own workspace.</span>
+                  : <label className="check"><input type="checkbox" checked={!!x.aiEdit} disabled={busy} onChange={toggleAi(x)} aria-label={`AI assistants can edit ${x.name}`} /> AI assistants can edit this workspace</label>}
+              </div>}
+            </li>
+          )
+        })}
+      </ul>
       <div className="actions">
         <button type="button" className="btn primary" onClick={async () => { const n = await ask('New workspace'); if (n) { const sp = await ws.addSpace(n); ws.switchSpace(sp.id) } }}>+ New workspace</button>
         {desktop && <button type="button" className="btn" disabled={busy} onClick={run(async () => {
