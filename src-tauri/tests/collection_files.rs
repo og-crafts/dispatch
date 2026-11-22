@@ -71,3 +71,12 @@ fn sync_leaves_outside_changes_alone() {
     assert!(std::fs::read_dir(root.join("flows")).unwrap().all(|e| !e.unwrap().file_name().to_string_lossy().ends_with(".dispatch-tmp")));
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// The app hashes its own files the same way (src/core/folderMerge.ts `textHash`), so both must agree byte for byte.
+#[test]
+fn text_hash_matches_the_app() {
+    use dispatch_lib::text_hash;
+    assert_eq!(text_hash(""), "cbf29ce484222325");
+    assert_eq!(text_hash("dispatch"), "4592850c14d1d82b");
+    assert_eq!(text_hash("id: a\nname: Café ✈\n"), "117831fc4b033caa");
+}

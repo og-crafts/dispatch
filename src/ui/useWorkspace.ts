@@ -20,7 +20,18 @@ import { INBOX } from '../core/mcpWorkspace'
 import { track } from './telemetry'
 
 /** A linked folder's last sync: files changed outside the app that it left alone, or an error. */
-export interface FolderStatus { conflicts: string[]; error?: string; at: number }
+export interface FolderStatus {
+  /** Files changed both in the folder and in the app; neither side was overwritten. */
+  conflicts: string[]
+  error?: string
+  at: number
+  /** Copies a cloud drive or person made of a file (same item twice); never read as items. */
+  copies?: string[]
+  /** Copies whose names Dispatch doesn't read at all (e.g. `a.req (conflicted copy).yaml`); never touched. */
+  strays?: string[]
+  /** Files that changed in the folder but can't be read; the app keeps its version and doesn't overwrite them. */
+  unreadable?: { path: string; error: string }[]
+}
 
 export type View =
   | { kind: 'request' }
@@ -59,6 +70,22 @@ export interface Tab {
 }
 
 const same = (a: RequestDef, b: RequestDef) => JSON.stringify({ ...a, updatedAt: 0 }) === JSON.stringify({ ...b, updatedAt: 0 })
+
+/** How a change read from a linked folder is applied (docs/DESIGN-linked-workspaces.md, phase 2). */
+export interface FromFolder {
+  /** Keep open tabs that have unsaved edits as they are (the folder's version is saved; the tab stays a draft). */
+  keepEdits?: boolean
+  /** Put items the folder no longer has on the undo list under this label. */
+  trashLabel?: string
+}
+/** A tab after its request was replaced from a folder: the new version, unless `keepEdits` and the tab had edits. */
+function refreshTab(t: Tab, next: RequestDef[], before: RequestDef[], opts: FromFolder): Tab {
+  const r = next.find((x) => x.id === t.draft.id)
+  if (!r) return t
+  const old = before.find((x) => x.id === t.draft.id)
+  if (opts.keepEdits && old && !same(old, t.draft)) return t
+  return { ...t, draft: structuredClone(r) }
+}
 const byName = <T extends { name: string }>(a: T, b: T) => a.name.localeCompare(b.name)
 /**
  * A handed-over copy's scripts: the collection's and folders' scripts it ran with (outermost first), then its own,
@@ -761,11 +788,23 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
    * doesn't have are removed, the folder's items are added or updated (ids kept, moved here if they were elsewhere).
    * Collections with a folder of their own are left alone. Callers take a backup first.
    */
-  const replaceSpaceContents = useCallback(async (spaceId: string, w: { collections: Collection[]; folders: Folder[]; requests: RequestDef[]; environments: Environment[]; flows: Flow[] }) => {
+  const replaceSpaceContents = useCallback(async (spaceId: string, w: { collections: Collection[]; folders: Folder[]; requests: RequestDef[]; environments: Environment[]; flows: Flow[] }, opts: FromFolder = {}) => {
     const inSpace = <T extends { workspaceId?: string }>(x: T) => spaceOf(x) === spaceId
     const goneCols = collections.filter((c) => inSpace(c) && !c.linkedDir && !w.collections.some((x) => x.id === c.id)).map((c) => c.id)
     const goneEnvs = environments.filter((e) => inSpace(e) && !w.environments.some((x) => x.id === e.id)).map((e) => e.id)
     const goneFlows = flows.filter((f) => inSpace(f) && !w.flows.some((x) => x.id === f.id)).map((f) => f.id)
+    if (opts.trashLabel) {
+      const spaceCols = new Set(collections.filter((c) => inSpace(c) && !c.linkedDir).map((c) => c.id))
+      const keep = new Set(w.requests.map((r) => r.id))
+      const gone: Partial<Workspace> = {
+        collections: collections.filter((c) => goneCols.includes(c.id)),
+        folders: folders.filter((f) => goneCols.includes(f.collectionId)),
+        requests: requests.filter((r) => r.collectionId && spaceCols.has(r.collectionId) && !keep.has(r.id)),
+        environments: environments.filter((e) => goneEnvs.includes(e.id)),
+        flows: flows.filter((f) => goneFlows.includes(f.id)),
+      }
+      if (gone.collections!.length || gone.requests!.length || gone.environments!.length || gone.flows!.length) toTrash(opts.trashLabel, gone)
+    }
     const colIds = new Set([...goneCols, ...w.collections.map((c) => c.id)])
     for (const id of colIds) await db.deleteCollection(id)
     for (const id of goneEnvs) await db.deleteEnvironment(id)
@@ -777,20 +816,25 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     setRequests((rs) => [...rs.filter((r) => !r.collectionId || !colIds.has(r.collectionId)), ...w.requests])
     setEnvironments((es) => [...es.filter((e) => !goneEnvs.includes(e.id) && !w.environments.some((x) => x.id === e.id)), ...w.environments].sort(byName))
     setFlows((fs) => [...fs.filter((f) => !goneFlows.includes(f.id) && !w.flows.some((x) => x.id === f.id)), ...w.flows])
-    setTabs((ts) => ts.map((t) => { const r = w.requests.find((x) => x.id === t.draft.id); return r ? { ...t, draft: structuredClone(r) } : t }))
+    setTabs((ts) => ts.map((t) => refreshTab(t, w.requests, requests, opts)))
     if (settingsRef.current.activeEnvId && goneEnvs.includes(settingsRef.current.activeEnvId)) setSettings({ activeEnvId: null })
     setView((v) => (v.kind === 'flow' && goneFlows.includes(v.id) ? { kind: 'request' } : v))
-  }, [collections, environments, flows, setSettings])
+  }, [collections, folders, requests, environments, flows, setSettings, toTrash])
 
-  const replaceCollection = useCallback(async (w: Workspace) => {
+  const replaceCollection = useCallback(async (w: Workspace, opts: FromFolder = {}) => {
     const c = w.collections[0]
+    if (opts.trashLabel) {
+      const keep = new Set(w.requests.map((r) => r.id))
+      const gone = requests.filter((r) => r.collectionId === c.id && !keep.has(r.id))
+      if (gone.length) toTrash(opts.trashLabel, { requests: gone })
+    }
     await db.deleteCollection(c.id)
     await db.putMany({ collections: [c], folders: w.folders, requests: w.requests })
     setCollections((cs) => [...cs.filter((x) => x.id !== c.id), c].sort(byName))
     setFolders((fs) => [...fs.filter((f) => f.collectionId !== c.id), ...w.folders])
     setRequests((rs) => [...rs.filter((r) => r.collectionId !== c.id), ...w.requests])
-    setTabs((ts) => ts.map((t) => { const r = w.requests.find((x) => x.id === t.draft.id); return r ? { ...t, draft: structuredClone(r) } : t }))
-  }, [])
+    setTabs((ts) => ts.map((t) => refreshTab(t, w.requests, requests, opts)))
+  }, [requests, toTrash])
 
   /** Deletes several requests with one undo. */
   const removeRequests = useCallback(async (ids: string[]) => {

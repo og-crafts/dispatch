@@ -38,6 +38,8 @@ bytes = "1"
 futures-util = "0.3"
 # One running copy: a second launch focuses the open window (see run() in lib.rs).
 tauri-plugin-single-instance = "2"
+# Linked folders: notice files changed outside the app (git pull, a cloud drive). See src/folder_watch.rs.
+notify = "9"
 
 [profile.release]
 codegen-units = 1
