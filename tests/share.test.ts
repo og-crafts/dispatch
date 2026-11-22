@@ -109,6 +109,18 @@ describe('renderShareHtml', () => {
     expect(html).toContain('<title>&lt;b&gt;Shop&lt;/b&gt; 2.1.0</title>')
   })
 
+  it('opens on the Response tab when shared from the response', () => {
+    const r = newRequest({ name: 'Dogs', url: 'https://x.test/dogs', collectionId: col.id, sort: 0 })
+    const shared = buildShare({ kind: 'request', requestId: r.id, draft: r, open: 'response', lastResponse: { status: 200, statusText: 'OK', headers: [['Content-Type', 'application/json']], body: '{"data":[{"id":1}]}', binary: false, size: 19, timeMs: 5 } },
+      { collections: [col], folders: [], requests: [r], history: [] }, meta, defaultShareOptions)
+    expect(shared.open).toBe('response')
+    const dom = new JSDOM(renderShareHtml(shared), { runScripts: 'dangerously', url: 'https://share.test/dogs.html' })
+    const d = dom.window.document
+    expect(d.querySelector('.tabs button[aria-selected=true]')!.textContent).toBe('Response')
+    expect(d.querySelector('main .jtree')!.textContent).toContain('"data"')
+    dom.window.close()
+  })
+
   it('works when opened: list, tabs, curl, and data shown as text', async () => {
     const dom = new JSDOM(html, { runScripts: 'dangerously', url: 'https://share.test/page.html' })
     const w = dom.window
@@ -123,7 +135,14 @@ describe('renderShareHtml', () => {
     w.location.hash = '#r2'
     w.dispatchEvent(new w.HashChangeEvent('hashchange'))
     expect(d.querySelector('main h2')!.textContent).toBe('Second')
-    expect(d.querySelector('main .k')!.textContent).toBe('"a":') // JSON body highlighted
+    expect(d.querySelector('main .k')!.textContent).toBe('"a"') // JSON body shown as a coloured tree
+    // Every object folds; Collapse all keeps only the top level open, Expand all opens everything again.
+    const tree = d.querySelector('main .jtree')!
+    const btn = (t: string) => [...d.querySelectorAll('main .btns button')].find((x) => x.textContent === t) as HTMLButtonElement
+    btn('Collapse all').click()
+    expect([...tree.querySelectorAll('details')].map((x) => (x as HTMLDetailsElement).open)).toEqual([true, ...[...tree.querySelectorAll('details')].slice(1).map(() => false)])
+    btn('Expand all').click()
+    expect([...tree.querySelectorAll('details')].every((x) => (x as HTMLDetailsElement).open)).toBe(true)
     const curlTab = [...d.querySelectorAll('.tabs button')].find((x) => x.textContent === 'curl') as HTMLButtonElement
     curlTab.click()
     expect(d.querySelector('main pre')!.textContent).toMatch(/^curl[\s\S]*-X POST[\s\S]*'\{\{baseUrl\}\}\/b'/)

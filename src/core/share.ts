@@ -54,6 +54,8 @@ export interface ShareDoc {
   redactions: number
   options: { trimmed: boolean; server: string }
   requests: SharedRequest[]
+  /** The tab the page opens on (shared from the response: its Response tab). */
+  open?: 'response'
 }
 
 export const SECRET_NAME = /(authorization|cookie|token|secret|passw(?:or)?d|(?:^|[-_])pwd$|api[-_]?key|session|credential|signature|private[-_]?key|otp|cvv|ssn|card[-_]?number)/i
@@ -148,7 +150,7 @@ export interface ShareSource {
   history: HistoryEntry[]
 }
 
-export type ShareTarget = { kind: 'request'; requestId: string; draft?: RequestDef; lastResponse?: HttpResponse | null } | { kind: 'folder'; folderId: string } | { kind: 'collection'; collectionId: string }
+export type ShareTarget = { kind: 'request'; requestId: string; draft?: RequestDef; lastResponse?: HttpResponse | null; open?: 'response' } | { kind: 'folder'; folderId: string } | { kind: 'collection'; collectionId: string }
 
 /** The requests a target covers, in collection order, with their folder path. */
 function targetItems(t: ShareTarget, src: ShareSource): { request: RequestDef; path: string[]; collection: Collection | null }[] {
@@ -210,5 +212,6 @@ export function buildShare(t: ShareTarget, src: ShareSource, meta: ShareMeta, o:
     redactions: s.count,
     options: { trimmed: o.trim, server: o.serverAs },
     requests,
+    ...(t.kind === 'request' && t.open ? { open: t.open } : {}),
   }
 }

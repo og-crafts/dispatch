@@ -58,7 +58,7 @@ h2{font-size:18px;font-weight:600;margin:4px 0 8px}
 h3{font-size:13px;font-weight:600;color:var(--muted);margin:16px 0 8px}
 table{border-collapse:collapse;width:100%;font-size:13px}td{border-bottom:1px solid var(--line);padding:6px 8px;vertical-align:top;overflow-wrap:anywhere}
 td:first-child{width:32%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;color:var(--muted)}
-.pre{position:relative}
+.pre{position:relative}.pre .btns{position:absolute;top:8px;right:8px;display:flex;gap:4px}.jtree{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px 16px 12px 28px;overflow:auto;max-height:65vh;font:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.jl{white-space:pre-wrap;overflow-wrap:anywhere}.jk{padding-left:2ch}.jd>summary{list-style:none;cursor:pointer;position:relative;margin:0;color:inherit}.pre .btns button{position:static}.jd>summary::-webkit-details-marker{display:none}.jd>summary::before{content:'\\25BE';position:absolute;left:-1.3em;color:var(--muted)}.jd:not([open])>summary::before{content:'\\25B8'}.jd>summary:hover{background:var(--soft)}.jsum{display:none;color:var(--muted)}.jd:not([open])>summary .jsum{display:inline}
 pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px 16px;overflow:auto;max-height:65vh;white-space:pre-wrap;overflow-wrap:anywhere}
 .pre button{position:absolute;top:8px;right:8px}
 .k{color:var(--k)}.s{color:var(--s)}.n{color:var(--n)}.l{color:var(--l)}
@@ -72,7 +72,7 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:4px 0 12px}
 .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--solid);border:1px solid var(--line);box-shadow:var(--shadow);padding:8px 16px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none}
 .toast.on{opacity:1}
 @media (max-width:820px){.layout{grid-template-columns:minmax(0,1fr)}nav.glass{position:static;max-height:40vh}.tools{position:static;margin-bottom:8px}.wrap{padding:8px}}
-@media print{.tools,nav,.pre button,.tabs{display:none}.layout{display:block}.glass{border-color:#ddd}pre{max-height:none}}
+@media print{.tools,nav,.pre button,.tabs{display:none}.jtree{max-height:none}.layout{display:block}.glass{border-color:#ddd}pre{max-height:none}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 `
 
@@ -107,10 +107,38 @@ const JS = `
     frag.appendChild(document.createTextNode(text.slice(last)));
     return frag;
   }
+  // JSON as a tree: every object and array folds (click its first line), with Collapse all and Expand all.
+  function jnode(v, key, comma) {
+    function label(el) { if (key != null) { el.appendChild($('span', 'k', JSON.stringify(key))); el.appendChild(document.createTextNode(': ')); } }
+    var end = comma ? ',' : '';
+    if (v === null || typeof v !== 'object') {
+      var line = $('div', 'jl'); label(line);
+      line.appendChild($('span', typeof v === 'string' ? 's' : typeof v === 'number' ? 'n' : 'l', JSON.stringify(v)));
+      if (end) line.appendChild(document.createTextNode(end)); return line;
+    }
+    var arr = Array.isArray(v), keys = arr ? null : Object.keys(v), n = arr ? v.length : keys.length;
+    var o = arr ? '[' : '{', c = arr ? ']' : '}';
+    if (!n) { var e = $('div', 'jl'); label(e); e.appendChild(document.createTextNode(o + c + end)); return e; }
+    var d = $('details', 'jd'); d.open = true;
+    var sm = $('summary', 'jl'); label(sm); sm.appendChild(document.createTextNode(o));
+    sm.appendChild($('span', 'jsum', '\u2026' + c + end + '  ' + n + (arr ? (n === 1 ? ' item' : ' items') : (n === 1 ? ' key' : ' keys'))));
+    d.appendChild(sm);
+    var kids = $('div', 'jk');
+    for (var i = 0; i < n; i++) kids.appendChild(jnode(arr ? v[i] : v[keys[i]], arr ? null : keys[i], i < n - 1));
+    d.appendChild(kids); d.appendChild($('div', 'jl', c + end)); return d;
+  }
   function block(text, what) {
-    var w = $('div', 'pre'); var p = $('pre'); p.tabIndex = 0; p.appendChild(highlight(text));
+    var w = $('div', 'pre'), btns = $('span', 'btns'), data = null, t = (text || '').trim();
+    if ((t.charAt(0) === '{' || t.charAt(0) === '[') && t.length < 2000000) { try { data = JSON.parse(t); } catch (e) { data = null; } }
+    if (data !== null && typeof data === 'object') {
+      var tree = $('div', 'jtree'); tree.tabIndex = 0; tree.appendChild(jnode(data, null, false)); w.appendChild(tree);
+      function setAll(open) { Array.prototype.forEach.call(tree.querySelectorAll('details.jd'), function (d, i) { d.open = open || i === 0; }); }
+      var ca = $('button', null, 'Collapse all'); ca.type = 'button'; ca.onclick = function () { setAll(false); };
+      var ea = $('button', null, 'Expand all'); ea.type = 'button'; ea.onclick = function () { setAll(true); };
+      btns.appendChild(ca); btns.appendChild(ea);
+    } else { var p = $('pre'); p.tabIndex = 0; p.appendChild(highlight(text)); w.appendChild(p); }
     var b = $('button', null, 'Copy'); b.type = 'button'; b.setAttribute('aria-label', 'Copy ' + what.toLowerCase()); b.onclick = function () { copy(text, what); };
-    w.appendChild(p); w.appendChild(b); return w;
+    btns.appendChild(b); w.appendChild(btns); return w;
   }
   function headerTable(list) {
     var t = $('table'); var body = $('tbody');
@@ -164,7 +192,7 @@ const JS = `
 
   // One request
   var main = document.getElementById('main');
-  var tabNow = 'request';
+  var tabNow = doc.open || 'request';
   function show(i) {
     var r = doc.requests[i]; if (!r) return;
     links.forEach(function (a, j) { a.setAttribute('aria-current', j === i ? 'true' : 'false'); });

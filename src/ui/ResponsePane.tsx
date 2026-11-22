@@ -6,6 +6,7 @@ import { parseSetCookie } from '../core/cookies'
 import { uid } from '../core/types'
 import type { WorkspaceApi } from './useWorkspace'
 import { CodeArea } from './CodeArea'
+import { Icon } from './Icons'
 import { ResponseHistory, useRequestHistory } from './ResponseHistory'
 
 type Tab = 'body' | 'preview' | 'visualize' | 'headers' | 'cookies' | 'tests' | 'history' | 'sent'
@@ -18,7 +19,7 @@ export interface FileSaver { (fileName: string, data: { text?: string; base64?: 
 const extFor = (ct: string) => ct.includes('json') ? 'json' : ct.includes('html') ? 'html' : ct.includes('xml') ? 'xml' : ct.includes('png') ? 'png'
   : ct.includes('jpeg') ? 'jpg' : ct.includes('gif') ? 'gif' : ct.includes('pdf') ? 'pdf' : ct.includes('csv') ? 'csv' : ct.startsWith('text/') ? 'txt' : 'bin'
 
-export function ResponsePane({ ws, notify, saveFile }: { ws: WorkspaceApi; notify: (m: string) => void; saveFile?: FileSaver }) {
+export function ResponsePane({ ws, notify, saveFile, onShare }: { ws: WorkspaceApi; notify: (m: string) => void; saveFile?: FileSaver; onShare?: () => void }) {
   const { result, sending } = ws
   const earlier = useRequestHistory(ws)
   const [showEarlier, setShowEarlier] = useState(false)
@@ -88,6 +89,8 @@ export function ResponsePane({ ws, notify, saveFile }: { ws: WorkspaceApi; notif
         </span> : <span className="status bad">{result.error?.startsWith('Skipped') ? 'Skipped' : 'Not sent'}</span>}
         {tests.length > 0 && <span className={`metric ${passed === tests.length ? 'goodText' : 'badText'}`}>{passed}/{tests.length} tests passed</span>}
         <span className="grow" />
+        {res && onShare && <button type="button" className="btn ghost small withIcon" onClick={onShare} title="Save the request and this response as one HTML page anyone can open: tabs, copy buttons, foldable JSON. Secrets and personal values are left out.">
+          <Icon name="share" size={14} /> Share</button>}
         <button type="button" className="btn ghost small" onClick={() => copy(toCurl(result.sent), 'curl command')}>Copy as curl</button>
         {res && !res.binary && <button type="button" className="btn ghost small" onClick={() => copy(res.body, 'Body')}>Copy body</button>}
         {res && saveFile && <button type="button" className="btn ghost small" onClick={async () => {

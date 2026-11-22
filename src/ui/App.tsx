@@ -418,7 +418,8 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
                 <SplitPane
                   first={<RequestPane ws={ws} onSave={save} onSaveAs={() => void saveAs()} notify={notify} authActions={authActions} renderDocs={renderDocs}
                     onShare={() => setSharing({ kind: 'request', requestId: ws.draft.id, draft: ws.draft, lastResponse: ws.result?.response ?? null })} />}
-                  second={<ResponsePane ws={ws} notify={notify} saveFile={saveAnyFile} />} />
+                  second={<ResponsePane ws={ws} notify={notify} saveFile={saveAnyFile}
+                    onShare={() => setSharing({ kind: 'request', requestId: ws.draft.id, draft: ws.draft, lastResponse: ws.result?.response ?? null, open: 'response' })} />} />
               ) : (
                 <div className="nonHttp">
                   <div className="titleRow request">
