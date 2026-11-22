@@ -8,9 +8,10 @@ import { useEffect, useRef, useState } from 'react'
 import * as db from '../core/db'
 import { type FileEntry, collectionToFiles, filesToCollection, literalSecrets } from '../core/fileFormat'
 import { type Incoming, applyIncoming, describeIncoming, fileId, planIncoming, textHash } from '../core/folderMerge'
+import { VaultError, applySecrets, canonical, collectSecrets, deriveKeys, openVault, sealVault, vaultHeader, type VaultPayload } from '../core/secretsVault'
 import { type WorkspaceContent, filesToWorkspace, reIdTaken, workspaceHeader, workspaceToFiles } from '../core/workspaceFiles'
 import { type Collection, DEFAULT_SPACE, type Space, folderIdOf, spaceOf } from '../core/types'
-import type { WorkspaceApi } from './useWorkspace'
+import type { FolderStatus, WorkspaceApi } from './useWorkspace'
 
 const yaml = () => import('yaml')
 const dump = async () => { const { stringify } = await yaml(); return (v: unknown) => stringify(v, { lineWidth: 0 }) }
@@ -28,6 +29,10 @@ export interface FolderApi {
   strays?(root: string): Promise<string[]>
   /** Calls `onChange` when files in these folders change (debounced). Returns a function that stops watching. */
   watch?(roots: string[], onChange: (roots: string[]) => void): Promise<() => void>
+  /** The encrypted secrets file (secrets.dispatch-vault), or null. */
+  readVault?(root: string): Promise<{ text: string; hash: string } | null>
+  /** Writes it (null deletes) only over `known` (its last-seen hash, null = no file); rejects with "changed" otherwise. */
+  putVault?(root: string, text: string | null, known: string | null): Promise<string | null>
 }
 
 const invoke = async <T,>(cmd: string, args: Record<string, unknown>) => (await import('@tauri-apps/api/core')).invoke<T>(cmd, args)
@@ -43,6 +48,8 @@ export const desktopFolders: FolderApi = {
     await invoke('watch_folders', { roots })
     return () => { stop(); void invoke('watch_folders', { roots: [] }) }
   },
+  readVault: async (root) => { const r = await invoke<[string, string] | null>('read_vault', { root }); return r ? { text: r[0], hash: r[1] } : null },
+  putVault: (root, text, known) => invoke<string | null>('put_vault', { root, text, known }),
 }
 
 export const spaceKey = (id: string) => `space:${id}`
@@ -60,7 +67,7 @@ export function spaceContent(ws: WorkspaceApi, space: Space): WorkspaceContent {
 }
 
 /** Writes one linked folder and records what happened. Returns the conflicts. */
-async function syncOne(ws: WorkspaceApi, fs: FolderApi, key: string, dir: string, files: FileEntry[], force = false, pulled?: Pulled) {
+async function syncOne(ws: WorkspaceApi, fs: FolderApi, key: string, dir: string, files: FileEntry[], force = false, pulled?: Pulled, vault?: FolderStatus['vault']) {
   const state = force ? 'force' : (await db.getFolderState(key)) ?? {}
   try {
     if (state !== 'force') files = await holdBackRenames(fs, dir, files, state)
@@ -69,7 +76,7 @@ async function syncOne(ws: WorkspaceApi, fs: FolderApi, key: string, dir: string
     // Copies and unreadable files are listed on their own, not as conflicts.
     const apart = new Set([...(pulled?.copies ?? []), ...(pulled?.unreadable ?? []).map((u) => u.path)])
     const conflicts = r.conflicts.filter((p) => !apart.has(p))
-    ws.setFolderStatus(key, { conflicts, at: Date.now(), ...(pulled && !force ? { copies: pulled.copies, strays: pulled.strays, unreadable: pulled.unreadable } : {}) })
+    ws.setFolderStatus(key, { conflicts, at: Date.now(), ...(pulled && !force ? { copies: pulled.copies, strays: pulled.strays, unreadable: pulled.unreadable } : {}), ...(vault ? { vault } : {}) })
     return conflicts
   } catch (e) {
     ws.setFolderStatus(key, { conflicts: [], error: String(e), at: Date.now() })
@@ -233,13 +240,130 @@ export async function unlinkCollection(ws: WorkspaceApi, c: Collection) {
   ws.setFolderStatus(collectionKey(c.id), null)
 }
 
+// ---------- Secrets that travel with the folder (opt-in, encrypted; src/core/secretsVault.ts) ----------
+
+/** The secret values of a linked workspace's own items, as the secrets file holds them. */
+const spaceSecrets = (ws: WorkspaceApi, space: Space) => { const c = spaceContent(ws, space); return collectSecrets(c.environments, c.collections) }
+
+/** Puts the file's secret values into this device's items (never empties a value the file doesn't mention). */
+async function applyVault(ws: WorkspaceApi, space: Space, p: VaultPayload) {
+  const c = spaceContent(ws, space)
+  const r = applySecrets(p, c.environments, c.collections)
+  for (const e of r.environments) await ws.updateEnvironment(e)
+  for (const col of r.collections) await ws.updateCollection(col)
+  return r.environments.length + r.collections.length
+}
+
+/**
+ * Keeps the secrets file and this device in step, like the other files: changed only in the folder → taken in;
+ * changed only here → written; changed in both → a conflict (nothing overwritten). Without the passphrase on this
+ * device it does nothing but say so. A wrong passphrase or a damaged file never touches this device's values.
+ */
+async function syncVault(ws: WorkspaceApi, fs: FolderApi, space: Space): Promise<FolderStatus['vault']> {
+  if (!space.syncSecrets || !space.linkedDir || !fs.readVault || !fs.putVault) return undefined
+  const rec = (await db.getVaultRecord(space.id)) ?? {}
+  const disk = await fs.readVault(space.linkedDir)
+  if (!rec.keys) return { state: 'locked', note: disk ? 'This folder has encrypted secrets. Enter the passphrase to use them on this computer.' : 'Set a passphrase to start syncing secrets.' }
+  const mine = canonical(spaceSecrets(ws, space))
+  if (disk && disk.hash !== rec.fileHash) {
+    let theirs: string
+    try { theirs = canonical(await openVault(disk.text, rec.keys)) } catch (e) {
+      return { state: e instanceof VaultError && e.kind === 'wrong-passphrase' ? 'locked' : 'error', note: e instanceof Error ? e.message : String(e) }
+    }
+    if (theirs === mine || rec.last === undefined || mine === rec.last) {
+      if (theirs !== mine) await applyVault(ws, space, JSON.parse(theirs) as VaultPayload)
+      await db.putVaultRecord(space.id, { ...rec, fileHash: disk.hash, last: theirs })
+      return { state: 'ok' }
+    }
+    return { state: 'conflict', note: 'Secret values changed both on this computer and in the folder.' }
+  }
+  if (!disk || mine !== rec.last) {
+    try {
+      const hash = await fs.putVault(space.linkedDir, await sealVault(JSON.parse(mine) as VaultPayload, rec.keys), disk?.hash ?? null)
+      await db.putVaultRecord(space.id, { ...rec, fileHash: hash, last: mine })
+    } catch (e) {
+      if (String(e).includes('changed')) return { state: 'conflict', note: 'The secrets file changed in the folder while Dispatch was writing it.' }
+      return { state: 'error', note: String(e) }
+    }
+  }
+  return { state: 'ok' }
+}
+
+/**
+ * "Sync secrets…": a folder without a secrets file gets one, encrypted with this new passphrase. A folder that
+ * already has one is unlocked with it (the passphrase is checked first); its values then come into this device.
+ */
+export async function turnOnSecrets(ws: WorkspaceApi, fs: FolderApi, space: Space, passphrase: string): Promise<string> {
+  if (!space.linkedDir || !fs.readVault) throw new Error('Link the workspace to a folder first.')
+  return locked(spaceKey(space.id), async () => {
+    const disk = await fs.readVault!(space.linkedDir!)
+    let keys
+    if (disk) {
+      const h = vaultHeader(disk.text)
+      if (!h) throw new Error('The secrets file in this folder can’t be read (is it complete?).')
+      keys = await deriveKeys(passphrase, h.kdf.salt, Number(h.kdf.iterations))
+      await openVault(disk.text, keys) // throws on a wrong passphrase, before anything is kept
+    } else keys = await deriveKeys(passphrase)
+    await db.putVaultRecord(space.id, { keys })
+    await ws.setSpaceSecrets(space.id, true)
+    checkFolders()
+    return disk ? `Unlocked. “${space.name}” now uses the secrets kept in its folder.` : `Secrets sync is on for “${space.name}”. Other computers need the same passphrase.`
+  })
+}
+
+/** "Change passphrase…": the file is written again with a new passphrase; other computers ask for it once. */
+export async function changePassphrase(ws: WorkspaceApi, fs: FolderApi, space: Space, passphrase: string): Promise<string> {
+  if (!space.linkedDir || !fs.readVault || !fs.putVault) throw new Error('Link the workspace to a folder first.')
+  return locked(spaceKey(space.id), async () => {
+    const disk = await fs.readVault!(space.linkedDir!)
+    const keys = await deriveKeys(passphrase)
+    const mine = canonical(spaceSecrets(ws, space))
+    const hash = await fs.putVault!(space.linkedDir!, await sealVault(JSON.parse(mine) as VaultPayload, keys), disk?.hash ?? null)
+    await db.putVaultRecord(space.id, { keys, fileHash: hash, last: mine })
+    checkFolders()
+    return 'Passphrase changed. Other computers will ask for the new one.'
+  })
+}
+
+/** "Stop syncing secrets": this computer forgets the passphrase; the file stays in the folder for others. */
+export async function stopSecrets(ws: WorkspaceApi, space: Space): Promise<string> {
+  await db.putVaultRecord(space.id, undefined)
+  await ws.setSpaceSecrets(space.id, false)
+  ws.setFolderStatus(spaceKey(space.id), ws.folderStatus[spaceKey(space.id)] ? { ...ws.folderStatus[spaceKey(space.id)], vault: undefined } : null)
+  checkFolders()
+  return `Secrets sync is off on this computer. ${space.linkedDir ? 'The encrypted file stays in the folder for other computers; delete it there if nobody needs it.' : ''}`
+}
+
+/** A conflict on the secrets file: take the folder's values, or write this computer's over them. */
+export async function resolveVault(ws: WorkspaceApi, fs: FolderApi, space: Space, side: 'folder' | 'mine'): Promise<string> {
+  if (!space.linkedDir || !fs.readVault || !fs.putVault) throw new Error('Link the workspace to a folder first.')
+  return locked(spaceKey(space.id), async () => {
+    const rec = await db.getVaultRecord(space.id)
+    if (!rec?.keys) throw new Error('Enter the passphrase first.')
+    const disk = await fs.readVault!(space.linkedDir!)
+    if (side === 'folder') {
+      if (!disk) throw new Error('The folder has no secrets file any more.')
+      const p = await openVault(disk.text, rec.keys)
+      await applyVault(ws, space, p)
+      await db.putVaultRecord(space.id, { ...rec, fileHash: disk.hash, last: canonical(p) })
+      checkFolders()
+      return 'Took the secret values from the folder.'
+    }
+    const mine = canonical(spaceSecrets(ws, space))
+    const hash = await fs.putVault!(space.linkedDir!, await sealVault(JSON.parse(mine) as VaultPayload, rec.keys), disk?.hash ?? null)
+    await db.putVaultRecord(space.id, { ...rec, fileHash: hash, last: mine })
+    checkFolders()
+    return 'Wrote this computer’s secret values to the folder.'
+  })
+}
+
 /** One linked folder: what the app would write there, and how files read from it come into the app. */
-interface Job { key: string; dir: string; name: string; files: FileEntry[]; apply(files: FileEntry[], label: string): Promise<void> }
+interface Job { key: string; dir: string; name: string; files: FileEntry[]; space?: Space; apply(files: FileEntry[], label: string): Promise<void> }
 
 function jobsFor(ws: WorkspaceApi, stringify: (v: unknown) => string): Job[] {
   return [
     ...ws.spaces.filter((x) => x.linkedDir).map((x): Job => ({
-      key: spaceKey(x.id), dir: x.linkedDir!, name: x.name, files: workspaceToFiles(spaceContent(ws, x), stringify),
+      key: spaceKey(x.id), dir: x.linkedDir!, name: x.name, files: workspaceToFiles(spaceContent(ws, x), stringify), space: x,
       apply: async (files, label) => {
         const r = await readSpaceFiles(ws, x, files)
         const here = <T extends { workspaceId?: string }>(i: T) => ({ ...i, workspaceId: x.id })
@@ -375,7 +499,8 @@ export function useFolderSync(ws: WorkspaceApi, notify: (m: string) => void, fs:
       void (async () => {
         const jobs = jobsFor(ws, await dump())
         for (const j of jobs) {
-          const sig = `${j.dir}\n${JSON.stringify(j.files)}`
+          // Secret values aren't in the files; with secrets sync on, a changed secret must still trigger a run.
+          const sig = `${j.dir}\n${JSON.stringify(j.files)}${j.space?.syncSecrets ? `\n${canonical(spaceSecrets(ws, j.space))}` : ''}`
           if (last.current.get(j.key) === sig) continue
           const before = ws.folderStatus[j.key]?.conflicts.length ?? 0
           try {
@@ -383,7 +508,8 @@ export function useFolderSync(ws: WorkspaceApi, notify: (m: string) => void, fs:
               const pulled = await pullOne(fs, j)
               // What came in changes the app; the next run (after it re-renders) writes the folder.
               if (pulled?.incoming.length) return { pulled, conflicts: null }
-              return { pulled, conflicts: await syncOne(ws, fs, j.key, j.dir, j.files, false, pulled ?? undefined) }
+              const vault = j.space ? await syncVault(ws, fs, j.space).catch((e): FolderStatus['vault'] => ({ state: 'error', note: String(e) })) : undefined
+              return { pulled, conflicts: await syncOne(ws, fs, j.key, j.dir, j.files, false, pulled ?? undefined, vault) }
             })
             if (r.pulled?.incoming.length) { notify(`Updated from ${j.dir}: ${describeIncoming(r.pulled.incoming)}.`); continue }
             last.current.set(j.key, sig)

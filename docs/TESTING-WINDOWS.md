@@ -363,12 +363,17 @@ Run these from the repo folder in PowerShell.
       Workspaces page lists it as a copy with **Show differences** and **Delete the copy**.
    7. Put `<<<<<<< HEAD` on a line of an environment file: the page says the file can't be read and the app keeps its
       version. Remove the line: the message goes away.
-   8. Optional, with OneDrive or Dropbox on two computers: link the same workspace folder inside it on both, change a
+   8. **Sync secrets:** on the linked workspace's card, **Sync secrets…**, set a passphrase (twice). A file
+      `secrets.dispatch-vault` appears in the folder; open it in Notepad: no secret value is readable. Change a secret
+      variable: the file changes. **Change passphrase…** works, and **Stop syncing secrets** leaves the file in place.
+      On a second copy of the folder (or another computer), **Open a workspace folder…**, then **Sync secrets…** asks
+      to unlock: a wrong passphrase is refused, the right one fills in the secret values.
+   9. Optional, with OneDrive or Dropbox on two computers: link the same workspace folder inside it on both, change a
       request on one, and watch it arrive on the other.
-   9. **Unlink**, then use **Open a workspace folder…** on `C:\Temp\dispatch-ws`. Dispatch recognises its own
+   10. **Unlink**, then use **Open a workspace folder…** on `C:\Temp\dispatch-ws`. Dispatch recognises its own
       workspace and asks "You already have this workspace… Link it to this folder and use the folder's version?".
       Accept: it is linked again and the secret values are still there.
-   10. Copy `C:\Temp\dispatch-ws` to `C:\Temp\dispatch-copy` and, in the copy's `dispatch.workspace.yaml`, change
+   11. Copy `C:\Temp\dispatch-ws` to `C:\Temp\dispatch-copy` and, in the copy's `dispatch.workspace.yaml`, change
       `id:` to any new text and `name:` to "Copy". **Open a workspace folder…** on the copy: it opens as its own
       workspace "Copy" with the same collections, environments and flows, and secret values are empty there. The
       original workspace still has everything, with its secrets (it lost them in 0.5.0). In "Copy", a flow's request

@@ -589,6 +589,44 @@ fn watch_folders(app: tauri::AppHandle, state: tauri::State<'_, folder_watch::Wa
 #[tauri::command]
 fn folder_strays(root: String) -> Result<Vec<String>, String> { folder_watch::folder_strays(&root) }
 
+/// The encrypted secrets file of a linked workspace (src/core/secretsVault.ts). It is read and written on its own,
+/// never by `folder_sync`, so a device that doesn't sync secrets neither deletes it nor reports it as a conflict.
+pub const VAULT_FILE: &str = "secrets.dispatch-vault";
+
+/// The secrets file's (text, hash), or None when the folder has none.
+pub fn vault_read(root: &str) -> Result<Option<(String, String)>, String> {
+    let p = std::path::PathBuf::from(root).join(VAULT_FILE);
+    match std::fs::read_to_string(&p) {
+        Ok(text) => { let h = text_hash(&text); Ok(Some((text, h))) }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("Couldn’t read {VAULT_FILE}: {e}")),
+    }
+}
+
+/// Writes (or, with `text: None`, deletes) the secrets file, but only when the disk still holds what the app last saw
+/// (`known`: its hash, or None for "no file"). Returns the new hash, or Err("changed") when it changed outside.
+pub fn vault_put(root: &str, text: Option<&str>, known: Option<&str>) -> Result<Option<String>, String> {
+    let dir = std::path::PathBuf::from(root);
+    let p = dir.join(VAULT_FILE);
+    let disk = vault_read(root)?.map(|(_, h)| h);
+    if disk.as_deref() != known { return Err("changed".into()); }
+    match text {
+        None => { if disk.is_some() { std::fs::remove_file(&p).map_err(|e| format!("Couldn’t delete {VAULT_FILE}: {e}"))?; } Ok(None) }
+        Some(t) => {
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            let tmp = dir.join(format!(".{VAULT_FILE}.dispatch-tmp"));
+            std::fs::write(&tmp, t).map_err(|e| format!("Couldn’t write {VAULT_FILE}: {e}"))?;
+            std::fs::rename(&tmp, &p).map_err(|e| { let _ = std::fs::remove_file(&tmp); format!("Couldn’t write {VAULT_FILE}: {e}") })?;
+            Ok(Some(text_hash(t)))
+        }
+    }
+}
+
+#[tauri::command]
+fn read_vault(root: String) -> Result<Option<(String, String)>, String> { vault_read(&root) }
+#[tauri::command]
+fn put_vault(root: String, text: Option<String>, known: Option<String>) -> Result<Option<String>, String> { vault_put(&root, text.as_deref(), known.as_deref()) }
+
 /// Older API, kept for tests and callers that read a single collection folder.
 pub fn collection_dir_read(root: String) -> Result<Vec<(String, String)>, String> {
     if !std::path::Path::new(&root).join("dispatch.collection.yaml").exists() { return Err(format!("{root} has no dispatch.collection.yaml.")); }
@@ -748,7 +786,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![send_request, cancel_request, save_text_file, save_base64_file, open_url, oauth_listen, mock_start, mock_stop, mock_reply, grpc::grpc_describe, grpc::grpc_call, pick_folder, read_folder, sync_folder, watch_folders, folder_strays, notify_desktop, sse_open, sse_close, mcp_stdio_start, mcp_stdio_send, mcp_stdio_stop, browser_launch, browser_close, mcp_host::mcp_host_start, mcp_host::mcp_host_stop, mcp_host::mcp_host_reply, updater::update_check, updater::update_install])
+        .invoke_handler(tauri::generate_handler![send_request, cancel_request, save_text_file, save_base64_file, open_url, oauth_listen, mock_start, mock_stop, mock_reply, grpc::grpc_describe, grpc::grpc_call, pick_folder, read_folder, sync_folder, watch_folders, folder_strays, read_vault, put_vault, notify_desktop, sse_open, sse_close, mcp_stdio_start, mcp_stdio_send, mcp_stdio_stop, browser_launch, browser_close, mcp_host::mcp_host_start, mcp_host::mcp_host_stop, mcp_host::mcp_host_reply, updater::update_check, updater::update_install])
         .run(tauri::generate_context!())
         .expect("error while running Dispatch");
 }

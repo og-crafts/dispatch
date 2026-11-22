@@ -269,6 +269,20 @@ export const putSpaces = (s: Space[]) => put('meta', s, 'spaces')
  * files from ones changed outside it. 'force' means the next write overwrites ("keep mine"). Keyed by
  * `space:<id>` or `collection:<id>`.
  */
+/**
+ * What this device keeps for a workspace's synced secrets file (src/core/secretsVault.ts): the keys made from the
+ * passphrase, the file's hash as last seen and the secrets as last synced. Sealed with the device key, like every
+ * other secret at rest.
+ */
+export interface VaultRecord { keys?: import('./secretsVault').VaultKeys; fileHash?: string | null; last?: string }
+export async function getVaultRecord(spaceId: string): Promise<VaultRecord | undefined> {
+  const v = await getMeta<string>(`secretsVault:${spaceId}`)
+  if (!v) return undefined
+  try { return JSON.parse(await unseal(await key(), v)) as VaultRecord } catch { return undefined }
+}
+export async function putVaultRecord(spaceId: string, rec: VaultRecord | undefined) {
+  await put('meta', rec ? await seal(await key(), JSON.stringify(rec)) : undefined, `secretsVault:${spaceId}`)
+}
 export type FolderState = Record<string, string> | 'force'
 export const getFolderState = (key: string) => getMeta<FolderState>(`folder:${key}`)
 export const putFolderState = (key: string, v: FolderState | undefined) => put('meta', v, `folder:${key}`)

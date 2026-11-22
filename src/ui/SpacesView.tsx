@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ASSISTANT_SPACE, DEFAULT_SPACE, type Space, spaceOf } from '../core/types'
 import type { FolderStatus, WorkspaceApi } from './useWorkspace'
 import { FolderIssues } from './FolderIssues'
+import { PassphraseDialog } from './PassphraseDialog'
 
 /** True when a linked folder has files waiting for a choice. */
 const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
@@ -11,6 +12,7 @@ const needsChoice = (st?: FolderStatus) => !!st && !!(st.conflicts.length || st.
 export function SpacesView({ ws, ask, confirm, notify }: { ws: WorkspaceApi; ask: (t: string, initial?: string) => Promise<string | null>; confirm: (m: string) => Promise<boolean>; notify: (m: string) => void }) {
   const desktop = ws.transport.unrestricted
   const [busy, setBusy] = useState(false)
+  const [pass, setPass] = useState<{ mode: 'new' | 'unlock' | 'change'; space: Space } | null>(null)
   const run = (fn: () => Promise<string | void>) => async () => {
     if (busy) return
     setBusy(true)
@@ -34,6 +36,47 @@ export function SpacesView({ ws, ask, confirm, notify }: { ws: WorkspaceApi; ask
     const warnings = await reloadSpace(ws, desktopFolders, x)
     return `Read “${x.name}” from ${x.linkedDir}. A backup was taken first.${warnings.length ? ` ${warnings.length} note${warnings.length > 1 ? 's' : ''}: ${warnings[0]}` : ''}`
   })
+  // Secrets that travel with the folder: start (or unlock, when the folder already has the file), change, stop.
+  const startSecrets = (x: Space) => run(async () => {
+    const { desktopFolders } = await dirs()
+    setPass({ mode: (await desktopFolders.readVault?.(x.linkedDir!)) ? 'unlock' : 'new', space: x })
+  })
+  const stopSecretsFor = (x: Space) => run(async () => {
+    if (!await confirm(`Stop syncing secrets for “${x.name}” on this computer? Its secret values stay here; the encrypted file stays in the folder for other computers.`)) return
+    const { stopSecrets } = await dirs()
+    return stopSecrets(ws, x)
+  })
+  const resolveSecrets = (x: Space, side: 'folder' | 'mine') => run(async () => { const { desktopFolders, resolveVault } = await dirs(); return resolveVault(ws, desktopFolders, x, side) })
+  const secretsRow = (x: Space) => {
+    const v = ws.folderStatus[`space:${x.id}`]?.vault
+    return <div className="spaceSecrets">
+      {!x.syncSecrets ? <>
+        <span className="muted">Secret values stay on this computer.</span>
+        <span className="actions"><button type="button" className="btn small ghost" disabled={busy} onClick={startSecrets(x)}>Sync secrets…</button></span>
+      </> : v?.state === 'locked' ? <>
+        <span className="folderState warn">{v.note}</span>
+        <span className="actions">
+          <button type="button" className="btn small" disabled={busy} onClick={() => setPass({ mode: 'unlock', space: x })}>Enter passphrase…</button>
+          <button type="button" className="btn small ghost" disabled={busy} onClick={stopSecretsFor(x)}>Stop syncing secrets</button>
+        </span>
+      </> : v?.state === 'conflict' ? <>
+        <span className="folderState warn">{v.note}</span>
+        <span className="actions">
+          <button type="button" className="btn small" disabled={busy} onClick={resolveSecrets(x, 'folder')}>Use the folder’s</button>
+          <button type="button" className="btn small" disabled={busy} onClick={resolveSecrets(x, 'mine')}>Keep mine</button>
+        </span>
+      </> : v?.state === 'error' ? <>
+        <span className="folderState bad">{v.note}</span>
+        <span className="actions"><button type="button" className="btn small ghost" disabled={busy} onClick={stopSecretsFor(x)}>Stop syncing secrets</button></span>
+      </> : <>
+        <span className="folderState" title="secrets.dispatch-vault, encrypted with your passphrase">Secrets synced, encrypted</span>
+        <span className="actions">
+          <button type="button" className="btn small ghost" disabled={busy} onClick={() => setPass({ mode: 'change', space: x })}>Change passphrase…</button>
+          <button type="button" className="btn small ghost" disabled={busy} onClick={stopSecretsFor(x)}>Stop syncing secrets</button>
+        </span>
+      </>}
+    </div>
+  }
   const unlink = (x: Space) => run(async () => {
     const { unlinkSpace } = await dirs()
     await unlinkSpace(ws, x)
@@ -42,6 +85,11 @@ export function SpacesView({ ws, ask, confirm, notify }: { ws: WorkspaceApi; ask
 
   return (
     <section className="editor" aria-label="Workspaces">
+      {pass && <PassphraseDialog mode={pass.mode} workspace={pass.space.name} onClose={(m) => { setPass(null); if (m) notify(m) }}
+        run={async (p) => {
+          const d = await dirs()
+          return pass.mode === 'change' ? d.changePassphrase(ws, d.desktopFolders, pass.space, p) : d.turnOnSecrets(ws, d.desktopFolders, pass.space, p)
+        }} />}
       <h1 className="titleInput">Workspaces</h1>
       <p className="muted small">Group collections, environments and flows, e.g. one workspace per product or client. Switch from the top bar. Globals and history are shared by all workspaces. To move a collection or environment, use its ⋯ menu.</p>
       <ul className="spaceCards" aria-label="Workspaces list">
@@ -79,6 +127,7 @@ export function SpacesView({ ws, ask, confirm, notify }: { ws: WorkspaceApi; ask
                   <span className="actions"><button type="button" className="btn small ghost" disabled={busy} onClick={link(x)}>Link to a folder…</button></span>
                 </>}
               </div>}
+              {desktop && x.linkedDir && secretsRow(x)}
               {x.linkedDir && needsChoice(st) && <FolderIssues ws={ws} statusKey={`space:${x.id}`} dir={x.linkedDir} notify={notify} />}
               {showAi && <div className="spaceAi small">
                 {x.id === ASSISTANT_SPACE.id
@@ -100,7 +149,7 @@ export function SpacesView({ ws, ask, confirm, notify }: { ws: WorkspaceApi; ask
       {showAi && <p className="muted small"><b>AI can edit</b>: besides their own “{ASSISTANT_SPACE.name}” workspace, AI assistants may create, change, move and delete requests, set collection variables, and change pre-request and test scripts in a ticked workspace while it’s the open one. Scripts run when you send and can read your environment, secrets included. Unticked workspaces stay list-and-send.</p>}
       <p className="muted small">
         {desktop
-          ? <>A workspace linked to a folder is kept there as plain files, one per request, environment and flow, ready for git. Secret values, history and schedules stay on this device. Keep the folder in OneDrive, Dropbox, iCloud Drive or Syncthing, or in a git repo, to have the workspace on your other computers: changes made there come in on their own. If a file changed both there and here, Dispatch overwrites neither and asks which version to keep.</>
+          ? <>A workspace linked to a folder is kept there as plain files, one per request, environment and flow, ready for git. History and schedules stay on this device; secret values too, unless you turn on Sync secrets (they then travel encrypted with a passphrase). Keep the folder in OneDrive, Dropbox, iCloud Drive or Syncthing, or in a git repo, to have the workspace on your other computers: changes made there come in on their own. If a file changed both there and here, Dispatch overwrites neither and asks which version to keep.</>
           : <>Linking a workspace to a folder of files needs the desktop app.</>}
       </p>
     </section>

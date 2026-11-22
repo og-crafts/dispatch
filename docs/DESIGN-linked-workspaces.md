@@ -205,3 +205,20 @@ then phase 3 (CLI). Each is its own PR.
   choices: `takeFile`, `keepMineFile` (also deletes a copy), `fileVersions` for **Show differences**.
 - `src/ui/FolderIssues.tsx`: the list on the Workspaces page and a collection's Files section.
 - Whole-folder **Reload from folder** stays (with a backup first).
+
+## Secrets file as built (2026-11-22)
+
+- `src/core/secretsVault.ts`: PBKDF2-SHA-256 (600 000 rounds, 16-byte salt) → 64 bytes, 32 for AES-256-GCM and 32
+  for HMAC-SHA-256; IV = first 12 bytes of HMAC(payload), so the same secrets give the same file (no git noise). The
+  payload is secret variable values of the workspace's environments and collections, by item id and key; literal
+  auth secrets are not included. `openVault` tells a wrong passphrase, a passphrase changed elsewhere (other salt), a
+  damaged file and a newer format apart.
+- Rust `vault_read` / `vault_put` (`read_vault`, `put_vault`): the file is read and written on its own, compare
+  before write, and `folder_sync` never touches it, so a computer without secrets sync neither deletes it nor
+  reports it.
+- `src/ui/linkedDirs.ts` `syncVault` runs in every folder check of a workspace with `syncSecrets`: changed only in
+  the folder → applied (never emptying a value the file doesn't mention); changed only here → written; both → a
+  conflict with "Use the folder's" / "Keep mine". The device keeps `{ keys, fileHash, last }` sealed with its device
+  key (`db.getVaultRecord`). Turning it on over a folder that has the file unlocks it (passphrase checked first).
+- UI: the Secrets line on each linked workspace card (`SpacesView`), `PassphraseDialog` (new / unlock / change; at
+  least 10 characters, typed twice, "can't be recovered" said plainly).

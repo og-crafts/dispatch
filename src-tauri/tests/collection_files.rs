@@ -88,3 +88,26 @@ fn opens_web_and_mail_links_only() {
     for ok in ["https://dispatch.ogcrafts.cloud", "http://localhost:3000", "mailto:hello@ogcrafts.cloud?subject=Dispatch"] { assert!(openable_link(ok), "{ok}"); }
     for bad in ["file:///etc/passwd", "javascript:alert(1)", "ms-settings:", "C:\\Windows\\notepad.exe", ""] { assert!(!openable_link(bad), "{bad}"); }
 }
+
+/// The secrets file is written only over what the app last saw, and never by folder_sync.
+#[test]
+fn secrets_file_is_compare_before_write_and_left_alone_by_sync() {
+    use dispatch_lib::{folder_sync, vault_put, vault_read, VAULT_FILE};
+    let dir = std::env::temp_dir().join(format!("dispatch-vault-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let root = dir.to_str().unwrap();
+    assert_eq!(vault_read(root).unwrap(), None);
+    let h1 = vault_put(root, Some("{\"v\":1}"), None).unwrap().unwrap();
+    assert_eq!(vault_read(root).unwrap().unwrap().1, h1);
+    // Someone else changed it: the app's write is refused.
+    std::fs::write(dir.join(VAULT_FILE), "{\"v\":2}").unwrap();
+    assert_eq!(vault_put(root, Some("{\"v\":3}"), Some(&h1)).unwrap_err(), "changed");
+    // A sync of the other files (with "keep mine") neither deletes nor reports it.
+    let out = folder_sync(root, vec![("dispatch.workspace.yaml".into(), "id: w\n".into())], None).unwrap();
+    assert!(out.conflicts.is_empty());
+    assert_eq!(std::fs::read_to_string(dir.join(VAULT_FILE)).unwrap(), "{\"v\":2}");
+    let h2 = vault_read(root).unwrap().unwrap().1;
+    assert_eq!(vault_put(root, None, Some(&h2)).unwrap(), None);
+    assert!(!dir.join(VAULT_FILE).exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -2,8 +2,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { useWorkspace } from '../src/ui/useWorkspace'
-import { type FolderApi, checkFolders, keepMineFile, linkSpace, openSpaceFolder, reloadSpace, takeFile, useFolderSync } from '../src/ui/linkedDirs'
-import { resetForTests } from '../src/core/db'
+import { type FolderApi, changePassphrase, checkFolders, keepMineFile, linkSpace, openSpaceFolder, reloadSpace, resolveVault, takeFile, turnOnSecrets, useFolderSync } from '../src/ui/linkedDirs'
+import { getVaultRecord, resetForTests } from '../src/core/db'
+import { sealVault } from '../src/core/secretsVault'
 import { kv, newCollection, newRequest } from '../src/core/types'
 import { newFlow, newNode } from '../src/core/flows'
 import type { Transport } from '../src/core/transport'
@@ -14,6 +15,13 @@ class MemFolders implements FolderApi {
   dir(root: string) { if (!this.dirs.has(root)) this.dirs.set(root, new Map()); return this.dirs.get(root)! }
   async pick() { return null }
   hash(text: string) { return text }
+  vaults = new Map<string, string>()
+  async readVault(root: string) { const t = this.vaults.get(root); return t === undefined ? null : { text: t, hash: t } }
+  async putVault(root: string, text: string | null, known: string | null) {
+    if ((this.vaults.get(root) ?? null) !== known) throw new Error('changed')
+    if (text === null) { this.vaults.delete(root); return null }
+    this.vaults.set(root, text); return text
+  }
   async read(root: string) { return [...this.dir(root)].sort().map(([path, text]) => ({ path, text, hash: text })) }
   async sync(root: string, files: { path: string; text: string }[], known: Record<string, string> | null) {
     const d = this.dir(root), out: Record<string, string> = {}, conflicts: string[] = []
@@ -258,5 +266,86 @@ describe('linked workspaces: changes made in the folder (phase 2)', () => {
     await waitFor(() => expect(h.result.current.folderStatus[key]?.conflicts).toEqual([]), { timeout: 3000 })
     expect(h.result.current.allFlows[0].docs).toBe('from the app')
     expect(h.result.current.allEnvironments[0].variables.find((v) => v.key === 'token')?.value).toBe('top-secret')
+  })
+})
+
+describe('linked workspaces: secrets that travel with the folder (opt-in, encrypted)', () => {
+  const secretOf = (ws: ReturnType<typeof useWorkspace>) => ws.allEnvironments.find((e) => e.name === 'Staging')?.variables.find((v) => v.key === 'token')?.value
+  const check = async () => { await act(async () => { checkFolders() }) }
+
+  it('syncs secret values between two computers with a passphrase, and never in readable form', { timeout: 60_000 }, async () => {
+    // Computer A: a workspace with a secret, linked, secrets sync turned on.
+    const a = mount()
+    await waitFor(() => expect(a.h.result.current.ready).toBe(true))
+    await act(async () => {
+      const env = await a.h.result.current.addEnvironment('Staging')
+      await a.h.result.current.updateEnvironment({ ...env, variables: [kv('base', 'https://s.test'), kv('token', 'top-secret', true, { secret: true })] })
+    })
+    await act(async () => { await linkSpace(a.h.result.current, fs, a.h.result.current.spaces[0], '/repo', yes) })
+    await waitFor(() => expect(filesIn('/repo')).toContain('environments/staging.env.yaml'), { timeout: 3000 })
+    let msg = ''
+    await act(async () => { msg = await turnOnSecrets(a.h.result.current, fs, a.h.result.current.spaces[0], 'correct horse battery') })
+    expect(msg).toMatch(/Secrets sync is on/)
+    await waitFor(() => expect(fs.vaults.get('/repo')).toBeTruthy(), { timeout: 5000 })
+    expect(fs.vaults.get('/repo')).not.toContain('top-secret')
+    expect([...fs.dir('/repo').values()].join('\n')).not.toContain('top-secret')
+    a.h.unmount()
+
+    // Computer B: opens a copy of the folder; no secret until it unlocks; a wrong passphrase is refused.
+    await resetForTests()
+    fs.dirs.set('/clone', new Map(fs.dir('/repo'))); fs.vaults.set('/clone', fs.vaults.get('/repo')!)
+    const b = mount()
+    await waitFor(() => expect(b.h.result.current.ready).toBe(true))
+    await act(async () => { await openSpaceFolder(b.h.result.current, fs, '/clone', yes) })
+    expect(secretOf(b.h.result.current)).toBe('')
+    const space = () => b.h.result.current.spaces.find((x) => x.linkedDir === '/clone')!
+    await expect(turnOnSecrets(b.h.result.current, fs, space(), 'wrong passphrase')).rejects.toThrow(/doesn’t open/)
+    expect(space().syncSecrets).toBeFalsy()
+    await act(async () => { msg = await turnOnSecrets(b.h.result.current, fs, space(), 'correct horse battery') })
+    expect(msg).toMatch(/^Unlocked/)
+    await waitFor(() => expect(secretOf(b.h.result.current)).toBe('top-secret'), { timeout: 5000 })
+    const key = 'space:' + space().id
+    await waitFor(() => expect(b.h.result.current.folderStatus[key]?.vault?.state).toBe('ok'), { timeout: 5000 })
+
+    // B changes the secret: the file changes, and still doesn't show it.
+    const before = fs.vaults.get('/clone')
+    await act(async () => {
+      const e = b.h.result.current.allEnvironments.find((x) => x.name === 'Staging')!
+      await b.h.result.current.updateEnvironment({ ...e, variables: e.variables.map((v) => (v.key === 'token' ? { ...v, value: 'rotated' } : v)) })
+    })
+    await waitFor(() => expect(fs.vaults.get('/clone')).not.toBe(before), { timeout: 5000 })
+    expect(fs.vaults.get('/clone')).not.toContain('rotated')
+
+    // Someone else writes the file with yet another value while B changes it too: a conflict, nothing overwritten.
+    const theirs = fs.vaults.get('/clone')!
+    fs.vaults.set('/clone', theirs.replace(/"iv": "[^"]*"/, '"iv": "AAAAAAAAAAAAAAAA"')) // changed on disk (and can't be opened)
+    await check()
+    await waitFor(() => expect(b.h.result.current.folderStatus[key]?.vault?.state).toBe('locked'), { timeout: 5000 })
+    expect(secretOf(b.h.result.current)).toBe('rotated') // a file that doesn't open never touches this computer's values
+    fs.vaults.set('/clone', theirs)
+    await check()
+    await waitFor(() => expect(b.h.result.current.folderStatus[key]?.vault?.state).toBe('ok'), { timeout: 5000 })
+
+    // Another computer writes a new value while this one changes it too: a conflict; nothing is overwritten.
+    const rec = (await getVaultRecord(space().id))!
+    fs.vaults.set('/clone', await sealVault({ environments: { [b.h.result.current.allEnvironments.find((x) => x.name === 'Staging')!.id]: { token: 'from-laptop' } }, collections: {} }, rec.keys!))
+    await act(async () => {
+      const e = b.h.result.current.allEnvironments.find((x) => x.name === 'Staging')!
+      await b.h.result.current.updateEnvironment({ ...e, variables: e.variables.map((v) => (v.key === 'token' ? { ...v, value: 'from-desktop' } : v)) })
+    })
+    await waitFor(() => expect(b.h.result.current.folderStatus[key]?.vault?.state).toBe('conflict'), { timeout: 5000 })
+    expect(secretOf(b.h.result.current)).toBe('from-desktop')
+    await act(async () => { msg = await resolveVault(b.h.result.current, fs, space(), 'folder') })
+    expect(msg).toMatch(/from the folder/)
+    await waitFor(() => expect(secretOf(b.h.result.current)).toBe('from-laptop'), { timeout: 5000 })
+    await waitFor(() => expect(b.h.result.current.folderStatus[key]?.vault?.state).toBe('ok'), { timeout: 5000 })
+
+    // A new passphrase set here: the file is written again (another salt), and this computer keeps working.
+    const old = fs.vaults.get('/clone')
+    await act(async () => { msg = await changePassphrase(b.h.result.current, fs, space(), 'a brand new passphrase') })
+    expect(msg).toMatch(/Passphrase changed/)
+    expect(fs.vaults.get('/clone')).not.toBe(old)
+    await check()
+    await waitFor(() => expect(b.h.result.current.folderStatus[key]?.vault?.state).toBe('ok'), { timeout: 5000 })
   })
 })
