@@ -31,6 +31,8 @@ export interface FolderStatus {
   strays?: string[]
   /** Files that changed in the folder but can't be read; the app keeps its version and doesn't overwrite them. */
   unreadable?: { path: string; error: string }[]
+  /** The synced secrets file, when secrets sync is on: in step, waiting for the passphrase, or changed in both places. */
+  vault?: { state: 'ok' | 'locked' | 'conflict' | 'error'; note?: string }
 }
 
 export type View =
@@ -614,6 +616,9 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   const setSpaceAi = useCallback(async (id: string, on: boolean) => {
     await saveSpaces(spacesRef.current.map((x) => (x.id === id ? { ...x, aiEdit: on || undefined } : x)))
   }, [saveSpaces])
+  const setSpaceSecrets = useCallback(async (id: string, on: boolean) => {
+    await saveSpaces(spacesRef.current.map((x) => (x.id === id ? { ...x, syncSecrets: on || undefined } : x)))
+  }, [saveSpaces])
   /** Workspaces MCP assistants may write to: their own, and the user's that allow it. */
   const aiSpaces = () => new Set([ASSISTANT_SPACE.id, ...spacesRef.current.filter((x) => x.aiEdit).map((x) => x.id)])
   /**
@@ -903,7 +908,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   return {
     trash, undoDelete, backups, backupNow, restoreBackup, placeItems, sortByName, copyItems, saveTabTo, removeRequests, replaceCollection,
     flows: visibleFlows, allFlows: flows, addFlow, updateFlow, duplicateFlow, removeFlow, runFlowNow,
-    spaces, activeSpaceId, switchSpace, addSpace, addSpaceFrom, setSpaceFolder, setSpaceFolderId, renameSpace, removeSpace, moveToSpace, setSpaceAi,
+    spaces, activeSpaceId, switchSpace, addSpace, addSpaceFrom, setSpaceFolder, setSpaceFolderId, renameSpace, removeSpace, moveToSpace, setSpaceAi, setSpaceSecrets,
     replaceSpaceContents, folderStatus, setFolderStatus,
     /** Everything, across workspaces (exports, backups, file sync). The plain lists below are this workspace's. */
     allCollections: collections, allEnvironments: environments,

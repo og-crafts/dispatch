@@ -181,6 +181,8 @@ export interface Space {
   folderId?: string
   /** MCP assistants may create, change and delete requests here too, not just in ASSISTANT_SPACE (desktop Settings). */
   aiEdit?: boolean
+  /** Linked folders: the secret values travel in the folder, encrypted with a passphrase (src/core/secretsVault.ts). */
+  syncSecrets?: boolean
 }
 export const folderIdOf = (s: Space) => s.folderId ?? s.id
 export const DEFAULT_SPACE: Space = { id: 'default', name: 'My workspace' }

@@ -979,3 +979,5 @@ body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: 
 .folderState.bad::before { background: var(--danger); }
 .spaceAi { padding-top: 8px; border-top: 1px solid var(--outline); }
 .spaceCards ~ .actions { margin-bottom: 12px; }
+.spaceSecrets { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 13px; }
+.spaceSecrets .actions { margin: 0 0 0 auto; }
