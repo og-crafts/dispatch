@@ -169,7 +169,7 @@ Each phase is its own PR and release.
      Either can be revisited later; the web app does not sync.
 2. **For both audiences:** one person moving between their own computers, and small teams sharing a workspace in git
    (pull requests, CI through phase 3). Cloud-drive folders get extra care: they create copies such as
-   `create-charge (Omprakash's conflicted copy).req.yaml` or `… - Copy` files and may deliver half-synced folders, so
+   `create-charge (Laptop's conflicted copy).req.yaml` or `… - Copy` files and may deliver half-synced folders, so
    the watcher must treat those as conflicts or duplicates, never as new items silently added.
 3. **Secrets can sync, opt-in, encrypted.** Off by default (today's rule stays the default: secret values never go into
    the folder). When the user turns on "Sync secrets in this folder":
