@@ -947,3 +947,10 @@ body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: 
    actions wrapped at 1280px. */
 [data-look="grove"] .titleRow .protoPick { flex: none; width: 104px; min-width: 0; }
 [data-look="grove"] :is(.titleRow, .resHead) .btn.ghost { padding-inline: 9px; }
+
+/* Linked folders: files waiting for a choice (FolderIssues.tsx) */
+.folderIssues .folderFiles { list-style: none; margin: 4px 0 8px; padding: 0; display: grid; gap: 8px; }
+.folderIssues .folderFiles li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.folderIssues .folderFiles code { overflow-wrap: anywhere; }
+.folderIssues .folderFiles .actions { margin: 0; }
+.folderIssues .folderDiff { flex-basis: 100%; }

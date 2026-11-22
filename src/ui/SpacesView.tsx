@@ -1,6 +1,10 @@
 import { useState } from 'react'
 import { ASSISTANT_SPACE, DEFAULT_SPACE, type Space, spaceOf } from '../core/types'
-import type { WorkspaceApi } from './useWorkspace'
+import type { FolderStatus, WorkspaceApi } from './useWorkspace'
+import { FolderIssues } from './FolderIssues'
+
+/** True when a linked folder has files waiting for a choice. */
+const needsChoice = (st?: FolderStatus) => !!st && !!(st.conflicts.length || st.copies?.length || st.strays?.length || st.unreadable?.length)
 
 /** Add, rename and remove workspaces (groups of collections, environments and flows), and link them to folders. */
 export function SpacesView({ ws, ask, confirm, notify }: { ws: WorkspaceApi; ask: (t: string, initial?: string) => Promise<string | null>; confirm: (m: string) => Promise<boolean>; notify: (m: string) => void }) {
@@ -28,11 +32,6 @@ export function SpacesView({ ws, ask, confirm, notify }: { ws: WorkspaceApi; ask
     const { desktopFolders, reloadSpace } = await dirs()
     const warnings = await reloadSpace(ws, desktopFolders, x)
     return `Read “${x.name}” from ${x.linkedDir}. A backup was taken first.${warnings.length ? ` ${warnings.length} note${warnings.length > 1 ? 's' : ''}: ${warnings[0]}` : ''}`
-  })
-  const keepMine = (x: Space) => run(async () => {
-    const { desktopFolders, syncSpace } = await dirs()
-    await syncSpace(ws, desktopFolders, x, true)
-    return `Wrote this device’s version of “${x.name}” to ${x.linkedDir}.`
   })
   const unlink = (x: Space) => run(async () => {
     const { unlinkSpace } = await dirs()
@@ -62,13 +61,7 @@ export function SpacesView({ ws, ask, confirm, notify }: { ws: WorkspaceApi; ask
                   {x.linkedDir ? <>
                     <code style={{ overflowWrap: 'anywhere' }}>{x.linkedDir}</code>
                     {st?.error ? <p className="badText">Couldn’t write: {st.error}</p>
-                      : st?.conflicts.length ? <div className="note warn" role="status">
-                        <p><b>{st.conflicts.length} file{st.conflicts.length > 1 ? 's' : ''} changed outside Dispatch</b> and {st.conflicts.length > 1 ? 'were' : 'was'} left alone: <code>{st.conflicts.slice(0, 3).join(', ')}{st.conflicts.length > 3 ? ', …' : ''}</code></p>
-                        <div className="actions">
-                          <button type="button" className="btn small" disabled={busy} onClick={useFolder(x)}>Use the folder’s version</button>
-                          <button type="button" className="btn small" disabled={busy} onClick={keepMine(x)}>Keep mine</button>
-                        </div>
-                      </div>
+                      : needsChoice(st) ? <p><b>Needs your choice</b>, see below.</p>
                       : st ? <p className="muted">In step with the folder.</p> : null}
                   </> : <span className="muted">—</span>}
                 </td>
@@ -82,7 +75,7 @@ export function SpacesView({ ws, ask, confirm, notify }: { ws: WorkspaceApi; ask
                   <button type="button" className="btn small ghost" onClick={async () => { const n = await ask('Rename workspace', x.name); if (n) await ws.renameSpace(x.id, n) }}>Rename</button>
                   {desktop && (x.linkedDir
                     ? <>
-                      {!st?.conflicts.length && <button type="button" className="btn small ghost" disabled={busy} onClick={useFolder(x)}>Reload from folder</button>}
+                      <button type="button" className="btn small ghost" disabled={busy} onClick={useFolder(x)} title="Make this workspace exactly what the folder holds (a backup is taken first)">Reload from folder</button>
                       <button type="button" className="btn small ghost" disabled={busy} onClick={unlink(x)}>Unlink</button>
                     </>
                     : <button type="button" className="btn small ghost" disabled={busy} onClick={link(x)}>Link to a folder…</button>)}
@@ -95,6 +88,10 @@ export function SpacesView({ ws, ask, confirm, notify }: { ws: WorkspaceApi; ask
           })}
         </tbody>
       </table>
+      {ws.spaces.filter((x) => x.linkedDir && needsChoice(ws.folderStatus[`space:${x.id}`])).map((x) => <section key={x.id} aria-label={`Folder of ${x.name}`}>
+        <h2>{x.name}: <code>{x.linkedDir}</code></h2>
+        <FolderIssues ws={ws} statusKey={`space:${x.id}`} dir={x.linkedDir!} notify={notify} />
+      </section>)}
       <div className="actions">
         <button type="button" className="btn primary" onClick={async () => { const n = await ask('New workspace'); if (n) { const sp = await ws.addSpace(n); ws.switchSpace(sp.id) } }}>+ New workspace</button>
         {desktop && <button type="button" className="btn" disabled={busy} onClick={run(async () => {
@@ -106,7 +103,7 @@ export function SpacesView({ ws, ask, confirm, notify }: { ws: WorkspaceApi; ask
       {showAi && <p className="muted small"><b>AI can edit</b>: besides their own “{ASSISTANT_SPACE.name}” workspace, AI assistants may create, change, move and delete requests, set collection variables, and change pre-request and test scripts in a ticked workspace while it’s the open one. Scripts run when you send and can read your environment, secrets included. Unticked workspaces stay list-and-send.</p>}
       <p className="muted small">
         {desktop
-          ? <>A workspace linked to a folder is kept there as plain files, one per request, environment and flow, ready for git. Secret values, history and schedules stay on this device. If a file changes outside Dispatch (an editor, <code>git pull</code>), Dispatch leaves it alone and asks which version to keep.</>
+          ? <>A workspace linked to a folder is kept there as plain files, one per request, environment and flow, ready for git. Secret values, history and schedules stay on this device. Keep the folder in OneDrive, Dropbox, iCloud Drive or Syncthing, or in a git repo, to have the workspace on your other computers: changes made there come in on their own. If a file changed both there and here, Dispatch overwrites neither and asks which version to keep.</>
           : <>Linking a workspace to a folder of files needs the desktop app.</>}
       </p>
     </section>

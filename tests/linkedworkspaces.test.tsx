@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { useWorkspace } from '../src/ui/useWorkspace'
-import { type FolderApi, linkSpace, openSpaceFolder, reloadSpace, useFolderSync } from '../src/ui/linkedDirs'
+import { type FolderApi, checkFolders, keepMineFile, linkSpace, openSpaceFolder, reloadSpace, takeFile, useFolderSync } from '../src/ui/linkedDirs'
 import { resetForTests } from '../src/core/db'
 import { kv, newCollection, newRequest } from '../src/core/types'
 import { newFlow, newNode } from '../src/core/flows'
@@ -13,6 +13,7 @@ class MemFolders implements FolderApi {
   dirs = new Map<string, Map<string, string>>()
   dir(root: string) { if (!this.dirs.has(root)) this.dirs.set(root, new Map()); return this.dirs.get(root)! }
   async pick() { return null }
+  hash(text: string) { return text }
   async read(root: string) { return [...this.dir(root)].sort().map(([path, text]) => ({ path, text, hash: text })) }
   async sync(root: string, files: { path: string; text: string }[], known: Record<string, string> | null) {
     const d = this.dir(root), out: Record<string, string> = {}, conflicts: string[] = []
@@ -69,7 +70,7 @@ describe('linked workspaces', () => {
     await waitFor(() => expect(h.result.current.folderStatus['space:' + space.id]?.conflicts).toEqual(['flows/smoke.flow.yaml']), { timeout: 3000 })
     expect(fs.dir('/repo').get('flows/smoke.flow.yaml')).toBe(outside) // left alone
     expect(filesIn('/repo').filter((p) => p.startsWith('flows/'))).toEqual(['flows/smoke.flow.yaml']) // the renamed copy is held back
-    expect(notes.some((n) => n.includes('changed outside Dispatch'))).toBe(true)
+    expect(notes.some((n) => n.includes('changed both there and in Dispatch'))).toBe(true)
 
     // "Use the folder's version": the app now has git's flow; the device's secret survives.
     await act(async () => { await reloadSpace(h.result.current, fs, h.result.current.spaces[0]) })
@@ -171,5 +172,91 @@ describe('linked workspaces', () => {
     expect(await linkSpace(h.result.current, fs, h.result.current.spaces[0], '/col', yes)).toMatch(/other Dispatch files/)
     expect(await openSpaceFolder(h.result.current, fs, '/col', yes)).toMatch(/isn’t a Dispatch workspace folder/)
     expect(h.result.current.spaces[0].linkedDir).toBeUndefined()
+  })
+})
+
+describe('linked workspaces: changes made in the folder (phase 2)', () => {
+  async function linked() {
+    const m = mount()
+    const { h } = m
+    await waitFor(() => expect(h.result.current.ready).toBe(true))
+    await act(async () => {
+      const env = await h.result.current.addEnvironment('Staging')
+      await h.result.current.updateEnvironment({ ...env, variables: [kv('base', 'https://s.test'), kv('token', 'top-secret', true, { secret: true })] })
+      await h.result.current.addFlow('Smoke')
+    })
+    const space = h.result.current.spaces[0]
+    await act(async () => { await linkSpace(h.result.current, fs, space, '/repo', yes) })
+    await waitFor(() => expect(filesIn('/repo')).toContain('flows/smoke.flow.yaml'), { timeout: 3000 })
+    await waitFor(() => expect(h.result.current.folderStatus['space:' + space.id]).toBeTruthy(), { timeout: 3000 })
+    return { ...m, key: 'space:' + space.id }
+  }
+  const env = 'environments/staging.env.yaml'
+  const check = async () => { await act(async () => { checkFolders() }) }
+
+  it('takes in a change made only in the folder, keeping this device’s secret', async () => {
+    const { h, notes, key } = await linked()
+    fs.dir('/repo').set(env, fs.dir('/repo').get(env)!.replace('https://s.test', 'https://new.test'))
+    await check()
+    await waitFor(() => expect(h.result.current.allEnvironments[0].variables.find((v) => v.key === 'base')?.value).toBe('https://new.test'), { timeout: 3000 })
+    expect(h.result.current.allEnvironments[0].variables.find((v) => v.key === 'token')?.value).toBe('top-secret')
+    expect(notes.some((n) => n.startsWith('Updated from /repo: 1 environment'))).toBe(true)
+    await waitFor(() => expect(h.result.current.folderStatus[key]?.conflicts).toEqual([]), { timeout: 3000 })
+    expect(fs.dir('/repo').get(env)).toContain('https://new.test')
+    expect(fs.dir('/repo').get(env)).not.toContain('top-secret')
+  })
+
+  it('takes in files added and removed in the folder; a removed item can be undone', async () => {
+    const { h } = await linked()
+    fs.dir('/repo').delete('flows/smoke.flow.yaml')
+    fs.dir('/repo').set('environments/prod.env.yaml', 'id: prod-env\nname: Prod\nvariables:\n  - key: base\n    value: https://p.test\n')
+    await check()
+    await waitFor(() => expect(h.result.current.allEnvironments.map((e) => e.name).sort()).toEqual(['Prod', 'Staging']), { timeout: 3000 })
+    expect(h.result.current.allFlows).toEqual([])
+    expect(h.result.current.trash.at(-1)?.data.flows?.map((f) => f.name)).toEqual(['Smoke'])
+  })
+
+  it('sets a cloud drive’s copy aside instead of adding a duplicate, and removes it on “keep mine”', async () => {
+    const { h, key } = await linked()
+    const copy = "environments/staging (Laptop's conflicted copy).env.yaml"
+    fs.dir('/repo').set(copy, fs.dir('/repo').get(env)!.replace('https://s.test', 'https://laptop.test'))
+    await check()
+    await waitFor(() => expect(h.result.current.folderStatus[key]?.copies).toEqual([copy]), { timeout: 3000 })
+    expect(h.result.current.folderStatus[key]?.conflicts).toEqual([])
+    expect(h.result.current.allEnvironments.map((e) => e.name)).toEqual(['Staging'])
+    expect(fs.dir('/repo').has(copy)).toBe(true) // never deleted without asking
+    await act(async () => { await keepMineFile(fs, key, '/repo', copy) })
+    await waitFor(() => expect(fs.dir('/repo').has(copy)).toBe(false), { timeout: 3000 })
+  })
+
+  it('leaves a file it can’t read alone and says why', async () => {
+    const { h, key } = await linked()
+    fs.dir('/repo').set(env, 'id: x\n<<<<<<< HEAD\nname: A\n=======\nname: B\n>>>>>>> main\n  bad: [\n')
+    await check()
+    await waitFor(() => expect(h.result.current.folderStatus[key]?.unreadable?.map((u) => u.path)).toEqual([env]), { timeout: 3000 })
+    expect(h.result.current.allEnvironments[0].variables.find((v) => v.key === 'base')?.value).toBe('https://s.test')
+    expect(fs.dir('/repo').get(env)).toContain('<<<<<<<')
+  })
+
+  it('resolves one conflict at a time: the file’s version, or mine', async () => {
+    const { h, key } = await linked()
+    // Both sides change the environment and the flow's docs.
+    fs.dir('/repo').set(env, fs.dir('/repo').get(env)!.replace('https://s.test', 'https://folder.test'))
+    const flowPath = 'flows/smoke.flow.yaml'
+    fs.dir('/repo').set(flowPath, fs.dir('/repo').get(flowPath)!.replace('name: Smoke', 'name: Smoke\ndocs: from the folder'))
+    await act(async () => {
+      const e = h.result.current.allEnvironments[0]
+      await h.result.current.updateEnvironment({ ...e, variables: e.variables.map((v) => (v.key === 'base' ? { ...v, value: 'https://app.test' } : v)) })
+      const f = h.result.current.allFlows[0]
+      await h.result.current.updateFlow({ ...f, docs: 'from the app' })
+    })
+    await waitFor(() => expect(h.result.current.folderStatus[key]?.conflicts).toEqual([env, flowPath]), { timeout: 3000 })
+    await act(async () => { await takeFile(h.result.current, fs, key, env) })
+    await waitFor(() => expect(h.result.current.allEnvironments[0].variables.find((v) => v.key === 'base')?.value).toBe('https://folder.test'), { timeout: 3000 })
+    await act(async () => { await keepMineFile(fs, key, '/repo', flowPath) })
+    await waitFor(() => expect(fs.dir('/repo').get(flowPath)).toContain('from the app'), { timeout: 3000 })
+    await waitFor(() => expect(h.result.current.folderStatus[key]?.conflicts).toEqual([]), { timeout: 3000 })
+    expect(h.result.current.allFlows[0].docs).toBe('from the app')
+    expect(h.result.current.allEnvironments[0].variables.find((v) => v.key === 'token')?.value).toBe('top-secret')
   })
 })
