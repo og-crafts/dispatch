@@ -229,8 +229,13 @@ setup from 0a46658 is in the Predator's `Downloads` as `Dispatch_0.1.0_x64-setup
 `C:\Users\ompra\dispatch-data-backup-2026-11-21` (Claude, on the owner's request) were deleted on 2026-11-22; the app's
 own data in `AppData\Local\cloud.ogcrafts.dispatch` is untouched.
 - **Done 2026-11-22:** secret scanning + push protection on; SignPath Foundation application submitted and
-  **declined the same day** (not enough public visibility yet; reapply later, see `docs/SIGNING.md`). The site still
-  names SignPath on /download/ and /code-signing/; the owner decides what to do with that text. **Owner to-dos:** decisions on sync, macOS signing
+  **declined the same day** (not enough public visibility yet; reapply later, see `docs/SIGNING.md`). The owner chose
+  to drop SignPath from the site (this PR) and to go the **Microsoft Store** route for Windows (an MSIX package signed
+  by Microsoft; the direct downloads stay unsigned). Store developer sign-up (free, Individual) was started 2026-11-22
+  but Microsoft blocked creating a new Microsoft account for the OGCrafts Gmail address ("unusual activity"). Next:
+  the owner signs up with an existing Microsoft account or retries later from another network, reserves the app
+  name, and sends the Product identity values (Identity Name, Publisher `CN=…`, PublisherDisplayName). Then Claude
+  adds an MSIX build to CI with the in-app update check off for Store builds, and prepares the listing. **Owner to-dos:** decisions on sync, macOS signing
   and the email extras.
 - Preview (0.5.x) installs can't update to 0.1.0 (different bundle ID, no updater): export backup, uninstall,
   install, import (the download page says so).
