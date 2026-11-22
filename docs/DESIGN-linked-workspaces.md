@@ -155,3 +155,37 @@ Each phase is its own PR and release.
 2. **Schedules** stay on the device and out of the folder.
 3. **Collections that already have their own folder:** when their workspace is linked, Dispatch offers to move them
    into the workspace folder. If you decline, they keep their own folder and aren't written into the workspace folder.
+
+## Sync decision (owner, 2026-11-22)
+
+"Sync design" was an open owner decision since 0.4. Decided:
+
+1. **Sync is folder sync.** Dispatch syncs through the linked workspace folder, which the user keeps in their own
+   OneDrive, Dropbox, iCloud Drive, Syncthing or a git repo. No OGCrafts account or server, and no built-in storage
+   providers for now. This makes **phase 2 (watching and conflicts) the next piece of sync work**: without it, changes
+   arriving from another device only load on "Reload from folder".
+   - Not chosen: built-in "bring your own storage" (GitHub/WebDAV/S3/Drive, end-to-end encrypted; the only way the
+     web app could sync) and an OGCrafts sync service (servers, running costs, against "nothing stored on a server").
+     Either can be revisited later; the web app does not sync.
+2. **For both audiences:** one person moving between their own computers, and small teams sharing a workspace in git
+   (pull requests, CI through phase 3). Cloud-drive folders get extra care: they create copies such as
+   `create-charge (Omprakash's conflicted copy).req.yaml` or `… - Copy` files and may deliver half-synced folders, so
+   the watcher must treat those as conflicts or duplicates, never as new items silently added.
+3. **Secrets can sync, opt-in, encrypted.** Off by default (today's rule stays the default: secret values never go into
+   the folder). When the user turns on "Sync secrets in this folder":
+   - All of the workspace's secret values go into one file, `secrets.dispatch-vault`, next to
+     `dispatch.workspace.yaml`. Only that file holds them; every other file keeps empty secret values as today.
+   - The file is encrypted with a key derived from a passphrase the user chooses (WebCrypto: PBKDF2-SHA-256 with a high
+     iteration count, or Argon2id if a vetted WASM build is added; AES-256-GCM; random salt and IV in the file header;
+     a format version). Each device asks for the passphrase once and keeps the derived key in the device vault
+     (`src/core/vault.ts`), so it isn't typed again.
+   - A wrong passphrase or a damaged file never deletes or overwrites local secrets; Dispatch says so and waits.
+   - Without the passphrase, a teammate's device sees the secrets as "needs a value", exactly as today.
+   - Changing the passphrase re-encrypts the file. Forgetting it means entering the secrets again; there is no
+     recovery (said plainly in the UI).
+   - The file is written with the same compare-before-write and temp-file safety, and a conflict on it offers
+     "use the file's version" or "keep mine" only (no line diff of encrypted data).
+   - Teams that share a repo but not secrets simply leave it off, or add `secrets.dispatch-vault` to `.gitignore`.
+
+**Next build order:** phase 2 (watcher, reload, conflicts, cloud-drive copy handling), then the encrypted secrets file,
+then phase 3 (CLI). Each is its own PR.

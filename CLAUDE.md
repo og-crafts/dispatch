@@ -236,7 +236,7 @@ own data in `AppData\Local\cloud.ogcrafts.dispatch` is untouched.
   but Microsoft blocked creating a new Microsoft account for the OGCrafts Gmail address ("unusual activity"). Next:
   the owner signs up with an existing Microsoft account or retries later from another network, reserves the app
   name, and sends the Product identity values (Identity Name, Publisher `CN=…`, PublisherDisplayName). Then Claude
-  adds an MSIX build to CI with the in-app update check off for Store builds, and prepares the listing. **Owner to-dos:** decisions on sync, macOS signing
+  adds an MSIX build to CI with the in-app update check off for Store builds, and prepares the listing. **Owner to-dos:** decisions on macOS signing
   and the email extras.
 - Preview (0.5.x) installs can't update to 0.1.0 (different bundle ID, no updater): export backup, uninstall,
   install, import (the download page says so).
@@ -402,7 +402,7 @@ them. Without scripts the site is the Dispatch look following the system.
   2026-11-19 (above); its header art was redrawn with the new logo on 2026-11-20 (not yet seen in a real installer).
 - Turn on secret scanning + push protection (repo Settings → Code security; free for public repos). Off as of
   2026-11-22, together with Dependabot security updates.
-- Sync design.
+- Sync: decided 2026-11-22 (folder sync via phase 2 + opt-in encrypted secrets file; `docs/DESIGN-linked-workspaces.md` "Sync decision").
 - OGCrafts email extras: Gmail "Send mail as" via Resend and a DMARC record (see the memory note ogcrafts-brand).
 
 **Logo (2026-11-20).** The owner picked "Plane in motion" (option J of the logo sheet
