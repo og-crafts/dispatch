@@ -208,17 +208,19 @@ focus on the URL at all, both fixed in #50. gRPC over the internet couldn't be c
 9000/9001 time out from the homelab and the Predator) and grpc.postman-echo.com fails the TLS handshake
 ("InvalidContentType") with the old crates on `main` exactly as with #53, so TLS behaves as before; the local
 end-to-end and grpc-js tests cover plaintext.
-**Resume here (2026-11-22 evening, read first):** four PRs are open and wait for the owner's test on the Predator,
-then a merge on the owner's word: #67 linked folders phase 2 (folder watcher, per-file conflicts, cloud-drive copies,
-unreadable files; Workspaces page as one card per workspace), #68 Save disabled ("Saved") until the request changes,
-#69 response viewer (every text body up to 5 MB in CodeMirror by language, JSON/XML(`prettyXml`)/HTML/JS, Collapse
-all/Expand all, a note at the top for bigger bodies), #70 Share button in the response toolbar (Share as HTML with
-the response, opens on Response, JSON tree with folding). A throwaway branch `test/windows-2026-11-22` merges all
-four (387 tests); its CI was started by hand (`gh workflow run build.yml --ref <branch>`: build.yml only runs on
-`main`, tags and PRs, so a pushed test branch builds nothing) and its setup goes to the Predator's Downloads as
-`Dispatch_0.1.0_x64-setup-test-2026-11-22.exe`. Delete that branch after the test. Merge order: #67 first (biggest),
-then #68, #69, #70; #69 and #70 both touch `ResponsePane.tsx` imports and the end of `app.css` (keep both sides).
-Next after that: the opt-in encrypted secrets file, then phase 3 (CLI on workspace folders).
+**Resume here (2026-11-22 night, read first):** the owner asked to work end to end: sync secrets, then phase 3, then
+a plain 0.1.0 release for a Product Hunt launch. Merged today: #67 (folder watch) … #73 (folder order, Windows drag
+fix, feedback e-mail; owner checked it on the Predator). Open, stacked: **#74** Sync secrets (opt-in
+`secrets.dispatch-vault`, PBKDF2-SHA-256 600k + AES-256-GCM, deterministic IV from HMAC; `src/core/secretsVault.ts`,
+Rust `read_vault`/`put_vault`, `linkedDirs.syncVault`, `PassphraseDialog`) and **#75** on top of it (`dispatch-run`
+on workspace folders: `--env` by name, `--flow`, `mcp`; CI secrets `DISPATCH_SECRET_<KEY>` and
+`DISPATCH_VAULT_PASSPHRASE`). Merge #74 **without deleting its branch** (or retarget #75 to `main` first), then #75.
+The owner tests #75's CI build first (`Dispatch_0.1.0_x64-setup-secrets-cli.exe` on the Predator).
+**Then the plain 0.1.0 release:** a prep PR (changelog date, `docs/TESTING-WINDOWS.md` → v0.1.0, status), tag
+`v0.1.0` on `main` (channel "release"), the owner publishes the draft **as Latest**, then (owner's OK) delete the
+v0.5.0/v0.5.1 releases and tags so in-app updates find `latest.json`; publish the site from the tag (regenerate
+`site/release.json`, version "0.1.0"), bump ogcrafts.cloud `apps.json`. Release notes draft from `changelog.json`.
+Flaky under a loaded full run (pass alone): `dnd.test.tsx`, `handoff.test.tsx`, `regressions.test.tsx`.
 
 **Earlier on 2026-11-22:** **v0.1.0-SNAPSHOT is out.** The tag is on `main` 0a46658 (#60
 About + changelog.json, #61 friendly update-check message, #62 site look picker). CI was green on every job, and the owner
