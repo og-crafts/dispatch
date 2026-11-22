@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 /**
  * Runs one script in a Web Worker: no DOM, and network/storage APIs are removed before user code runs, so a script
- * imported with someone else's collection can't read your saved data or send it anywhere. pm.sendRequest goes
+ * imported with someone else's collection can't read your saved data or send it anywhere. dx.send (pm.sendRequest) goes
  * through the app (postMessage), which uses the normal transport.
  */
 import { type PmRequestData, type PmResponseData, type ScriptInput, compileWithFunction, runScript } from './scripts'

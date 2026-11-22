@@ -14,15 +14,15 @@ docs/TELEMETRY.md) or check for updates.
 ## Features
 
 **Everyday work**
-- Code editor (CodeMirror): syntax colours, `{{variable}}` and `pm.` autocomplete, GraphQL completion from the
+- Code editor (CodeMirror): syntax colours, `{{variable}}` and script (`dx.`) autocomplete, GraphQL completion from the
   schema, foldable JSON responses.
 - Secrets (secret variables, passwords, tokens, keys, Authorization/Cookie headers) encrypted at rest with a
   non-exportable device key; OAuth tokens saved after automatic refresh.
 - Undo for every delete; daily local backups with restore.
 - Sidebar drag and drop, multi-select, search across bodies/headers/docs (Ctrl+K).
 - Desktop: client certificates (mTLS), extra CA certificates, proxy, cookie manager.
-- Script compatibility: `require` lodash, moment, crypto-js, uuid, ajv, handlebars; `jsonSchema` checks;
-  `pm.visualizer` with a Visualize tab.
+- Script libraries: `require` lodash, moment, crypto-js, uuid, ajv, handlebars; JSON Schema checks;
+  `dx.visualize` with a Visualize tab.
 - Export to Postman; import from Insomnia and Bruno.
 - Collections as files (desktop): a folder of YAML files for git, written as you work; the CLI runs folders.
 - Scheduled runs with failure notifications.
@@ -55,9 +55,10 @@ refresh), JWT (HS256/384/512), AWS Signature v4; inherited from folders and coll
 **Variables**: globals, collection, environment, data-file and script-local scopes; secret values (hidden, left out
 of backups); 70 `{{$random…}}` fake-data generators; a `{{ }}` panel listing what's in scope.
 
-**Scripts and tests**: pre-request and post-response JavaScript with a `pm.*` scripting API, so many existing collection scripts keep working (variables,
-request edits, `pm.response`, `pm.test`/`pm.expect` with chai, `pm.sendRequest`, `setNextRequest`, `skipRequest`).
-Scripts run sandboxed in a Web Worker with no network or storage access of their own. Console for script output and
+**Scripts and tests**: JavaScript before the request and after the response, with Dispatch's `dx` API (variables,
+request edits, `dx.response`, `dx.send`, runner control) and `test()`/`expect()` checks with chai. Reference:
+[docs/SCRIPTS.md](docs/SCRIPTS.md). Scripts in collections imported from Postman run unchanged (`pm.*`), so you can
+move over at your own pace. Scripts run sandboxed in a Web Worker with no network or storage access of their own. Console for script output and
 the network log.
 
 **Collections**: nested folders with their own auth, scripts and docs; history; runner for collections, folders and
@@ -88,11 +89,12 @@ mock server aren't available.
 
     node examples/demo-server.mjs        # a tiny API on :4318 (login, orders, Digest, a flaky endpoint)
 
-Import `examples/demo-shop.postman_collection.json`, then run it in the Runner with `examples/users.csv` as the data
-file, or from the command line:
+Import `examples/demo-shop.dispatch.json`, then run it in the Runner with `examples/users.csv` as the data file, or
+from the command line (`examples/demo-shop.postman_collection.json` is the same collection as a Postman file, to try
+an import):
 
     npm run build:cli
-    ./dist-cli/dispatch-run.mjs examples/demo-shop.postman_collection.json -d examples/users.csv --junit report.xml
+    ./dist-cli/dispatch-run.mjs examples/demo-shop.dispatch.json -d examples/users.csv --junit report.xml
 
 For gRPC see `examples/grpc/README.md`.
 

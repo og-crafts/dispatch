@@ -73,6 +73,71 @@ describe('scripts', () => {
   })
 })
 
+describe('dx, Dispatch’s script API', () => {
+  it('writes checks with test and expect, and reads the response with plain names', async () => {
+    const o = await run(`
+      test('status', () => expect(dx.response.status).to.equal(200))
+      test('ok', () => expect(dx.response.ok).to.equal(true))
+      test('id', () => expect(dx.response.json('id')).to.equal(8))
+      test('path', () => expect(dx.response.json('items[1].n')).to.equal(2))
+      dx.test('header', () => expect(dx.response.headers.get('content-type')).to.include('json'))
+      test('fast', () => dx.expect(dx.response.time).to.be.below(100))
+      dx.env.set('meta', [dx.response.statusText, dx.response.size, dx.response.text().length].join(','))`)
+    expect(o.tests.map((t) => [t.name, t.passed])).toEqual([['status', true], ['ok', true], ['id', false], ['path', true], ['header', true], ['fast', true]])
+    expect(o.tests[2].error).toMatch(/expected 7 to equal 8/)
+    expect(o.vars.environment.meta).toBe('OK,30,34')
+  })
+  it('reads and writes each variable scope', async () => {
+    const o = await run(`
+      dx.env.set('token', 'abc'); dx.env.unset('e')
+      dx.collection.set('n', 5); dx.globals.set('g', { a: 1 }); dx.vars.set('local', 'L')
+      dx.env.set('seen', [dx.vars.get('token'), dx.vars.get('local'), dx.row.get('user'), dx.vars.get('user'), dx.vars.has('n')].join(','))
+      dx.env.set('filled', dx.vars.fill('Bearer {{token}} for {{user}} {{missing}}'))
+      dx.env.set('keys', Object.keys(dx.collection.all()).join(','))`, { vars: { globals: {}, collection: {}, environment: { e: '1', user: 'env' }, data: { user: 'row' }, locals: {} } })
+    expect(o.vars.environment).toEqual({ token: 'abc', user: 'env', seen: 'abc,L,row,row,true', filled: 'Bearer abc for row {{missing}}', keys: 'n' })
+    expect(o.vars.collection).toEqual({ n: '5' })
+    expect(o.vars.globals.g).toContain('"a": 1')
+    expect(o.vars.locals).toEqual({ local: 'L' })
+  })
+  it('keeps the data row read-only', async () => {
+    const o = await run(`dx.row.set('user', 'x')`)
+    expect(o.error).toMatch(/dx.row is the current data-file row/)
+  })
+  it('changes the request before it is sent', async () => {
+    const o = await run(`
+      dx.request.url = dx.request.url + '?q=1'; dx.request.method = 'post'
+      dx.request.headers.set('X-Id', 7); dx.request.headers.set('x-id', 8)
+      dx.request.body = { name: dx.request.name }`, { phase: 'pre', response: null })
+    expect(o.request).toMatchObject({ url: 'https://a.test/x?q=1', method: 'POST', body: { mode: 'raw', raw: '{"name":"r"}' } })
+    expect(o.request.headers).toEqual([{ key: 'X-Id', value: '8' }, { key: 'Content-Type', value: 'application/json' }])
+  })
+  it('sends other requests with dx.send', async () => {
+    const seen: unknown[] = []
+    const host = { sendRequest: async (r: { url: string; method: string; headers: unknown[]; body: unknown }) => { seen.push(r); return { code: 201, status: 'Created', headers: [] as [string, string][], body: `{"token":"t-${r.method}"}`, responseTime: 1, responseSize: 1 } } }
+    const o = await runScript(base(`
+      const a = await dx.send('https://other.test/a')
+      const b = await dx.send({ url: 'https://other.test/b', method: 'post', headers: { 'X-A': '1' }, body: { user: 'ann' } })
+      dx.env.set('got', [a.status, a.json('token'), b.json().token].join(','))`), host, compileWithFunction)
+    expect(o.error).toBeUndefined()
+    expect(o.vars.environment.got).toBe('201,t-GET,t-POST')
+    expect(seen[1]).toMatchObject({ method: 'POST', headers: [{ key: 'X-A', value: '1' }, { key: 'Content-Type', value: 'application/json' }], body: { mode: 'raw', raw: '{"user":"ann"}' } })
+  })
+  it('skips, picks the next request and stops a run', async () => {
+    expect((await run(`dx.skip()`, { phase: 'pre', response: null })).skip).toBe(true)
+    expect((await run(`dx.next('Login')`)).nextRequest).toBe('Login')
+    expect((await run(`dx.stop()`)).nextRequest).toBeNull()
+    expect((await run(`dx.env.set('i', JSON.stringify(dx.info))`)).vars.environment.i).toBe('{"request":"r","requestId":"id","iteration":0,"iterations":1,"phase":"after"}')
+  })
+  it('runs Postman scripts unchanged next to dx', async () => {
+    const o = await run(`
+      pm.test('pm', () => pm.response.to.have.status(200))
+      test('dx', () => expect(dx.response.status).to.equal(200))
+      pm.environment.set('a', '1'); dx.env.set('b', pm.environment.get('a'))`)
+    expect(o.tests.map((t) => t.passed)).toEqual([true, true])
+    expect(o.vars.environment).toMatchObject({ a: '1', b: '1' })
+  })
+})
+
 describe('applyVars', () => {
   it('updates, adds and removes rows but keeps disabled ones', () => {
     const rows = [kv('a', '1'), kv('b', '2'), kv('off', 'x', false)]
@@ -183,6 +248,20 @@ describe('script libraries (Postman sandbox compatibility)', () => {
     const o = await runWith(`pm.visualizer.set('<ul>{{#each items}}<li>{{n}}</li>{{/each}}</ul>', { items: pm.response.json().items })`)
     expect(o.visualizer?.html).toContain('<ul><li>1</li><li>2</li></ul>')
     expect(o.visualizer?.html).toContain('window.pm={getData')
+  })
+  it('loads ajv and handlebars for dx.response.validate and dx.visualize', async () => {
+    expect(neededLibs(`dx.response.validate({})`)).toEqual(['ajv'])
+    expect(neededLibs(`dx.visualize('<b>{{x}}</b>', {x: 1})`)).toEqual(['handlebars'])
+    const o = await runWith(`
+      const good = dx.response.validate({ type: 'object', required: ['id'] })
+      const bad = dx.response.validate({ type: 'object', required: ['name'] })
+      test('good', () => expect(good.valid).to.equal(true))
+      test('bad', () => expect(bad.valid, bad.errors.join('; ')).to.equal(true))
+      dx.visualize('<i>{{n}}</i>', { n: dx.response.json('items.1.n') })`)
+    expect(o.tests.map((t) => t.passed)).toEqual([true, false])
+    expect(o.tests[1].error).toMatch(/must have required property 'name'/)
+    expect(o.visualizer?.html).toContain('<i>2</i>')
+    expect(o.visualizer?.html).toContain('window.dx={data:{"n":2}}')
   })
   it('explains unknown modules', async () => {
     const o = await runWith(`require('left-pad')`)

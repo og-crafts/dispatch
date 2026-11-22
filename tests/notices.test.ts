@@ -13,7 +13,7 @@ describe('third-party notices', () => {
     const manrope = readFileSync('node_modules/@fontsource-variable/manrope/LICENSE', 'utf8').split('\n')[0]
     expect(readFileSync('src/main.tsx', 'utf8')).toContain('@fontsource-variable/manrope')
     expect(notices).toContain(manrope)
-    for (const f of ['OFL-Nunito.txt', 'OFL-GeistMono.txt']) {
+    for (const f of ['OFL-Manrope.txt', 'OFL-GeistMono.txt']) {
       expect(existsSync(`site/src/assets/fonts/${f}`)).toBe(true)
       expect(notices).toContain(readFileSync(`site/src/assets/fonts/${f}`, 'utf8').split('\n')[0])
     }

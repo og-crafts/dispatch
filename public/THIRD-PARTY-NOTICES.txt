@@ -9,12 +9,8 @@ src-tauri/Cargo.toml in the source repository.
 Fonts
 -----
 
-Manrope (the Grove themes in the app)
+Manrope (the Grove themes in the app, and the website)
   Copyright 2019 The Manrope Project Authors (https://github.com/sharanda/manrope)
-  SIL Open Font License, Version 1.1
-
-Nunito (the website)
-  Copyright 2014 The Nunito Project Authors (https://github.com/googlefonts/nunito)
   SIL Open Font License, Version 1.1
 
 Geist Mono (the website)

@@ -1,8 +1,8 @@
 # dispatch.ogcrafts.cloud
 
-Static marketing and legal site for Dispatch, with the web app published under `/app/`. Dispatch's own tokens (warm ground, ink and violet, method colours, 12px radius; dark theme through `prefers-color-scheme`), Nunito and Geist Mono self-hosted (SIL Open Font License; the licence texts are in `src/assets/fonts` and are published with the fonts). No trackers, no cookies, no third-party requests. A strict Content-Security-Policy `<meta>` is on every site page.
+Static marketing and legal site for Dispatch, with the web app published under `/app/`. Tokens follow the app's Dispatch look (graphite and white, hairlines, one amber accent, method colours, 12px radius; dark theme through `prefers-color-scheme`), Manrope and Geist Mono self-hosted (SIL Open Font License; the licence texts are in `src/assets/fonts` and are published with the fonts). No trackers, no cookies, no third-party requests. A strict Content-Security-Policy `<meta>` is on every site page.
 
-Pages: home (hero, features, tour with screenshots, imports, desktop vs web table, privacy summary, planned items, FAQ), `/download/`, `/cli/`, `/changelog/`, `/privacy/`, `/terms/`, `/support/`, 404, sitemap, robots, web manifest, `/app/` (the web app), `/downloads/dispatch-run.mjs` (the CLI).
+Pages: home (hero, a short promo video with captions, features, tour with screenshots and themes, imports, desktop vs web table, privacy summary, planned items, FAQ), `/download/`, `/cli/`, `/changelog/`, `/privacy/`, `/terms/`, `/support/`, 404, sitemap, robots, web manifest, `/app/` (the web app), `/downloads/dispatch-run.mjs` (the CLI).
 
 ## Build
 ```
@@ -16,8 +16,17 @@ Preview locally: `npx serve -c site/serve.json site/dist` (or any static server 
 ## The web app under /app/
 `scripts/publish-site.sh` builds the app (`npm run build`, relative base) and `build.py` copies the repo's `dist/` into `site/dist/app/`. The app's own `index.html` has no CSP, on purpose: it has to send requests to any host, open WebSockets, run workers and load CodeMirror. Do not put the site's CSP on `/app/`. GitHub Pages cannot set headers, so there are none; if you ever add a CSP for the app it must allow `connect-src * ws: wss:` and `worker-src 'self' blob:`. The web app keeps its data in IndexedDB for the origin `dispatch.ogcrafts.cloud`.
 
-## Screenshots
-`src/assets/shots/*.png` (1440x900) are real captures of the built web app (Playwright, headless Chromium) with `examples/demo-shop.postman_collection.json` imported and requests sent to `examples/demo-server.mjs` on :4318: request and response (light and dark), scripts and tests, runner with `examples/users.csv`, a load test of the flaky endpoint, and the generated docs. Retake them when the UI changes (recipe in CLAUDE.md, "Visual check without a desktop"). `og.png` is 1200x630.
+## Screenshots, video and link preview
+`src/assets/shots/*.png` (1440x900) are real captures of the built web app: `npm run build`, then
+`PLAYWRIGHT=<playwright dir> CHROMIUM=<chrome> node scripts/screenshots.mjs site` (it starts `examples/demo-server.mjs`
+on :4318 and `vite preview` on :5291, imports `examples/demo-shop.dispatch.json`, makes a "Demo shop (local)"
+environment and captures request and response in Dispatch light and dark and in Grove light and dark, scripts and
+tests, the runner with `examples/users.csv`, a load test of the flaky endpoint and the generated docs). Retake them
+when the UI changes.
+
+`src/assets/video/` holds the promo (16:9 MP4, poster and WebVTT captions) and `src/assets/og.png` (1200x630) the
+link preview; both come from `promo/` (see `promo/README.md`). The CSP allows `media-src 'self'` for the video.
+The home page also carries JSON-LD (`SoftwareApplication`); `build.py` checks that it parses.
 
 ## Desktop downloads (`site/release.json`, optional)
 The source repo is public (since 0.5.0), so `site/release.json` points straight at the installers on its published GitHub release. After publishing a release, regenerate `site/release.json` (see `release.example.json`):

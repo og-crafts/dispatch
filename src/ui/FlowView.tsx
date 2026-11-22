@@ -260,7 +260,7 @@ export function FlowView({ ws, flowId, notify, confirm }: { ws: WorkspaceApi; fl
                 </select>
               </label>
             )}
-            {node.type === 'script' && <CodeArea label="Script" lang="javascript" rows={8} value={node.config.code ?? ''} onChange={(v) => setConfig(node.id, 'code', v)} placeholder={'pm.variables.set("id", pm.response.json().id)'} />}
+            {node.type === 'script' && <CodeArea label="Script" lang="javascript" rows={8} value={node.config.code ?? ''} onChange={(v) => setConfig(node.id, 'code', v)} placeholder={'dx.vars.set("id", dx.response.json("id"))'} />}
             {node.type === 'if' && <>
               <label className="field"><span>Condition (JavaScript)</span><input className="mono" value={node.config.expression ?? ''} onChange={(e) => setConfig(node.id, 'expression', e.target.value)} /></label>
               <p className="muted tiny">Use <code>response.code</code>, <code>response.json</code>, <code>response.headers</code> (the last request) and <code>vars.name</code>.</p>

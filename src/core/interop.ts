@@ -255,7 +255,7 @@ export function importBruno(files: BruFile[]): ImportResult {
     req.scripts = { pre: blocks.get('script:pre-request') ?? '', post: [blocks.get('script:post-response'), blocks.get('tests')].filter(Boolean).join('\n\n') }
     req.docs = blocks.get('docs') ?? ''
     if ([...blocks.keys()].some((k) => k.startsWith('assert'))) warnings.push(`${req.name}: Bruno assertions aren’t imported; write them as tests.`)
-    if (req.scripts.post.includes('res.') || req.scripts.pre.includes('bru.')) warnings.push(`${req.name}: Bruno's script API (bru., res.) differs from pm.; review the scripts.`)
+    if (req.scripts.post.includes('res.') || req.scripts.pre.includes('bru.')) warnings.push(`${req.name}: Bruno's script API (bru., res.) isn’t Dispatch's (dx.); review the scripts.`)
     requests.push(req)
   }
   if (!requests.length && !environments.length) throw new Error('No Bruno requests found. Choose the collection folder (the one with bruno.json).')

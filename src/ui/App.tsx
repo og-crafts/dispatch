@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useMenuDismiss } from './menus'
 import { useWorkspace, type View, type WorkspaceApi } from './useWorkspace'
 import { useDialogs } from './Dialogs'
 import { useContextMenu } from './ContextMenu'
@@ -162,6 +163,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
     void runUpdateCheck(notify, confirm, true)
   }, [ws.ready, ws.settings.updateCheckOnStart, notify, confirm])
   useFolderSync(ws, notify)
+  useMenuDismiss()
   const sched = useScheduler(ws)
   // Every delete can be undone from the toast.
   const trashCount = useRef(0)
