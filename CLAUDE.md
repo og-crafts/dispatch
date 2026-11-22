@@ -218,16 +218,24 @@ API, using the `digest` field for checksums; `VITE_APTABASE_APP_KEY`/`VITE_SENTR
 `VITE_DISPATCH_CHANNEL=snapshot`). dispatch.ogcrafts.cloud has the Look menu, /download/ shows "0.1.0 (snapshot)", and
 /changelog/ is live. ogcrafts.cloud (repo og-crafts/site) `apps.json` lists Dispatch 0.1.0. `site/release.json` on
 `main` matches the published snapshot.
-Nothing is open on GitHub except this status PR. Options: items from the Kan "To do" list.
+Nothing else is open on GitHub. #63 (merged 2026-11-22) added the SignPath sentence to the download page, and the site
+was republished from `main` with it. Options: items from the Kan "To do" list.
 Dependabot tip: after one npm PR merges, the others conflict in `package-lock.json`. Dependabot rebases its own PRs
 (even over a pushed merge commit, as it did with #45), and a branch Claude pushed to is fixed by merging `main`,
 taking main's lockfile and running `npm install`.
 Seen for real: the new icon, the splash and the app in a real install on the Predator (owner, 2026-11-21); the snapshot
 setup from 0a46658 is in the Predator's `Downloads` as `Dispatch_0.1.0_x64-setup-snapshot.exe`. Not yet checked: the
-.dmg window, the splash at 125/150/200 % scaling. Older test setups in `Downloads` and
-`C:\Users\ompra\dispatch-data-backup-2026-11-21` are for the owner to delete.
-- **Done 2026-11-22:** secret scanning + push protection on; SignPath Foundation application submitted (waiting for
-  their email; next steps in `docs/SIGNING.md` "After approval"). **Owner to-dos:** decisions on sync, macOS signing
+.dmg window, the splash at 125/150/200 % scaling. The older test setups (owner) and
+`C:\Users\ompra\dispatch-data-backup-2026-11-21` (Claude, on the owner's request) were deleted on 2026-11-22; the app's
+own data in `AppData\Local\cloud.ogcrafts.dispatch` is untouched.
+- **Done 2026-11-22:** secret scanning + push protection on; SignPath Foundation application submitted and
+  **declined the same day** (not enough public visibility yet; reapply later, see `docs/SIGNING.md`). The owner chose
+  to drop SignPath from the site (this PR) and to go the **Microsoft Store** route for Windows (an MSIX package signed
+  by Microsoft; the direct downloads stay unsigned). Store developer sign-up (free, Individual) was started 2026-11-22
+  but Microsoft blocked creating a new Microsoft account for the OGCrafts Gmail address ("unusual activity"). Next:
+  the owner signs up with an existing Microsoft account or retries later from another network, reserves the app
+  name, and sends the Product identity values (Identity Name, Publisher `CN=…`, PublisherDisplayName). Then Claude
+  adds an MSIX build to CI with the in-app update check off for Store builds, and prepares the listing. **Owner to-dos:** decisions on sync, macOS signing
   and the email extras.
 - Preview (0.5.x) installs can't update to 0.1.0 (different bundle ID, no updater): export backup, uninstall,
   install, import (the download page says so).

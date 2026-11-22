@@ -16,7 +16,7 @@ BASE = "https://dispatch.ogcrafts.cloud"
 EMAIL = "hello@ogcrafts.cloud"
 DAY = datetime.date.today().isoformat()
 # When each legal page's wording last changed. Change the date with the text, never on a plain rebuild.
-UPDATED = {"privacy": "2026-11-22", "code-signing": "2026-11-16", "terms": "2026-11-14"}
+UPDATED = {"privacy": "2026-11-22", "code-signing": "2026-11-22", "terms": "2026-11-14"}
 VERSION = json.loads((REPO / "package.json").read_text())["version"]
 STRICT = "--strict" in sys.argv
 e = html.escape
@@ -271,7 +271,7 @@ def download():
 <h3>macOS</h3><p>Gatekeeper says it cannot verify the app. Open the <code>.dmg</code> and drag Dispatch to Applications. Then Control-click the app, choose <strong>Open</strong>, and confirm. If that option is missing, open <strong>System Settings, Privacy &amp; Security</strong> and choose <strong>Open Anyway</strong> next to the message about Dispatch.</p>
 <h3>Linux</h3><p>There is no signing warning. Install the <code>.deb</code> with <code>sudo apt install ./file.deb</code> or the <code>.rpm</code> with <code>sudo dnf install ./file.rpm</code>. For an AppImage, make it executable (<code>chmod +x file.AppImage</code>) and run it.</p>
 <p>Check the SHA-256 checksum next to each download before you open it. The desktop app can update itself: <strong>Menu, Check for updates</strong>. Updates are checked against Dispatch&rsquo;s own signing key before they install. If you installed a preview from before 0.1.0, it can&rsquo;t update to 0.1.0: export a backup in it (<strong>Menu, Export backup</strong>), uninstall it, install 0.1.0 from this page and import the backup.</p>
-<p>Free code signing provided by <a href="https://about.signpath.io">SignPath.io</a>, certificate by <a href="https://signpath.org">SignPath Foundation</a>. Signing starts with the first release after the project is accepted; see the <a href="/code-signing/">code signing policy</a> for how Windows releases are signed.</p>"""
+<p>The <a href="/code-signing/">code signing policy</a> says how Dispatch&rsquo;s installers are built and how you can check that a download is genuine.</p>"""
 
 def cli_page():
     dl = (f'<p><a class="btn primary" href="/downloads/dispatch-run.mjs" download>Download dispatch-run.mjs</a><code class="hash">SHA-256 {CLI_SHA}</code></p>' if CLI else '<p class="note">The download link appears here when the site is published.</p>')
@@ -355,20 +355,22 @@ def privacy():
 
 def code_signing():
     return f"""<h1>Code signing policy</h1><p class="updated">Last updated {UPDATED["code-signing"]}.</p>
-<p>Free code signing provided by <a href="https://about.signpath.io">SignPath.io</a>, certificate by <a href="https://signpath.org">SignPath Foundation</a>.</p>
-<p>Windows installers of Dispatch are signed so that Windows can check they come from this project and were not changed on the way. Signing starts with the first release after the project is accepted by SignPath Foundation; earlier releases are unsigned.</p>
-<h2>What is signed</h2>
-<ul><li>Only Dispatch itself: the Windows setup program and MSI package published on the <a href="https://github.com/og-crafts/dispatch/releases">GitHub releases page</a> and on the <a href="/download/">download page</a>.</li>
-<li>Every signed file is built by GitHub Actions on GitHub-hosted runners, directly from the source code in the public repository <a href="https://github.com/og-crafts/dispatch">og-crafts/dispatch</a>. SignPath checks that origin before it signs.</li>
-<li>Nothing built outside that workflow is signed, and no third-party program is signed with this certificate.</li></ul>
+<p>The Windows and macOS installers of Dispatch are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper warn the first time you open Dispatch. The <a href="/download/#unsigned">download page</a> explains how to open it. This page says how the installers are made and how you can check that the file you have is the one we published.</p>
+<h2>How the installers are made</h2>
+<ul><li>Every installer is built by GitHub Actions on GitHub-hosted runners, directly from the source code in the public repository <a href="https://github.com/og-crafts/dispatch">og-crafts/dispatch</a>, when a version tag is pushed.</li>
+<li>The files are attached to the release on the <a href="https://github.com/og-crafts/dispatch/releases">GitHub releases page</a>. The <a href="/download/">download page</a> links to those same files.</li>
+<li>Nothing built outside that workflow is published as a Dispatch installer.</li></ul>
+<h2>How to check a download</h2>
+<ul><li>The download page lists a SHA-256 checksum for each installer. Compare it with <code>Get-FileHash file</code> in PowerShell, <code>shasum -a 256 file</code> on macOS or <code>sha256sum file</code> on Linux.</li>
+<li>Updates installed from inside the desktop app are checked against Dispatch&rsquo;s own update signing key before they install, so a changed update is refused.</li></ul>
 <h2>Team roles</h2>
 <ul><li>Committers and reviewers: <a href="https://github.com/orgs/og-crafts/people">members of the og-crafts organization</a>. Changes from anyone else arrive as pull requests and are reviewed by a member before they are merged.</li>
-<li>Approvers: <a href="https://github.com/orgs/og-crafts/people?query=role%3Aowner">owners of the og-crafts organization</a>. Every release is approved by hand in SignPath before it is signed.</li></ul>
-<p>Everyone in these roles uses multi-factor authentication for GitHub and SignPath.</p>
+<li>Releases: <a href="https://github.com/orgs/og-crafts/people?query=role%3Aowner">owners of the og-crafts organization</a> check and publish every release by hand.</li></ul>
+<p>Everyone in these roles uses multi-factor authentication for GitHub.</p>
 <h2>Privacy</h2>
 <p>This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. Requests go only to the addresses you send them to. Anonymous usage and error reports are sent only if you agree when Dispatch first starts (both unticked; changeable in Settings), and the update check runs only when you ask or turn it on. The <a href="/privacy/">privacy policy</a> has the details.</p>
 <h2>Report a problem</h2>
-<p>If you think a signed Dispatch file is harmful or was not built from this project&rsquo;s source, write to <a href="mailto:{EMAIL}">{EMAIL}</a>. You can also report it to SignPath at <a href="mailto:support@signpath.io">support@signpath.io</a>.</p>"""
+<p>If you think a Dispatch file is harmful or was not built from this project&rsquo;s source, write to <a href="mailto:{EMAIL}">{EMAIL}</a>.</p>"""
 
 def terms():
     return f"""<h1>Terms of use</h1><p class="updated">Last updated {UPDATED["terms"]}.</p>
@@ -440,7 +442,7 @@ def main():
     pages["/changelog/"] = article("/changelog/", "Changelog", "What changed in each Dispatch release.", changelog(), "Changelog")
     pages["/privacy/"] = article("/privacy/", "Privacy policy", "Dispatch keeps your data on your device. Usage and error reports are opt-in. Read the privacy policy in plain words.", privacy(), "Privacy policy")
     pages["/terms/"] = article("/terms/", "Terms of use", "The terms for using Dispatch.", terms(), "Terms of use")
-    pages["/code-signing/"] = article("/code-signing/", "Code signing policy", "How Dispatch's Windows releases are built and signed, and who approves them.", code_signing(), "Code signing policy")
+    pages["/code-signing/"] = article("/code-signing/", "Code signing policy", "How Dispatch's installers are built, how to check a download, and who publishes releases.", code_signing(), "Code signing policy")
     pages["/support/"] = article("/support/", "Support", "Get help with Dispatch.", support(), "Support")
     for path, h in pages.items():
         out = DIST / path.lstrip("/") / "index.html"; out.parent.mkdir(parents=True, exist_ok=True); out.write_text(h)

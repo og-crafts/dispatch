@@ -53,7 +53,8 @@ Options as of 2026-11 (checked by Claude; prices and rules change, so confirm be
   Tauri doesn't build MSIX itself.
 - **Azure Artifact Signing (Trusted Signing, 9.99 USD/month):** not open to individuals outside the US/Canada.
 
-**Chosen (2026-11-16): SignPath Foundation.** Set-up, application and the CI flow: `docs/SIGNING.md`.
+**Chosen (2026-11-16): SignPath Foundation**, declined on 2026-11-22 (not enough public visibility yet; reapply later,
+`docs/SIGNING.md`). **Now (2026-11-22): Microsoft Store** with an MSIX package; the GitHub downloads stay unsigned.
 
 Wiring for a certificate of our own instead: `bundle.windows.signCommand` in `tauri.conf.json` (https://v2.tauri.app/distribute/sign/windows/),
 with its secrets in GitHub.

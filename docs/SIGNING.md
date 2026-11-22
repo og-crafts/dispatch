@@ -14,7 +14,10 @@ https://signpath.org/terms; the points that apply to Dispatch are below.
 - [x] Owner: multi-factor authentication on GitHub (done 2026-11-22). SignPath MFA: set it up when the account is created.
 - [x] Owner applied at https://signpath.org/apply on 2026-11-22 ("Form submitted, we'll be in touch soon"). Category
       Developer Tools, build system GitHub Actions, company OGCrafts. Reputation answered honestly (new project, no
-      stars yet). Waiting for SignPath's reply by email.
+      stars yet). **DECLINED on 2026-11-22** (same day, by email from oss-support@signpath.org): not enough public
+      signals yet (GitHub stars, forks, contributors, outside articles or discussions, sustained activity). Not a
+      judgement on the work; reapplying is welcome once the project has broader recognition. They also offered a
+      paid SignPath subscription (https://docs.signpath.io/change-subscription).
 - [x] Download page names SignPath ("Free code signing provided by SignPath.io, certificate by SignPath Foundation"),
       as the form requires (PR #63).
 - [x] Secret scanning + push protection on (2026-11-22).
