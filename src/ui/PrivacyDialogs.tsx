@@ -8,7 +8,8 @@ const PRIVACY_URL = 'https://dispatch.ogcrafts.cloud/privacy/'
 const ISSUES_URL = 'https://github.com/og-crafts/dispatch/issues/new'
 const EMAIL = 'hello@ogcrafts.cloud'
 
-function useModal() {
+/** Opens a <dialog> as a modal on mount. */
+export function useModal() {
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => { const d = ref.current; if (d && !d.open) { if (typeof d.showModal === 'function') d.showModal(); else d.setAttribute('open', '') } }, [])
   return ref
@@ -62,7 +63,7 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState('')
   const [text, setText] = useState('')
   const [details, setDetails] = useState(true)
-  const close = () => { ref.current?.close(); onClose() }
+  const close = () => { ref.current?.close?.(); onClose() }
   const subject = title.trim() || KIND_LABEL[kind]
   const body = feedbackBody(kind, text, details)
   const viaGitHub = async () => {

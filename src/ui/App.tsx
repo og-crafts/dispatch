@@ -9,6 +9,7 @@ import { SplitPane } from './SplitPane'
 import { runUpdateCheck, updatesAvailable } from './updates'
 import { applyTelemetry, telemetryOffered, track } from './telemetry'
 import { ConsentDialog, FeedbackDialog } from './PrivacyDialogs'
+import { AboutDialog } from './AboutDialog'
 import type { ShareTarget } from '../core/share'
 import { Sidebar } from './Sidebar'
 import { RequestPane } from './RequestPane'
@@ -135,6 +136,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
   const [consoleOpen, setConsoleOpen] = useState(false)
   const [sharing, setSharing] = useState<ShareTarget | null>(null)
   const [feedback, setFeedback] = useState(false)
+  const [about, setAbout] = useState(false)
   // Usage and error reports follow the person's choice (asked once, changeable in Settings).
   useEffect(() => { if (ws.ready) applyTelemetry({ shareUsage: ws.settings.shareUsage, shareErrors: ws.settings.shareErrors }) }, [ws.ready, ws.settings.shareUsage, ws.settings.shareErrors])
   // The last page shown (Settings, a collection…), kept as a tab while a request is open.
@@ -375,6 +377,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
             <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); ws.setView({ kind: 'settings' }) }}>Settings…</button>
             {updatesAvailable() && <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); track('update_check'); void runUpdateCheck(notify, confirm) }}>Check for updates…</button>}
             <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setFeedback(true) }}>Send feedback…</button>
+            <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setAbout(true) }}>About Dispatch…</button>
             {ws.transport.unrestricted && <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); ws.setView({ kind: 'cookies' }) }}>Cookies…</button>}
           </div>
         </details>
@@ -456,6 +459,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
       {ctx.node}
       {sharing && <ShareDialog ws={ws} target={sharing} onClose={() => setSharing(null)} notify={notify} />}
       {feedback && <FeedbackDialog onClose={() => setFeedback(false)} />}
+      {about && <AboutDialog onClose={() => setAbout(false)} notify={notify} />}
       {!ws.settings.telemetryAsked && telemetryOffered() && <ConsentDialog onDone={(c) => ws.setSettings({ telemetryAsked: true, ...c })} />}
     </div>
   )

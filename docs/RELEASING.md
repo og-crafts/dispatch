@@ -3,6 +3,9 @@
 ## Today
 
 1. Bump the version in `package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`.
+   Add the release at the top of `changelog.json` (version, date, one-line title, the changes in plain words):
+   the app's Menu → About Dispatch and the site's /changelog/ page both read it, and `tests/about.test.tsx` fails
+   until the top entry matches `package.json`. Write the GitHub release notes from the same entry.
 2. Merge to `main`, then push a tag: `git tag -a vX.Y.Z -m "Dispatch X.Y.Z" && git push origin vX.Y.Z`.
 3. GitHub Actions builds installers and attaches them to a **draft** release:
    Windows (`.msi`, NSIS `.exe`), Linux x64 and ARM64 (`.deb`, `.rpm`, AppImage), macOS universal (`.dmg`).
