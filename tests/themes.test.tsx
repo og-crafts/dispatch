@@ -88,3 +88,21 @@ describe.each([
     expect(on(fg, back)).toBeGreaterThanOrEqual(4.5)
   })
 })
+
+describe.each([
+  ['light', ':root'],
+  ['dark', ':root[data-theme="dark"]'],
+])('Dispatch colours, %s', (_name, selector) => {
+  const t = { ...tokens(':root'), ...tokens(selector) }
+  const on = (fg: string, back: string) => ratio(over(t[fg], '#000000'), over(t[back], t['--bg']))
+  it.each([
+    ['--ink', '--bg'], ['--muted', '--bg'], ['--ink', '--surface'], ['--link', '--bg'], ['--link', '--surface'], ['--link', '--primary-soft'],
+    ['--on-primary', '--primary-strong'],
+  ])('%s on %s reads at 4.5:1 or better', (fg, back) => {
+    expect(on(fg, back)).toBeGreaterThanOrEqual(4.5)
+  })
+  it('marks the selection and focus at 3:1 or better', () => {
+    expect(on('--primary', '--bg')).toBeGreaterThanOrEqual(3)
+    expect(on('--primary', '--surface')).toBeGreaterThanOrEqual(3)
+  })
+})

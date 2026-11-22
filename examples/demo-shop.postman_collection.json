@@ -17,13 +17,13 @@
           "body": { "mode": "raw", "raw": "{ \"item\": \"{{item}}\", \"qty\": {{qty}} }", "options": { "raw": { "language": "json" } } } },
         "event": [{ "listen": "test", "script": { "exec": [
           "pm.test('created', () => pm.response.to.have.status(201))",
-          "pm.test('belongs to the user', () => pm.expect(pm.response.json().by).to.equal(pm.iterationData.get('user')))",
+          "pm.test('belongs to the user', () => pm.expect(pm.response.json().by).to.equal(pm.variables.get('user')))",
           "pm.collectionVariables.set('orderId', pm.response.json().id)"
         ] } }] },
       { "name": "3 Get order", "request": { "method": "GET", "url": { "raw": "{{base}}/orders/:id", "variable": [{ "key": "id", "value": "{{orderId}}" }] },
           "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}" }] } },
         "event": [{ "listen": "test", "script": { "exec": [
-          "pm.test('same item', () => pm.expect(pm.response.json().item).to.equal(pm.iterationData.get('item')))",
+          "pm.test('same item', () => pm.expect(pm.response.json().item).to.equal(pm.variables.get('item')))",
           "pm.test('fast', () => pm.expect(pm.response.responseTime).to.be.below(1000))"
         ] } }],
         "response": [{ "name": "Found", "code": 200, "header": [{ "key": "Content-Type", "value": "application/json" }],

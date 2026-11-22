@@ -1,6 +1,7 @@
 // Draws the installer artwork (src-tauri/installer/*) from the app icon and the site fonts.
 // Dev tool, not part of the build: run it after changing the look, then commit the images.
-//   PLAYWRIGHT=<dir of the playwright-core package> [CHROMIUM=<path to a chromium binary>] node scripts/make-installer-art.mjs
+//   PLAYWRIGHT=<dir of the playwright-core package> [CHROMIUM=<path to a chromium binary>] node scripts/make-installer-art.mjs [name-prefix]
+// With a name prefix (e.g. splash) only those images are drawn.
 // PLAYWRIGHT is needed unless playwright-core can be required from the repo; CHROMIUM only when playwright's own
 // browser isn't installed (see CLAUDE.md, "Visual check without a desktop").
 import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
@@ -28,13 +29,13 @@ const css = `
 *{box-sizing:border-box;margin:0}
 body{font-family:N,sans-serif;overflow:hidden}
 .panel{position:absolute;left:0;top:0;bottom:0;width:164px;color:#fff;
-  background:radial-gradient(120% 70% at 20% 0%,#7A4DF0 0%,#5A2DDD 45%,#3A1B96 100%)}
-.panel img{position:absolute;left:22px;top:30px;width:68px;height:68px;border-radius:16px;box-shadow:0 6px 18px #1a0a5066}
+  background:radial-gradient(120% 70% at 20% 0%,#323236 0%,#1C1C1E 50%,#111113 100%)}
+.panel img{position:absolute;left:22px;top:30px;width:68px;height:68px;border-radius:16px;box-shadow:0 6px 18px #00000066}
 .panel h1{position:absolute;left:22px;top:112px;font-weight:800;font-size:28px;letter-spacing:-.5px}
-.panel p{position:absolute;left:22px;top:150px;width:124px;font-weight:700;font-size:13px;line-height:1.4;color:#E6DCFF}
-.panel small{position:absolute;left:22px;bottom:22px;font-weight:700;font-size:11px;letter-spacing:.6px;color:#C9B8F5;text-transform:uppercase}
+.panel p{position:absolute;left:22px;top:150px;width:124px;font-weight:700;font-size:13px;line-height:1.4;color:#E4E4E7}
+.panel small{position:absolute;left:22px;bottom:22px;font-weight:700;font-size:11px;letter-spacing:.6px;color:#A1A1AA;text-transform:uppercase}
 .dots{position:absolute;left:22px;bottom:52px;display:flex;gap:6px}
-.dots i{width:6px;height:6px;border-radius:50%;background:#FFC145}.dots i:nth-child(2){opacity:.6}.dots i:nth-child(3){opacity:.3}
+.dots i{width:6px;height:6px;border-radius:50%;background:#FFB020}.dots i:nth-child(2){opacity:.6}.dots i:nth-child(3){opacity:.3}
 `
 const html = (w, h, body, bg) => `<!doctype html><meta charset=utf-8><style>${css}body{width:${w}px;height:${h}px;background:${bg}}</style><body>${body}`
 const panel = `<div class=panel><img src="${icon}"><h1>Dispatch</h1><p>A local-first API client. Your requests stay on your computer.</p><div class=dots><i></i><i></i><i></i></div><small>OGCrafts</small></div>`
@@ -42,18 +43,21 @@ const panel = `<div class=panel><img src="${icon}"><h1>Dispatch</h1><p>A local-f
 const jobs = [
   { name: 'nsis-sidebar', w: 164, h: 314, bmp: true, html: html(164, 314, panel, '#fff') },
   { name: 'nsis-header', w: 150, h: 57, bmp: true,
-    html: html(150, 57, `<img src="${icon}" style="position:absolute;right:12px;top:8px;width:41px;height:41px;border-radius:10px"><div style="position:absolute;right:62px;top:17px;font-weight:800;font-size:17px;color:#26173D;letter-spacing:-.3px">Dispatch</div>`, '#fff') },
+    html: html(150, 57, `<img src="${icon}" style="position:absolute;right:12px;top:8px;width:41px;height:41px;border-radius:10px"><div style="position:absolute;right:62px;top:17px;font-weight:800;font-size:17px;color:#1C1C1E;letter-spacing:-.3px">Dispatch</div>`, '#fff') },
   { name: 'wix-dialog', w: 493, h: 312, bmp: true, html: html(493, 312, panel, '#fff') },
   { name: 'wix-banner', w: 493, h: 58, bmp: true,
-    html: html(493, 58, `<img src="${icon}" style="position:absolute;right:16px;top:9px;width:40px;height:40px;border-radius:10px"><div style="position:absolute;right:66px;top:17px;font-weight:800;font-size:19px;color:#26173D;letter-spacing:-.3px">Dispatch</div>`, '#fff') },
+    html: html(493, 58, `<img src="${icon}" style="position:absolute;right:16px;top:9px;width:40px;height:40px;border-radius:10px"><div style="position:absolute;right:66px;top:17px;font-weight:800;font-size:19px;color:#1C1C1E;letter-spacing:-.3px">Dispatch</div>`, '#fff') },
   { name: 'dmg-background', w: 660, h: 400, bmp: false, retina: true,
     html: html(660, 400, `
       <div style="position:absolute;inset:0;background:radial-gradient(90% 80% at 50% 0%,#FFF3E4 0%,#FFF9F2 70%)"></div>
-      <div style="position:absolute;top:34px;left:0;right:0;text-align:center;font-weight:800;font-size:24px;color:#26173D;letter-spacing:-.4px">Drag Dispatch into Applications</div>
-      <div style="position:absolute;top:70px;left:0;right:0;text-align:center;font-weight:700;font-size:13px;color:#5E4D72">Then open it from Launchpad. Your data stays on this Mac.</div>
-      <svg style="position:absolute;left:268px;top:158px" width="124" height="64" viewBox="0 0 124 64" fill="none" stroke="#5A2DDD" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 32h104M84 8l28 24-28 24" stroke-dasharray="0 0"/></svg>
-      <div style="position:absolute;bottom:26px;left:0;right:0;text-align:center;font-weight:700;font-size:11px;letter-spacing:.7px;color:#9a88b0;text-transform:uppercase">OGCrafts</div>`, '#FFF9F2') },
-]
+      <div style="position:absolute;top:34px;left:0;right:0;text-align:center;font-weight:800;font-size:24px;color:#1C1C1E;letter-spacing:-.4px">Drag Dispatch into Applications</div>
+      <div style="position:absolute;top:70px;left:0;right:0;text-align:center;font-weight:700;font-size:13px;color:#5E5E66">Then open it from Launchpad. Your data stays on this Mac.</div>
+      <svg style="position:absolute;left:268px;top:158px" width="124" height="64" viewBox="0 0 124 64" fill="none" stroke="#D98E00" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 32h104M84 8l28 24-28 24" stroke-dasharray="0 0"/></svg>
+      <div style="position:absolute;bottom:26px;left:0;right:0;text-align:center;font-weight:700;font-size:11px;letter-spacing:.7px;color:#9A9AA2;text-transform:uppercase">OGCrafts</div>`, '#FFF9F2') },
+  // The one-click setup's splash logo (installer.nsi, OneClickSplash), on its graphite card, for 100/125/150/200 % scaling.
+  ...[[100, 64], [125, 80], [150, 96], [200, 128]].map(([pct, px]) => ({ name: `splash-logo-${pct}`, w: px, h: px, bmp: true,
+    html: html(px, px, `<img src="${icon}" style="position:absolute;inset:0;width:${px}px;height:${px}px">`, '#1C1C1E') })),
+].filter((j) => !process.argv[2] || j.name.startsWith(process.argv[2]))
 
 /** Marks a PNG as 144 dpi (a pHYs chunk after IHDR) so Finder shows a 2x image at half size: sharp on Retina. */
 function retinaPng(png) {

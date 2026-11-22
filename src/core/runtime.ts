@@ -23,7 +23,7 @@ export interface RunContext {
   environment: Environment | null
   globals: KV[]
   data?: Record<string, string> | null
-  /** Shared across the requests of one run (runner); scripts write here with pm.variables.set. */
+  /** Shared across the requests of one run (runner); scripts write here with dx.vars.set. */
   locals?: Map<string, string>
 }
 
@@ -35,7 +35,7 @@ export interface Execution {
   logs: LogLine[]
   /** Variables changed by scripts, to be saved: environment/collection/globals. */
   changes: VariableChanges
-  /** pm.execution.setNextRequest() (runner): undefined = not called, null = stop. */
+  /** dx.next() / dx.stop() (runner): undefined = not called, null = stop. */
   nextRequest?: string | null
   /** A pre-request script threw; the request isn't sent. */
   scriptError?: string
@@ -43,7 +43,7 @@ export interface Execution {
   skipped?: boolean
   /** A browser-login run's step results. */
   browser?: import('./browser').BrowserRunResult
-  /** HTML from pm.visualizer.set() in a post-response script. */
+  /** HTML from dx.visualize() in a post-response script. */
   visualizer?: { html: string }
   /** OAuth 2 tokens refreshed while sending, to save back to where the auth lives. */
   authUpdate?: { owner: 'request' | 'folder' | 'collection'; id: string; patch: Partial<Auth> }

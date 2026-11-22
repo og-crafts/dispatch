@@ -15,6 +15,8 @@ SRC, DIST = ROOT / "src", ROOT / "dist"
 BASE = "https://dispatch.ogcrafts.cloud"
 EMAIL = "hello@ogcrafts.cloud"
 DAY = datetime.date.today().isoformat()
+# When each legal page's wording last changed. Change the date with the text, never on a plain rebuild.
+UPDATED = {"privacy": "2026-11-20", "code-signing": "2026-11-16", "terms": "2026-11-14"}
 VERSION = json.loads((REPO / "package.json").read_text())["version"]
 STRICT = "--strict" in sys.argv
 e = html.escape
@@ -28,13 +30,22 @@ CLI = CLI_FILE.exists()
 
 NAV = [("/#features", "Features"), ("/download/", "Download"), ("/cli/", "CLI"), ("/changelog/", "Changelog"), ("/support/", "Support")]
 SHOTS = {  # file -> (alt text, caption)
-    "request": ("Dispatch in light theme: a POST request to a login endpoint and its 200 response with a JSON body", "Send a request and read the response, with the JSON folded and filterable."),
+    "request": ("Dispatch in light theme: a POST request that creates an order, its 201 Created response with a JSON body and 2 of 2 tests passed", "Send a request and read the response, with the JSON folded and filterable."),
     "request-dark": ("Dispatch in dark theme: the same request and response", "The same request in the dark theme."),
-    "scripts": ("A post-response script with pm.test and pm.collectionVariables, and the passing test listed under the response", "Scripts and tests run in a sandbox. The response shows each test."),
-    "runner": ("The collection runner results: fifteen requests across three data rows, all passed", "The runner sends a collection once per data row and lists every result."),
-    "load": ("A load test result with median, p95 and error rate, and charts of response time and requests per second", "A load test with charts, thresholds and a per-status breakdown."),
+    "grove": ("Dispatch in the Grove look, light: mint and forest green, pill-shaped tabs and a large request title", "The Grove look: roomier, in mint and forest green."),
+    "grove-dark": ("Dispatch in the Grove look, dark", "Grove in the dark."),
+    "scripts": ("A post-response script with test, expect and dx.collection, and the passing test listed under the response", "Scripts and tests run in a sandbox. The response shows each test."),
+    "runner": ("The collection runner results: fifteen requests across three data rows, 18 tests passed and none failed", "The runner sends a collection once per data row and lists every result."),
+    "load": ("A passed load test with request count, median, p95 and error rate, and charts of response time and requests per second", "A load test with charts, thresholds and a per-status breakdown."),
     "docs": ("Generated documentation for a collection: variables, the Login request with headers and body", "Documentation generated from the collection, ready to export as Markdown."),
 }
+
+# Structured data for the home page (a data block, not a script: the CSP does not apply and nothing runs).
+LD_JSON = json.dumps({"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Dispatch", "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Windows, macOS, Linux, Web", "description": "An API client with no account and no cloud. Your collections stay on your machine.",
+    "url": BASE + "/", "image": BASE + "/assets/og.png", "license": "https://opensource.org/licenses/MIT", "isAccessibleForFree": True,
+    "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "author": {"@type": "Organization", "name": "OGCrafts", "url": "https://ogcrafts.cloud"}},
+    separators=(",", ":")).replace("</", "<\\/")
 
 # ---------- small helpers ----------
 def inline(t):
@@ -59,6 +70,7 @@ def figure(name, lazy=True, dark=None):
 # ---------- page shell ----------
 def shell(path, title, desc, body, current="", noindex=False):
     canon = BASE + path
+    ld = f'\n<script type="application/ld+json">{LD_JSON}</script>' if path == "/" else ""
     navs = "".join(f'<a href="{h}"{" aria-current=\"page\"" if h == current else ""}>{l}</a>' for h, l in NAV)
     app = '<a href="/app/">Open the web app</a>' if WEB else ""
     robots = '<meta name="robots" content="noindex">' if noindex else ""
@@ -68,15 +80,16 @@ def shell(path, title, desc, body, current="", noindex=False):
 <title>{e(title)}</title>
 <meta name="description" content="{e(desc)}">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#FFF9F2" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#1A1226" media="(prefers-color-scheme: dark)">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; img-src 'self' data:; style-src 'self'; font-src 'self'; base-uri 'self'; form-action 'none'">
+<meta name="theme-color" content="#F7F7F8" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0F0F10" media="(prefers-color-scheme: dark)">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; img-src 'self' data:; media-src 'self'; style-src 'self'; font-src 'self'; base-uri 'self'; form-action 'none'">
 <link rel="canonical" href="{canon}">{robots}
 <link rel="manifest" href="/site.webmanifest">
 <link rel="icon" href="/assets/icon.svg" type="image/svg+xml"><link rel="icon" href="/assets/icon-32.png" sizes="32x32" type="image/png"><link rel="apple-touch-icon" href="/assets/icon-180.png">
-<link rel="preload" href="/assets/fonts/nunito-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="/assets/fonts/nunito-800.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin>
 <meta property="og:type" content="website"><meta property="og:site_name" content="Dispatch"><meta property="og:title" content="{e(title)}">
 <meta property="og:description" content="{e(desc)}"><meta property="og:url" content="{canon}"><meta property="og:image" content="{BASE}/assets/og.png">
-<meta name="twitter:card" content="summary_large_image">
+<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="Dispatch by OGCrafts: an API client with no account and no cloud">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{e(title)}"><meta name="twitter:description" content="{e(desc)}"><meta name="twitter:image" content="{BASE}/assets/og.png">{ld}
 <link rel="stylesheet" href="/assets/site.css">
 <script src="/assets/site.js" defer></script>
 </head><body>
@@ -115,7 +128,7 @@ FEATURES = [
  ("GraphQL", "Fetch the schema by introspection, get completions and checks as you type, and browse the schema with starter operations."),
  ("Auth", "Basic, bearer, API key, Digest, OAuth 2.0 (client credentials, password, authorization code with PKCE, refresh), JWT and AWS Signature v4. Folders and collections can set auth for everything inside."),
  ("Variables and secrets", "Globals, collection, environment, data-file and script scopes, plus 70 `{{$random...}}` fake-data generators. Secret values are hidden, left out of exports, and encrypted on this device."),
- ("Scripts and tests", "Pre-request and post-response JavaScript with a `pm` API (variables, request edits, `pm.test`, `pm.expect`, `pm.sendRequest`). Scripts run in a sandbox with no network or storage access of their own. Common libraries can be loaded with `require`."),
+ ("Scripts and tests", "Pre-request and post-response JavaScript with Dispatch's `dx` API (variables, request edits, `dx.response`, `dx.send`) and `test`/`expect` checks. Scripts from collections you import from Postman run unchanged. Scripts run in a sandbox with no network or storage access of their own. Common libraries can be loaded with `require`."),
  ("Browser logins", "On desktop, a Browser login request drives your installed Chrome or Edge through a login page: open, type, click, wait. It keeps the cookies (HttpOnly too) or the token from local storage as secret variables, so the requests after it are signed in. It also runs in the runner, schedules and the CLI."),
  ("Flows", "Wire saved requests together on a canvas with If, Script, Set variable, For each, Delay and End blocks. Requests branch on ok or failed, and each block shows its status live while the flow runs. Run flows in the app or with `dispatch-run flow`."),
  ("MCP", "Test MCP servers: connect over HTTP or, on desktop, start a local server command, then list and call tools, read resources and get prompts. On desktop, sign in to servers that use OAuth; the sign-in is kept per environment as a secret. `dispatch-run mcp` works the other way round and lets an AI assistant list, send and run your saved requests, limited to the methods you allow."),
@@ -192,6 +205,8 @@ def home():
 <p class="note">Free and open source. For Windows, macOS and Linux, in your browser, and on the command line for CI.</p></div>
 {figure("request", lazy=False, dark="request-dark")}</div></section>
 <div class="promise"><div class="wrap"><ul><li>No sign-up, ever</li><li>Your data stays with you</li><li>Nothing behind a paywall</li><li>Plain files that live in git</li><li>Open source (MIT)</li></ul></div></div>
+<section id="watch"><div class="wrap"><div class="section-head"><p class="eyebrow">A short tour</p><h2>See it in under a minute.</h2><p class="lead">Send a request, test it, run it for every row, load test it, and pick a look. The video has captions.</p></div>
+<figure class="video"><video controls preload="none" playsinline width="1920" height="1080" poster="/assets/video/dispatch-promo-poster.jpg"><source src="/assets/video/dispatch-promo-16x9.mp4" type="video/mp4"><track kind="captions" src="/assets/video/dispatch-promo.vtt" srclang="en" label="English" default>Your browser can&rsquo;t play this video. <a href="/assets/video/dispatch-promo-16x9.mp4">Download it</a> instead.</video></figure></div></section>
 <section id="why"><div class="wrap"><div class="section-head"><p class="eyebrow">Why we built it</p><h2>We wanted our API tool back.</h2><p class="lead">You know the feeling. You only want to check one endpoint, and first there is a login screen, a sync spinner and a banner about a plan you don&rsquo;t need. We felt that too, so we built the tool we wanted to use.</p></div>
 <div class="grid three">{why}</div></div></section>
 <section class="tint" id="tour"><div class="wrap">
@@ -199,6 +214,7 @@ def home():
 <div class="split flip"><div><p class="eyebrow">Runner</p><h2>Run it again for every row.</h2><p>Run a whole collection, a folder or several collections as a suite. Give it a CSV or JSON file and it runs once per row, with the columns as variables. Export the results as JSON or JUnit.</p><p>The same run works from the command line, so CI can do it too.</p></div>{figure("runner")}</div>
 <div class="split"><div><p class="eyebrow">Load testing</p><h2>See how it holds up.</h2><p>Send the same request, or a whole flow, from up to 200 virtual users. Set pass and fail thresholds for p95 latency, error rate and throughput, and watch the charts.</p><p>Load test only servers you own or have permission to test. Dispatch asks you to confirm that before it starts.</p></div>{figure("load")}</div>
 <div class="split flip"><div><p class="eyebrow">Docs and mocks</p><h2>Documentation comes with the collection.</h2><p>Dispatch writes Markdown documentation from your requests, parameters, bodies and saved examples, and leaves secret values out. Save a response as an example and a mock server can serve it back.</p></div>{figure("docs")}</div>
+<div class="split"><div><p class="eyebrow">Themes</p><h2>Pick the look that suits you.</h2><p>Dispatch comes in graphite with one amber accent. Grove is roomier, in mint and forest green, and Grove classic keeps those colours on the compact layout. Each look has a light and a dark side, or follows your system.</p><p>Change it any time in Settings, Themes.</p></div>{figure("grove", dark="grove-dark")}</div>
 </div></section>
 <section id="features"><div class="wrap"><div class="section-head"><p class="eyebrow">Also in the box</p><h2>The whole job, in one app.</h2><p class="lead">Send requests, check the responses, run them in bulk, and write up the result. All of it is included.</p></div>
 <div class="grid">{feats}</div></div></section>
@@ -291,7 +307,7 @@ def changelog():
     rel("0.1.0", "2026-11-16", "The first release of Dispatch by OGCrafts.", [
         "Requests: HTTP with params, path variables, headers, every body type (JSON, form-data with files, binary, XML, GraphQL) and auth (Basic, Bearer, Digest, OAuth 2.0, JWT, AWS Signature v4); GraphQL schema tools, WebSocket, MQTT, server-sent events, Socket.IO, and gRPC on desktop.",
         "Collections with nested folders, tabs, environments, globals and workspaces; each workspace keeps its own tabs. Undo for every delete, daily local backups, and search across everything (Ctrl+K).",
-        "A code editor with `{{variable}}` and `pm.` completion; pre-request and post-response scripts with tests in a sandbox, with lodash, moment, crypto-js, uuid, ajv and handlebars; 70 fake-data variables.",
+        "A code editor with `{{variable}}` and `dx.` completion; pre-request and post-response scripts with tests in a sandbox, with lodash, moment, crypto-js, uuid, ajv and handlebars; 70 fake-data variables.",
         "The runner (iterations, delays, CSV or JSON data, JUnit reports), load tests with charts, scheduled runs with notifications, response history with compare, saved examples, generated docs and a local mock server.",
         "Flows: wire requests together on a canvas with If, Script, Set variable, For each, Delay and End blocks.",
         "Browser login requests that drive Chrome or Edge through a login page and keep the cookies or token as secrets.",
@@ -312,14 +328,14 @@ def support():
 
 # ---------- legal ----------
 def privacy():
-    return f"""<h1>Privacy policy</h1><p class="updated">Last updated {DAY}.</p>
+    return f"""<h1>Privacy policy</h1><p class="updated">Last updated {UPDATED["privacy"]}.</p>
 <p>Dispatch is built so that we never receive your data: your collections, requests and responses stay with you. If you agree, it sends us a little anonymous information about how it is used and about its own errors. This page says exactly what.</p>
 <h2>What Dispatch stores</h2>
 <p>Your collections, requests, environments, variables, history, cookies, settings and backups. They stay on your device: in your browser&rsquo;s local storage (IndexedDB) for the web app, in the app&rsquo;s local storage for the desktop app, and in a folder you choose if you link a workspace or collection to one. We have no server that receives any of it.</p>
 <h2>Secrets</h2>
 <p>Secret variables, passwords, tokens, keys, and Authorization and Cookie headers are encrypted before they are saved, using a key that stays on the device and cannot be exported. Exports and backups you download leave secrets out.</p>
 <h2>Requests you send</h2>
-<p>When you press Send, Dispatch sends that request to the address you typed, with the headers and body you set. That is the only network traffic Dispatch makes. What the other server does with it is up to that server. Scripts you write can send requests too (<code>pm.sendRequest</code>), to the places you tell them to.</p>
+<p>When you press Send, Dispatch sends that request to the address you typed, with the headers and body you set. That is the only network traffic Dispatch makes. What the other server does with it is up to that server. Scripts you write can send requests too (<code>dx.send</code>), to the places you tell them to.</p>
 <p>A Browser login request opens your installed Chrome or Edge with a new, empty profile that is deleted afterwards, with sync and background networking turned off. It visits the pages in your steps. The values it keeps, such as cookies or a token, are stored as secret variables on this device.</p>
 <h2>What Dispatch does not do</h2>
 <ul><li>No account, sign-in or sync.</li><li>No analytics or error reports unless you opt in (below).</li><li>No update check unless you turn it on. The desktop app looks for a new version only when you choose <strong>Menu, Check for updates</strong>, or turn on <strong>Check for updates when Dispatch starts</strong> in Settings (off by default). The check asks GitHub, where the releases are published, for a small file that names the newest version; GitHub sees your IP address, as with any download. Nothing about you or your data is sent, and nothing is installed unless you agree.</li><li>No advertising and no trackers.</li><li>No fonts, scripts or images loaded from other sites, in the app or on this website.</li></ul>
@@ -339,7 +355,7 @@ def privacy():
 <p>If this policy changes, the date above changes and the changelog says so. Questions: <a href="mailto:{EMAIL}">{EMAIL}</a>.</p>"""
 
 def code_signing():
-    return f"""<h1>Code signing policy</h1><p class="updated">Last updated {DAY}.</p>
+    return f"""<h1>Code signing policy</h1><p class="updated">Last updated {UPDATED["code-signing"]}.</p>
 <p>Free code signing provided by <a href="https://about.signpath.io">SignPath.io</a>, certificate by <a href="https://signpath.org">SignPath Foundation</a>.</p>
 <p>Windows installers of Dispatch are signed so that Windows can check they come from this project and were not changed on the way. Signing starts with the first release after the project is accepted by SignPath Foundation; earlier releases are unsigned.</p>
 <h2>What is signed</h2>
@@ -356,7 +372,7 @@ def code_signing():
 <p>If you think a signed Dispatch file is harmful or was not built from this project&rsquo;s source, write to <a href="mailto:{EMAIL}">{EMAIL}</a>. You can also report it to SignPath at <a href="mailto:support@signpath.io">support@signpath.io</a>.</p>"""
 
 def terms():
-    return f"""<h1>Terms of use</h1><p class="updated">Last updated {DAY}.</p>
+    return f"""<h1>Terms of use</h1><p class="updated">Last updated {UPDATED["terms"]}.</p>
 <p>These terms cover your use of Dispatch, its website and its web app. By using them you agree to these terms.</p>
 <h2>What you get</h2>
 <p>Dispatch is free software provided by OGCrafts. You may use it for personal and commercial work, and you may use the command-line runner in your own build pipelines.</p>
@@ -408,6 +424,7 @@ def main():
     for f in (SRC / "assets/icons").glob("*.*"): shutil.copy(f, A / f.name)
     shutil.copy(SRC / "assets/og.png", A / "og.png")
     for f in (SRC / "assets/shots").glob("*.png"): shutil.copy(f, A / "shots" / f.name)
+    if (SRC / "assets/video").is_dir(): shutil.copytree(SRC / "assets/video", A / "video")
     if WEB: shutil.copytree(WEB_DIST, DIST / "app")
     if CLI: (DIST / "downloads").mkdir(); shutil.copy(CLI_FILE, DIST / "downloads/dispatch-run.mjs")
 
@@ -428,7 +445,7 @@ def main():
     (DIST / "robots.txt").write_text(f"User-agent: *\nAllow: /\nSitemap: {BASE}/sitemap.xml\n")
     (DIST / "site.webmanifest").write_text(json.dumps({"name": "Dispatch", "short_name": "Dispatch", "description": "An API client that keeps your work on your machine", "start_url": "/app/", "scope": "/app/", "display": "standalone",
         "icons": [{"src": "/assets/icon-192.png", "sizes": "192x192", "type": "image/png"}, {"src": "/assets/icon-512.png", "sizes": "512x512", "type": "image/png"}],
-        "theme_color": "#FFF9F2", "background_color": "#FFF9F2"}) + "\n")
+        "theme_color": "#0F0F10", "background_color": "#0F0F10"}) + "\n")
     return check(pages)
 
 def check(pages):
@@ -436,7 +453,7 @@ def check(pages):
     allp = {**pages, "/404.html": (DIST / "404.html").read_text()}
     ids_of = {p: re.findall(r'\bid="([^"]+)"', h) for p, h in allp.items()}
     for path, h in allp.items():
-        for href in re.findall(r'(?:href|src|srcset)="(/[^"#?]*)', h):
+        for href in re.findall(r'(?:href|src|srcset|poster)="(/[^"#?]*)', h):
             t = DIST / href.lstrip("/")
             if not (t.is_file() or (t / "index.html").is_file()): problems.append(f"{path}: broken {href}")
         for href, frag in re.findall(r'href="(/[^"#]*)#([^"]+)"', h):
@@ -451,11 +468,14 @@ def check(pages):
         if len(ids) != len(set(ids)): problems.append(f"{path}: duplicate ids {sorted({i for i in ids if ids.count(i) > 1})}")
         if h.count("<h1") != 1: problems.append(f"{path}: needs exactly one h1")
         if "Content-Security-Policy" not in h: problems.append(f"{path}: no CSP meta")
-        if re.search(r"<script(?![^>]*\ssrc=)", h): problems.append(f"{path}: inline script")
+        if re.search(r"<script(?![^>]*\s(?:src=|type=\"application/ld\+json\"))", h): problems.append(f"{path}: inline script")
+        for block in re.findall(r'<script type="application/ld\+json">(.*?)</script>', h, re.S):
+            try: json.loads(block)
+            except ValueError: problems.append(f"{path}: JSON-LD does not parse")
         if re.search(r"\son\w+=\"", h): problems.append(f"{path}: inline event handler")
         if re.search(r"\sstyle=\"", h): problems.append(f"{path}: inline style attribute (CSP style-src 'self')")
         if "<style" in h: problems.append(f"{path}: inline <style>")
-        for tag in re.findall(r"<(?:img|script|link|source|iframe|audio|video)\b[^>]*>", h):
+        for tag in re.findall(r"<(?:img|script|link|source|track|iframe|audio|video)\b[^>]*>", h):
             m = re.search(r'(?:src|srcset|href)="(https?:)?//([^"]*)', tag)
             if m and 'rel="canonical"' not in tag: problems.append(f"{path}: third-party resource: {tag[:80]}")
     for r in check_contrast(): problems.append(r)

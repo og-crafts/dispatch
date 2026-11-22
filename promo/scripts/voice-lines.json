@@ -1,0 +1,12 @@
+[
+ ["hook", "You only wanted to check one endpoint."],
+ ["friction", "Not log in, wait for a sync, or pick a plan."],
+ ["send", "Dispatch opens, and you send the request. That's it."],
+ ["tests", "Check every response with a few lines of JavaScript."],
+ ["runner", "Run a whole collection once for every row of a data file."],
+ ["load", "See how your server holds up under load."],
+ ["docs", "Dispatch writes the docs from your collection."],
+ ["looks", "Pick the look that suits you."],
+ ["private", "No account. Your collections stay on your machine."],
+ ["outro", "Dispatch, by OG Crafts. Free and open source, on Windows, Mac, Linux, and in your browser."]
+]

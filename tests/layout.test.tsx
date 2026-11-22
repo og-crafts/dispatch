@@ -173,12 +173,29 @@ describe('settings tabs', () => {
   })
 })
 
+describe('request toolbar', () => {
+  it('keeps Save, variables and code in view and puts the occasional actions in one ⋯ menu', async () => {
+    await start()
+    const bar = document.querySelector('.request .titleRow') as HTMLElement
+    const shown = [...bar.querySelectorAll(':scope > button, :scope > details > summary')].map((b) => b.getAttribute('aria-label') ?? b.textContent)
+    expect(shown).toEqual(['Variables', 'Code', 'More request actions', 'Save Ctrl S'])
+    const more = screen.getByLabelText('More request actions').closest('details')!
+    expect(within(more).getAllByRole('menuitem').map((b) => b.getAttribute('aria-label') ?? b.textContent))
+      .toEqual(['Save as…', 'Share as HTML…', 'Parameterize…'])
+    fireEvent.click(screen.getByLabelText('More request actions'))
+    fireEvent.click(within(more).getByRole('menuitem', { name: 'Parameterize…' }))
+    expect(more.open).toBe(false)
+    expect(await screen.findByRole('dialog', { name: 'Parameterize' })).toBeTruthy()
+  })
+})
+
 describe('save as', () => {
   it('saves an edited request as a new one and leaves the original as it was', async () => {
     await start()
     fireEvent.click(side().getByRole('button', { name: /^GET Get things$/ }))
     fireEvent.change(screen.getByLabelText('URL'), { target: { value: 'https://s.test/things?v=2' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save as…' }))
+    fireEvent.click(screen.getByLabelText('More request actions'))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Save as…' }))
     const d = await screen.findByRole('dialog', { hidden: true })
     expect(within(d).getByText('Save as')).toBeTruthy()
     const name = within(d).getAllByRole('textbox', { hidden: true })[0] as HTMLInputElement

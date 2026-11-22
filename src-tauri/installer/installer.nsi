@@ -2,7 +2,7 @@
 ;
 ; Source: tauri-bundler, crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi at tag tauri-cli-v2.12.4
 ; (sha256 d00089d3b1a2..., the same file at tauri-cli-v2.12.6). Tauri is MIT or Apache-2.0 licensed.
-; Every change is marked "DISPATCH:"; there are five. When @tauri-apps/cli is bumped, diff Tauri's new template
+; Every change is marked "DISPATCH:"; there are seven. When @tauri-apps/cli is bumped, diff Tauri's new template
 ; against the old one, re-apply the marked blocks and update the version above (tests/installer.test.ts checks it).
 ; TAURI-CLI-VERSION: 2.12.4
 ;
@@ -83,6 +83,10 @@ Var PassiveMode
 Var UpdateMode
 Var NoShortcutMode
 Var OneClick ; DISPATCH: 1 when a plain double-click was turned into a one-click install
+; DISPATCH: the one-click splash's text lines (see OneClickSplash)
+Var SplashTitle
+Var SplashNote
+; DISPATCH: end
 Var WixMode
 Var OldMainBinaryName
 
@@ -438,19 +442,138 @@ Var AppStartMenuFolder
 !define MUI_PAGE_HEADER_TEXT "Installing Dispatch"
 !define MUI_PAGE_HEADER_SUBTEXT "This takes a few seconds. Dispatch opens when it is ready."
 ShowInstDetails nevershow
-!define MUI_PAGE_CUSTOMFUNCTION_SHOW OneClickHideWizardButtons
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW OneClickSplash
 ; DISPATCH: end
 !insertmacro MUI_PAGE_INSTFILES
 
-; DISPATCH: a one-click install is not a wizard, so its window has no Back and Next buttons.
-; Cancel stays: it is the way out if the install fails.
-Function OneClickHideWizardButtons
-  ${If} $OneClick = 1
-    GetDlgItem $0 $HWNDPARENT 3
-    ShowWindow $0 ${SW_HIDE}
-    GetDlgItem $0 $HWNDPARENT 1
-    ShowWindow $0 ${SW_HIDE}
+; DISPATCH: a one-click install shows a splash instead of a wizard window: a borderless graphite card with the
+; logo, one line of text, a short note and a thin amber progress bar, centred on the screen. No buttons: it closes
+; by itself and Dispatch opens. /WIZARD, /P, /S and updates keep Tauri's window. The logo comes in four sizes
+; (made by scripts/make-installer-art.mjs next to nsis-header.bmp) so it is sharp at 100 to 200 % scaling.
+!if "${HEADERIMAGE}" != ""
+  !searchreplace SPLASHDIR "${HEADERIMAGE}" "nsis-header.bmp" ""
+!endif
+!macro SplashText VAR TEXT X Y W H COLOR FONT
+  System::Call 'user32::CreateWindowExW(i 0, w "STATIC", w "${TEXT}", i 0x50000081, i ${X}, i ${Y}, i ${W}, i ${H}, p r9, p 0, p 0, p 0) p .s'
+  Pop ${VAR}
+  SetCtlColors ${VAR} ${COLOR} 1C1C1E
+  SendMessage ${VAR} ${WM_SETFONT} ${FONT} 1
+!macroend
+Function OneClickSplash
+  ${If} $OneClick <> 1
+    Return
   ${EndIf}
+  ; Scale: logical pixels below times dpi / 96.
+  System::Call 'user32::GetDpiForWindow(p $HWNDPARENT) i .r8'
+  ${If} $8 < 96
+    StrCpy $8 96
+  ${EndIf}
+  FindWindow $9 "#32770" "" $HWNDPARENT ; the page inside the window
+  ; Hide everything but the page: buttons, header, branding text, lines.
+  System::Call 'user32::GetWindow(p $HWNDPARENT, i 5) p .r0'
+  ${DoWhile} $0 P<> 0
+    ${If} $0 P<> $9
+      ShowWindow $0 ${SW_HIDE}
+    ${EndIf}
+    System::Call 'user32::GetWindow(p r0, i 2) p .r0'
+  ${Loop}
+  ; ... and everything on the page but the progress bar (status line, file list, "Show details").
+  GetDlgItem $7 $9 1004
+  System::Call 'user32::GetWindow(p r9, i 5) p .r0'
+  ${DoWhile} $0 P<> 0
+    ${If} $0 P<> $7
+      ShowWindow $0 ${SW_HIDE}
+    ${EndIf}
+    System::Call 'user32::GetWindow(p r0, i 2) p .r0'
+  ${Loop}
+  ; Borderless (popup, no caption, frame or system menu), rounded on Windows 11, 400 x 240 centred in the work area.
+  System::Call 'user32::GetWindowLongW(p $HWNDPARENT, i -16) i .r0'
+  IntOp $0 $0 & 0xFF30FFFF
+  IntOp $0 $0 | 0x80000000
+  System::Call 'user32::SetWindowLongW(p $HWNDPARENT, i -16, i r0)'
+  System::Call 'dwmapi::DwmSetWindowAttribute(p $HWNDPARENT, i 33, *i 2, i 4)'
+  IntOp $5 400 * $8
+  IntOp $5 $5 / 96
+  IntOp $6 240 * $8
+  IntOp $6 $6 / 96
+  System::Call '*(i, i, i, i) p .r0'
+  System::Call 'user32::SystemParametersInfoW(i 0x30, i 0, p r0, i 0)'
+  System::Call '*$0(i .r1, i .r2, i .r3, i .r4)'
+  System::Free $0
+  IntOp $3 $3 - $1
+  IntOp $3 $3 - $5
+  IntOp $3 $3 / 2
+  IntOp $1 $1 + $3
+  IntOp $4 $4 - $2
+  IntOp $4 $4 - $6
+  IntOp $4 $4 / 2
+  IntOp $2 $2 + $4
+  System::Call 'user32::SetWindowPos(p $HWNDPARENT, p 0, i r1, i r2, i r5, i r6, i 0x24)'
+  System::Call 'user32::SetWindowPos(p r9, p 0, i 0, i 0, i r5, i r6, i 0x14)'
+  ; Graphite background: one empty static behind everything (it never paints over its siblings).
+  System::Call 'user32::CreateWindowExW(i 0, w "STATIC", w "", i 0x54000000, i 0, i 0, i r5, i r6, p r9, p 0, p 0, p 0) p .r0'
+  SetCtlColors $0 FFFFFF 1C1C1E
+  System::Call 'user32::SetWindowPos(p r0, p 1, i 0, i 0, i 0, i 0, i 0x13)'
+  ; The logo: the bitmap made for this scaling (or the next larger one), centred near the top.
+  InitPluginsDir
+  ${If} $8 >= 192
+    File "/oname=$PLUGINSDIR\splash-logo.bmp" "${SPLASHDIR}splash-logo-200.bmp"
+    StrCpy $3 128
+  ${ElseIf} $8 >= 144
+    File "/oname=$PLUGINSDIR\splash-logo.bmp" "${SPLASHDIR}splash-logo-150.bmp"
+    StrCpy $3 96
+  ${ElseIf} $8 >= 120
+    File "/oname=$PLUGINSDIR\splash-logo.bmp" "${SPLASHDIR}splash-logo-125.bmp"
+    StrCpy $3 80
+  ${Else}
+    File "/oname=$PLUGINSDIR\splash-logo.bmp" "${SPLASHDIR}splash-logo-100.bmp"
+    StrCpy $3 64
+  ${EndIf}
+  IntOp $1 $5 - $3
+  IntOp $1 $1 / 2
+  IntOp $2 40 * $8
+  IntOp $2 $2 / 96
+  System::Call 'user32::CreateWindowExW(i 0, w "STATIC", w "", i 0x5000000E, i r1, i r2, i r3, i r3, p r9, p 0, p 0, p 0) p .r0'
+  System::Call 'user32::LoadImageW(p 0, w "$PLUGINSDIR\splash-logo.bmp", i 0, i 0, i 0, i 0x10) p .r1'
+  SendMessage $0 0x172 0 $1
+  ; Two lines of text in Segoe UI: the title in white, the note in grey.
+  IntOp $0 20 * $8
+  IntOp $0 $0 / 96
+  IntOp $0 0 - $0
+  System::Call 'gdi32::CreateFontW(i r0, i 0, i 0, i 0, i 600, i 0, i 0, i 0, i 1, i 0, i 0, i 5, i 0, w "Segoe UI") p .r3'
+  IntOp $0 13 * $8
+  IntOp $0 $0 / 96
+  IntOp $0 0 - $0
+  System::Call 'gdi32::CreateFontW(i r0, i 0, i 0, i 0, i 400, i 0, i 0, i 0, i 1, i 0, i 0, i 5, i 0, w "Segoe UI") p .r4'
+  IntOp $1 120 * $8
+  IntOp $1 $1 / 96
+  IntOp $2 30 * $8
+  IntOp $2 $2 / 96
+  !insertmacro SplashText $SplashTitle "Installing Dispatch" 0 $1 $5 $2 FFFFFF $3
+  IntOp $1 152 * $8
+  IntOp $1 $1 / 96
+  IntOp $2 20 * $8
+  IntOp $2 $2 / 96
+  !insertmacro SplashText $SplashNote "This takes a few seconds. Dispatch opens when it is ready." 0 $1 $5 $2 A1A1A6 $4
+  ; A thin amber bar on a dark track, without the Windows theme or border.
+  System::Call 'uxtheme::SetWindowTheme(p r7, w "", w "")'
+  System::Call 'user32::GetWindowLongW(p r7, i -16) i .r0'
+  IntOp $0 $0 & 0xFF7FFFFF
+  IntOp $0 $0 | 1
+  System::Call 'user32::SetWindowLongW(p r7, i -16, i r0)'
+  System::Call 'user32::SetWindowLongW(p r7, i -20, i 0)'
+  SendMessage $7 0x409 0 0x0020B0FF ; PBM_SETBARCOLOR, amber #FFB020
+  SendMessage $7 0x2001 0 0x003C3A3A ; PBM_SETBKCOLOR, #3A3A3C
+  IntOp $1 64 * $8
+  IntOp $1 $1 / 96
+  IntOp $2 196 * $8
+  IntOp $2 $2 / 96
+  IntOp $3 $5 - $1
+  IntOp $3 $3 - $1
+  IntOp $4 4 * $8
+  IntOp $4 $4 / 96
+  System::Call 'user32::SetWindowPos(p r7, p 0, i r1, i r2, i r3, i r4, i 0x34)'
+  ShowWindow $7 ${SW_SHOW}
 FunctionEnd
 ; DISPATCH: end
 
@@ -842,10 +965,16 @@ Function .onInstSuccess
     ; The first start of a new build can take Windows half a minute to check, with this window still up,
     ; so say what is happening, and repaint now because the launch call blocks this thread.
     ${ElseIf} $OneClick = 1
-      !insertmacro MUI_HEADER_TEXT "Opening Dispatch" "The first time, Windows may take a moment to check it."
+      ; The finished page brings its buttons back; the splash has none.
+      GetDlgItem $0 $HWNDPARENT 1
+      ShowWindow $0 ${SW_HIDE}
+      GetDlgItem $0 $HWNDPARENT 2
+      ShowWindow $0 ${SW_HIDE}
       GetDlgItem $0 $HWNDPARENT 3
       ShowWindow $0 ${SW_HIDE}
-      System::Call 'user32::RedrawWindow(p $HWNDPARENT, p 0, p 0, i 0x181)'
+      SendMessage $SplashTitle ${WM_SETTEXT} 0 "STR:Opening Dispatch"
+      SendMessage $SplashNote ${WM_SETTEXT} 0 "STR:The first time, Windows may take a moment to check it."
+      System::Call 'user32::RedrawWindow(p $HWNDPARENT, p 0, p 0, i 0x185)'
       nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" ""
     ${EndIf}
   ${EndIf}

@@ -48,6 +48,44 @@ fn rpc_error(msg: &str) -> String {
     serde_json::json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32000, "message": msg } }).to_string()
 }
 
+/// Why a request was turned away: the status line, extra headers and the JSON-RPC error body.
+#[derive(Debug, PartialEq)]
+struct Refusal {
+    status: &'static str,
+    extra: &'static str,
+    body: String,
+}
+
+fn refuse(status: &'static str, extra: &'static str, msg: &str) -> Refusal {
+    Refusal { status, extra, body: if msg.is_empty() { String::new() } else { rpc_error(msg) } }
+}
+
+/// Every check a request must pass before it reaches the frontend, in order. `headers` have lower-case names.
+fn gate(method: &str, target: &str, headers: &[(String, String)], port: u16, token: &str) -> Result<(), Refusal> {
+    let header = |name: &str| headers.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str());
+    // Web pages may not talk to it (browsers always send Origin on cross-site requests), nor other host names.
+    if header("origin").is_some() {
+        return Err(refuse("403 Forbidden", "", "Requests from web pages aren't accepted."));
+    }
+    let host_ok = header("host").map(|h| h == format!("127.0.0.1:{port}") || h == format!("localhost:{port}")).unwrap_or(false);
+    if !host_ok {
+        return Err(refuse("403 Forbidden", "", "Use http://127.0.0.1:<port>/mcp."));
+    }
+    let path = target.split('?').next().unwrap_or("");
+    if path != "/mcp" {
+        return Err(refuse("404 Not Found", "", "The MCP endpoint is /mcp."));
+    }
+    let presented = header("authorization").and_then(|v| v.strip_prefix("Bearer ").or_else(|| v.strip_prefix("bearer "))).unwrap_or("");
+    if token.is_empty() || !same_bytes(presented.trim().as_bytes(), token.as_bytes()) {
+        return Err(refuse("401 Unauthorized", "WWW-Authenticate: Bearer\r\n", "Missing or wrong token. Copy it from Dispatch → Settings → AI assistants."));
+    }
+    if method != "POST" {
+        // No server-to-client stream: every answer comes back on the POST that asked.
+        return Err(refuse("405 Method Not Allowed", "Allow: POST\r\n", ""));
+    }
+    Ok(())
+}
+
 async fn serve_one(mut sock: tokio::net::TcpStream, app: tauri::AppHandle, host: Arc<McpHost>, port: u16, token: Arc<String>) {
     use tauri::Emitter;
     let mut buf = Vec::new();
@@ -68,29 +106,8 @@ async fn serve_one(mut sock: tokio::net::TcpStream, app: tauri::AppHandle, host:
     let headers: Vec<(String, String)> = lines.filter_map(|l| l.split_once(':').map(|(k, v)| (k.trim().to_ascii_lowercase(), v.trim().to_string()))).collect();
     let header = |name: &str| headers.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str());
 
-    // Web pages may not talk to it (browsers always send Origin on cross-site requests), nor other host names.
-    if header("origin").is_some() {
-        respond(&mut sock, "403 Forbidden", "", &rpc_error("Requests from web pages aren't accepted.")).await;
-        return;
-    }
-    let host_ok = header("host").map(|h| h == format!("127.0.0.1:{port}") || h == format!("localhost:{port}")).unwrap_or(false);
-    if !host_ok {
-        respond(&mut sock, "403 Forbidden", "", &rpc_error("Use http://127.0.0.1:<port>/mcp.")).await;
-        return;
-    }
-    let path = target.split('?').next().unwrap_or("");
-    if path != "/mcp" {
-        respond(&mut sock, "404 Not Found", "", &rpc_error("The MCP endpoint is /mcp.")).await;
-        return;
-    }
-    let presented = header("authorization").and_then(|v| v.strip_prefix("Bearer ").or_else(|| v.strip_prefix("bearer "))).unwrap_or("");
-    if token.is_empty() || !same_bytes(presented.trim().as_bytes(), token.as_bytes()) {
-        respond(&mut sock, "401 Unauthorized", "WWW-Authenticate: Bearer\r\n", &rpc_error("Missing or wrong token. Copy it from Dispatch → Settings → AI assistants.")).await;
-        return;
-    }
-    if method != "POST" {
-        // No server-to-client stream: every answer comes back on the POST that asked.
-        respond(&mut sock, "405 Method Not Allowed", "Allow: POST\r\n", "").await;
+    if let Err(no) = gate(&method, &target, &headers, port, &token) {
+        respond(&mut sock, no.status, no.extra, &no.body).await;
         return;
     }
     let len: usize = header("content-length").and_then(|v| v.parse().ok()).unwrap_or(0);
@@ -167,11 +184,82 @@ pub fn mcp_host_reply(state: tauri::State<'_, Arc<McpHost>>, id: u64, body: Opti
 
 #[cfg(test)]
 mod tests {
-    use super::same_bytes;
+    use super::{gate, same_bytes};
+
+    const PORT: u16 = 4320;
+    const TOKEN: &str = "s3cret-token";
+
+    fn hdrs(list: &[(&str, &str)]) -> Vec<(String, String)> {
+        list.iter().map(|(k, v)| (k.to_ascii_lowercase(), v.to_string())).collect()
+    }
+    /// A request an MCP client really sends, with any header replaced (an empty value drops it).
+    fn ask(method: &str, target: &str, change: &[(&str, &str)]) -> Result<(), &'static str> {
+        let mut list = vec![("host", "127.0.0.1:4320".to_string()), ("authorization", format!("Bearer {TOKEN}")), ("content-type", "application/json".into())];
+        for (k, v) in change {
+            list.retain(|(name, _)| name != k);
+            if !v.is_empty() { list.push((k, v.to_string())); }
+        }
+        let list: Vec<(&str, &str)> = list.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        gate(method, target, &hdrs(&list), PORT, TOKEN).map_err(|r| r.status)
+    }
+
     #[test]
     fn compares_tokens() {
         assert!(same_bytes(b"abc", b"abc"));
         assert!(!same_bytes(b"abc", b"abd"));
         assert!(!same_bytes(b"abc", b"abcd"));
+    }
+
+    #[test]
+    fn lets_a_real_client_in() {
+        assert_eq!(ask("POST", "/mcp", &[]), Ok(()));
+        assert_eq!(ask("POST", "/mcp?session=1", &[("host", "localhost:4320")]), Ok(()));
+        assert_eq!(ask("POST", "/mcp", &[("authorization", "bearer s3cret-token ")]), Ok(()));
+    }
+
+    #[test]
+    fn refuses_web_pages() {
+        for origin in ["https://evil.example", "http://127.0.0.1:4320", "null"] {
+            assert_eq!(ask("POST", "/mcp", &[("origin", origin)]), Err("403 Forbidden"), "Origin {origin}");
+        }
+    }
+
+    #[test]
+    fn refuses_other_host_names() {
+        // DNS rebinding: a page on evil.example resolves to 127.0.0.1 but still sends its own Host.
+        for host in ["evil.example:4320", "127.0.0.1:9999", "127.0.0.1", "localhost", "0.0.0.0:4320", "[::1]:4320", ""] {
+            assert_eq!(ask("POST", "/mcp", &[("host", host)]), Err("403 Forbidden"), "Host {host:?}");
+        }
+    }
+
+    #[test]
+    fn refuses_a_missing_or_wrong_token() {
+        for auth in ["", "Bearer", "Bearer ", "Bearer wrong", "Bearer s3cret-token-and-more", "Basic czNjcmV0LXRva2Vu", "s3cret-token"] {
+            assert_eq!(ask("POST", "/mcp", &[("authorization", auth)]), Err("401 Unauthorized"), "Authorization {auth:?}");
+        }
+        let h = hdrs(&[("host", "127.0.0.1:4320"), ("authorization", "Bearer ")]);
+        assert_eq!(gate("POST", "/mcp", &h, PORT, "").map_err(|r| r.status), Err("401 Unauthorized"), "an empty token never matches");
+    }
+
+    #[test]
+    fn says_how_to_sign_in_and_which_method_works() {
+        let h = hdrs(&[("host", "127.0.0.1:4320")]);
+        let no = gate("POST", "/mcp", &h, PORT, TOKEN).unwrap_err();
+        assert_eq!(no.extra, "WWW-Authenticate: Bearer\r\n");
+        assert!(no.body.contains("Settings → AI assistants"));
+        let h = hdrs(&[("host", "127.0.0.1:4320"), ("authorization", "Bearer s3cret-token")]);
+        let no = gate("GET", "/mcp", &h, PORT, TOKEN).unwrap_err();
+        assert_eq!((no.status, no.extra, no.body.as_str()), ("405 Method Not Allowed", "Allow: POST\r\n", ""));
+    }
+
+    #[test]
+    fn checks_in_a_safe_order() {
+        // A web page learns nothing about the token or the path: Origin is refused first.
+        assert_eq!(ask("GET", "/other", &[("origin", "https://evil.example"), ("authorization", "")]), Err("403 Forbidden"));
+        // Only the MCP path exists, and the token is checked before the method.
+        assert_eq!(ask("POST", "/", &[]), Err("404 Not Found"));
+        assert_eq!(ask("POST", "/mcp/", &[]), Err("404 Not Found"));
+        assert_eq!(ask("GET", "/mcp", &[("authorization", "")]), Err("401 Unauthorized"));
+        for m in ["GET", "PUT", "DELETE", "OPTIONS", "post"] { assert_eq!(ask(m, "/mcp", &[]), Err("405 Method Not Allowed"), "{m}"); }
     }
 }

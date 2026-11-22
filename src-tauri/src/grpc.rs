@@ -75,13 +75,16 @@ fn chain(e: &dyn std::error::Error) -> String {
 }
 
 fn pool_from_proto(src: &str) -> Result<DescriptorPool, String> {
-    let dir = std::env::temp_dir().join(format!("dispatch-proto-{}", std::process::id()));
+    // A folder per compile: two at once (two requests, or parallel tests) must not delete each other's file.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("dispatch-proto-{}-{n}", std::process::id()));
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let file = dir.join("request.proto");
-    std::fs::write(&file, src).map_err(|e| e.to_string())?;
-    let set = protox::compile([&file], [&dir]).map_err(|e| format!("The .proto didn’t compile: {e}"))?;
-    let _ = std::fs::remove_file(&file);
-    DescriptorPool::from_file_descriptor_set(set).map_err(|e| e.to_string())
+    let set = std::fs::write(&file, src).map_err(|e| e.to_string())
+        .and_then(|_| protox::compile([&file], [&dir]).map_err(|e| format!("The .proto didn’t compile: {e}")));
+    let _ = std::fs::remove_dir_all(&dir); // also after a failed compile
+    DescriptorPool::from_file_descriptor_set(set?).map_err(|e| e.to_string())
 }
 
 /// Every message/enum full name a file defines (nested ones too).
@@ -174,7 +177,7 @@ macro_rules! reflect_with {
         let mut client = ServerReflectionClient::new($channel);
         let ask = |m: MessageRequest| ServerReflectionRequest { host: String::new(), message_request: Some(m) };
         // One request per stream keeps this simple and works with every server.
-        async fn one<T: tonic::client::GrpcService<tonic::body::BoxBody> + Clone>(c: &mut ServerReflectionClient<T>, r: ServerReflectionRequest) -> Result<MessageResponse, Status>
+        async fn one<T: tonic::client::GrpcService<tonic::body::Body> + Clone>(c: &mut ServerReflectionClient<T>, r: ServerReflectionRequest) -> Result<MessageResponse, Status>
         where T::Error: Into<tonic::codegen::StdError>, T::ResponseBody: tonic::codegen::Body<Data = bytes::Bytes> + Send + 'static, <T::ResponseBody as tonic::codegen::Body>::Error: Into<tonic::codegen::StdError> + Send {
             let mut s = c.server_reflection_info(tokio_stream::iter(vec![r])).await?.into_inner();
             let resp = s.message().await?.ok_or_else(|| Status::internal("empty reflection reply"))?;
@@ -354,5 +357,129 @@ pub async fn grpc_call(call: Call) -> Result<CallResult, String> {
             let trailers = stream.trailers().await.ok().flatten().map(|t| md(&t)).unwrap_or_default();
             Ok(CallResult { code: 0, code_name: "Ok".into(), message: String::new(), responses: out, headers, trailers, time_ms: started.elapsed().as_millis() as u64 })
         }
+    }
+}
+
+
+/// End to end through tonic, prost and protox: a small gRPC server (a hello service plus server reflection, both
+/// versions) on 127.0.0.1, called the way the app calls a real one. Run after bumping any of those crates.
+#[cfg(test)]
+mod end_to_end {
+    use super::*;
+    use std::convert::Infallible;
+    use tonic::codegen::{BoxFuture, Service};
+    use tonic::server::NamedService;
+
+    const PROTO: &str = r#"syntax = "proto3"; package hello;
+        service HelloService { rpc SayHello(HelloRequest) returns (HelloResponse); rpc LotsOfReplies(HelloRequest) returns (stream HelloResponse); }
+        message HelloRequest { string greeting = 1; } message HelloResponse { string reply = 1; }"#;
+
+    fn reply(pool: &DescriptorPool, req: &DynamicMessage, n: usize) -> DynamicMessage {
+        let greeting = req.get_field_by_name("greeting").and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default();
+        let mut out = DynamicMessage::new(pool.get_message_by_name("hello.HelloResponse").unwrap());
+        out.set_field_by_name("reply", prost_reflect::Value::String(if n == 0 { format!("hello {greeting}") } else { format!("hello {greeting} #{n}") }));
+        out
+    }
+
+    struct Unary(DescriptorPool);
+    impl tonic::server::UnaryService<DynamicMessage> for Unary {
+        type Response = DynamicMessage;
+        type Future = BoxFuture<tonic::Response<DynamicMessage>, Status>;
+        fn call(&mut self, req: tonic::Request<DynamicMessage>) -> Self::Future {
+            let echo = req.metadata().get("x-dispatch-test").map(|v| v.to_str().unwrap_or("").to_string());
+            let mut res = tonic::Response::new(reply(&self.0, req.get_ref(), 0));
+            if let Some(v) = echo { res.metadata_mut().insert("x-echo", v.parse().unwrap()); }
+            Box::pin(async move { Ok(res) })
+        }
+    }
+    struct Streaming(DescriptorPool);
+    impl tonic::server::ServerStreamingService<DynamicMessage> for Streaming {
+        type Response = DynamicMessage;
+        type ResponseStream = tokio_stream::Iter<std::vec::IntoIter<Result<DynamicMessage, Status>>>;
+        type Future = BoxFuture<tonic::Response<Self::ResponseStream>, Status>;
+        fn call(&mut self, req: tonic::Request<DynamicMessage>) -> Self::Future {
+            let items: Vec<_> = (1..=3).map(|n| Ok(reply(&self.0, req.get_ref(), n))).collect();
+            Box::pin(async move { Ok(tonic::Response::new(tokio_stream::iter(items))) })
+        }
+    }
+
+    #[derive(Clone)]
+    struct Hello(DescriptorPool);
+    impl NamedService for Hello { const NAME: &'static str = "hello.HelloService"; }
+    impl Service<http::Request<tonic::body::Body>> for Hello {
+        type Response = http::Response<tonic::body::Body>;
+        type Error = Infallible;
+        type Future = BoxFuture<Self::Response, Infallible>;
+        fn poll_ready(&mut self, _: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Infallible>> { std::task::Poll::Ready(Ok(())) }
+        fn call(&mut self, req: http::Request<tonic::body::Body>) -> Self::Future {
+            let pool = self.0.clone();
+            let input = pool.get_message_by_name("hello.HelloRequest").unwrap();
+            Box::pin(async move {
+                let mut grpc = tonic::server::Grpc::new(DynCodec(input));
+                Ok(match req.uri().path() {
+                    "/hello.HelloService/SayHello" => grpc.unary(Unary(pool), req).await,
+                    "/hello.HelloService/LotsOfReplies" => grpc.server_streaming(Streaming(pool), req).await,
+                    _ => Status::unimplemented("no such method").into_http(),
+                })
+            })
+        }
+    }
+
+    /// Starts the server on a free port; with `v1alpha_only`, only the older reflection service answers.
+    async fn server(v1alpha_only: bool) -> String {
+        let pool = pool_from_proto(PROTO).unwrap();
+        let set = pool.encode_to_vec();
+        let reflection = tonic_reflection::server::Builder::configure().register_encoded_file_descriptor_set(&set);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let mut router = tonic::transport::Server::builder().add_service(Hello(pool));
+        router = if v1alpha_only { router.add_service(reflection.build_v1alpha().unwrap()) } else { router.add_service(reflection.build_v1().unwrap()) };
+        tokio::spawn(router.serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener)));
+        addr
+    }
+    fn target(address: &str, proto: &str) -> Target {
+        serde_json::from_value(serde_json::json!({ "address": address, "tls": false, "proto": proto, "timeout_ms": 5000 })).unwrap()
+    }
+    fn call(address: &str, proto: &str, method: &str, json: &str) -> Call {
+        Call { target: target(address, proto), path: format!("hello.HelloService/{method}"), request_json: json.into(), metadata: vec![("x-dispatch-test".into(), "yes".into())] }
+    }
+    fn json(r: &CallResult) -> serde_json::Value { serde_json::to_value(r).unwrap() }
+
+    #[tokio::test]
+    async fn describes_and_calls_through_reflection() {
+        for v1alpha_only in [false, true] {
+            let addr = server(v1alpha_only).await;
+            let services = grpc_describe(target(&addr, "")).await.unwrap();
+            let hello = services.iter().find(|s| s.name == "hello.HelloService").expect("HelloService listed");
+            assert_eq!(hello.methods.len(), 2);
+            let v = json(&grpc_call(call(&addr, "", "SayHello", r#"{"greeting":"Dispatch"}"#)).await.unwrap());
+            assert_eq!(v["code"], 0, "{v}");
+            assert_eq!(v["responses"][0]["reply"], "hello Dispatch", "{v}");
+            assert!(v["headers"].as_array().unwrap().iter().any(|h| h[0] == "x-echo" && h[1] == "yes"), "metadata round trip: {v}");
+        }
+    }
+
+    #[tokio::test]
+    async fn calls_from_a_proto_file_and_streams_replies() {
+        let addr = server(false).await;
+        let v = json(&grpc_call(call(&addr, PROTO, "LotsOfReplies", r#"{"greeting":"x"}"#)).await.unwrap());
+        assert_eq!(v["code"], 0, "{v}");
+        assert_eq!(v["responses"], serde_json::json!([{ "reply": "hello x #1" }, { "reply": "hello x #2" }, { "reply": "hello x #3" }]));
+    }
+
+    #[test]
+    fn compiles_protos_side_by_side() {
+        // Each compile used to share one temp file; a parallel one could delete it mid-compile.
+        let threads: Vec<_> = (0..8).map(|_| std::thread::spawn(|| (0..5).all(|_| pool_from_proto(PROTO).is_ok()))).collect();
+        assert!(threads.into_iter().all(|t| t.join().unwrap()));
+        assert!(pool_from_proto("syntax = \"proto3\"; message {").unwrap_err().contains("didn’t compile"));
+    }
+
+    #[tokio::test]
+    async fn reports_bad_input_and_missing_methods() {
+        let addr = server(false).await;
+        assert!(grpc_call(call(&addr, "", "SayHello", "{not json")).await.unwrap_err().contains("isn’t valid JSON"));
+        assert!(grpc_call(call(&addr, "", "Nope", "{}")).await.is_err());
+        assert!(grpc_call(call("127.0.0.1:1", "", "SayHello", "{}")).await.unwrap_err().contains("Couldn’t connect"));
     }
 }
