@@ -38,7 +38,8 @@ function savedWidth(): number {
 }
 function keepWidth(n: number) { try { localStorage.setItem(WIDTH_KEY, String(n)) } catch { /* private window: not remembered */ } }
 
-const Method = ({ m }: { m: string }) => <span className={`mtag m-${m}`}>{m === 'DELETE' ? 'DEL' : m === 'OPTIONS' ? 'OPT' : m}</span>
+// The space keeps "GET Items" two words for screen readers; a flex row doesn't show it.
+const Method = ({ m }: { m: string }) => <><span className={`mtag m-${m}`}>{m === 'DELETE' ? 'DEL' : m === 'OPTIONS' ? 'OPT' : m}</span>{' '}</>
 const byName = <T extends { name: string }>(a: T, b: T) => a.name.localeCompare(b.name)
 
 /** A ⋯ menu; each item closes it before running. */
