@@ -188,7 +188,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
   }, [ws.settings.look])
 
   const save = useCallback(async () => {
-    if (ws.saved) { await ws.saveDraft(); notify('Saved.'); return }
+    if (ws.saved) { if (!ws.dirty) { notify('Nothing new to save.'); return } await ws.saveDraft(); notify('Saved.'); return }
     // Name from the URL as written (/users/:id), not as filled in (/users/42).
     const suggested = ws.draft.name === 'New request' && ws.draft.url.trim() ? nameFromUrl(withScheme(ws.draft.url)) : ws.draft.name
     const choice = await askSave(suggested, ws.collections, ws.folders, ws.draft)

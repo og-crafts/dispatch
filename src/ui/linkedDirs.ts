@@ -4,9 +4,10 @@
  * overwritten or deleted: it is reported as a conflict until the user picks a side. See
  * docs/DESIGN-linked-workspaces.md.
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as db from '../core/db'
 import { type FileEntry, collectionToFiles, filesToCollection, literalSecrets } from '../core/fileFormat'
+import { type Incoming, applyIncoming, describeIncoming, fileId, planIncoming, textHash } from '../core/folderMerge'
 import { type WorkspaceContent, filesToWorkspace, reIdTaken, workspaceHeader, workspaceToFiles } from '../core/workspaceFiles'
 import { type Collection, DEFAULT_SPACE, type Space, folderIdOf, spaceOf } from '../core/types'
 import type { WorkspaceApi } from './useWorkspace'
@@ -21,6 +22,12 @@ export interface FolderApi {
   read(root: string): Promise<{ path: string; text: string; hash: string }[]>
   /** Writes `files`, leaving anything changed outside the app alone (`known: null` = overwrite regardless). */
   sync(root: string, files: FileEntry[], known: Record<string, string> | null): Promise<{ known: Record<string, string>; conflicts: string[] }>
+  /** The hash `read` and `sync` use for a file's text. */
+  hash(text: string): string
+  /** Copies of Dispatch files that `read` skips (e.g. `a.req (conflicted copy).yaml`). */
+  strays?(root: string): Promise<string[]>
+  /** Calls `onChange` when files in these folders change (debounced). Returns a function that stops watching. */
+  watch?(roots: string[], onChange: (roots: string[]) => void): Promise<() => void>
 }
 
 const invoke = async <T,>(cmd: string, args: Record<string, unknown>) => (await import('@tauri-apps/api/core')).invoke<T>(cmd, args)
@@ -28,6 +35,14 @@ export const desktopFolders: FolderApi = {
   pick: () => invoke<string | null>('pick_folder', {}),
   read: async (root) => (await invoke<[string, string, string][]>('read_folder', { root })).map(([path, text, hash]) => ({ path, text, hash })),
   sync: (root, files, known) => invoke('sync_folder', { root, files: files.map((f) => [f.path, f.text]), known }),
+  hash: textHash,
+  strays: (root) => invoke<string[]>('folder_strays', { root }),
+  watch: async (roots, onChange) => {
+    const { listen } = await import('@tauri-apps/api/event')
+    const stop = await listen<string[]>('folder-changed', (e) => onChange(e.payload))
+    await invoke('watch_folders', { roots })
+    return () => { stop(); void invoke('watch_folders', { roots: [] }) }
+  },
 }
 
 export const spaceKey = (id: string) => `space:${id}`
@@ -45,22 +60,23 @@ export function spaceContent(ws: WorkspaceApi, space: Space): WorkspaceContent {
 }
 
 /** Writes one linked folder and records what happened. Returns the conflicts. */
-async function syncOne(ws: WorkspaceApi, fs: FolderApi, key: string, dir: string, files: FileEntry[], force = false) {
+async function syncOne(ws: WorkspaceApi, fs: FolderApi, key: string, dir: string, files: FileEntry[], force = false, pulled?: Pulled) {
   const state = force ? 'force' : (await db.getFolderState(key)) ?? {}
   try {
     if (state !== 'force') files = await holdBackRenames(fs, dir, files, state)
     const r = await fs.sync(dir, files, state === 'force' ? null : state)
     await db.putFolderState(key, r.known)
-    ws.setFolderStatus(key, { conflicts: r.conflicts, at: Date.now() })
-    return r.conflicts
+    // Copies and unreadable files are listed on their own, not as conflicts.
+    const apart = new Set([...(pulled?.copies ?? []), ...(pulled?.unreadable ?? []).map((u) => u.path)])
+    const conflicts = r.conflicts.filter((p) => !apart.has(p))
+    ws.setFolderStatus(key, { conflicts, at: Date.now(), ...(pulled && !force ? { copies: pulled.copies, strays: pulled.strays, unreadable: pulled.unreadable } : {}) })
+    return conflicts
   } catch (e) {
     ws.setFolderStatus(key, { conflicts: [], error: String(e), at: Date.now() })
     throw e
   }
 }
 
-/** An item file's own id (its top-level `id:` line). */
-const fileId = (text: string) => /^id: *["']?([^"'\n]+?)["']?\s*$/m.exec(text)?.[1]
 
 /**
  * A rename writes the item under a new file name and deletes the old file. If the old file changed outside the
@@ -91,6 +107,17 @@ const remember = (files: { path: string; hash: string }[]) => Object.fromEntries
 export async function reloadSpace(ws: WorkspaceApi, fs: FolderApi, space: Space, read?: Awaited<ReturnType<FolderApi['read']>>) {
   if (!space.linkedDir) return []
   const files = read ?? await fs.read(space.linkedDir)
+  const r = await readSpaceFiles(ws, space, files)
+  await ws.backupNow('before-folder')
+  const here = <T extends { workspaceId?: string }>(x: T) => ({ ...x, workspaceId: space.id })
+  await ws.replaceSpaceContents(space.id, { ...r, collections: r.collections.map(here), environments: r.environments.map(here), flows: r.flows.map(here) })
+  await db.putFolderState(spaceKey(space.id), remember(files))
+  ws.setFolderStatus(spaceKey(space.id), { conflicts: [], at: Date.now() })
+  return r.warnings
+}
+
+/** A workspace folder's files as this workspace's items (secrets and ids from this device's own items). */
+async function readSpaceFiles(ws: WorkspaceApi, space: Space, files: FileEntry[]) {
   const { parse } = await yaml()
   // Only this workspace's own items may lend their secrets or keep their ids; another workspace's never move here.
   const cols = ws.allCollections.filter((c) => spaceOf(c) === space.id)
@@ -104,12 +131,7 @@ export async function reloadSpace(ws: WorkspaceApi, fs: FolderApi, space: Space,
   const taken = new Set([...ws.allCollections, ...ws.folders, ...ws.requests, ...ws.allEnvironments, ...ws.allFlows].map((x) => x.id).filter((x) => !mine.has(x)))
   const r = reIdTaken(filesToWorkspace(files, parse, own), taken)
   if (r.space.id !== folderIdOf(space)) throw new Error(`That folder now holds a different workspace (“${r.space.name}”).`)
-  await ws.backupNow('before-folder')
-  const here = <T extends { workspaceId?: string }>(x: T) => ({ ...x, workspaceId: space.id })
-  await ws.replaceSpaceContents(space.id, { ...r, collections: r.collections.map(here), environments: r.environments.map(here), flows: r.flows.map(here) })
-  await db.putFolderState(spaceKey(space.id), remember(files))
-  ws.setFolderStatus(spaceKey(space.id), { conflicts: [], at: Date.now() })
-  return r.warnings
+  return r
 }
 
 /** "Use the folder's version" for a collection with its own folder. */
@@ -211,36 +233,166 @@ export async function unlinkCollection(ws: WorkspaceApi, c: Collection) {
   ws.setFolderStatus(collectionKey(c.id), null)
 }
 
+/** One linked folder: what the app would write there, and how files read from it come into the app. */
+interface Job { key: string; dir: string; name: string; files: FileEntry[]; apply(files: FileEntry[], label: string): Promise<void> }
+
+function jobsFor(ws: WorkspaceApi, stringify: (v: unknown) => string): Job[] {
+  return [
+    ...ws.spaces.filter((x) => x.linkedDir).map((x): Job => ({
+      key: spaceKey(x.id), dir: x.linkedDir!, name: x.name, files: workspaceToFiles(spaceContent(ws, x), stringify),
+      apply: async (files, label) => {
+        const r = await readSpaceFiles(ws, x, files)
+        const here = <T extends { workspaceId?: string }>(i: T) => ({ ...i, workspaceId: x.id })
+        await ws.replaceSpaceContents(x.id, { ...r, collections: r.collections.map(here), environments: r.environments.map(here), flows: r.flows.map(here) }, { keepEdits: true, trashLabel: label })
+      },
+    })),
+    ...ws.allCollections.filter((c) => c.linkedDir).map((c): Job => ({
+      key: collectionKey(c.id), dir: c.linkedDir, name: c.name, files: collectionToFiles(c, ws.folders, ws.requests, stringify),
+      apply: async (files, label) => {
+        const { parse } = await yaml()
+        if (!files.some((f) => f.path === 'dispatch.collection.yaml')) throw new Error(`${c.linkedDir} no longer has dispatch.collection.yaml.`)
+        const r = filesToCollection(files, parse, { collection: c, folders: ws.folders, requests: ws.requests })
+        r.collections[0] = { ...r.collections[0], linkedDir: c.linkedDir, workspaceId: c.workspaceId }
+        await ws.replaceCollection(r, { keepEdits: true, trashLabel: label })
+      },
+    })),
+  ]
+}
+
+/** What a pull found, kept for the folder's status line. */
+type Pulled = Pick<Incoming, 'copies' | 'unreadable'> & { strays: string[] }
+
+/** One run at a time per folder: a pull, a write and a "keep mine" must never interleave. */
+const chains = new Map<string, Promise<unknown>>()
+function locked<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const next = (chains.get(key) ?? Promise.resolve()).catch(() => undefined).then(fn)
+  chains.set(key, next)
+  return next
+}
+
 /**
- * Keeps every linked folder up to date as you edit (debounced; only folders whose files changed). Also runs once
- * at start, which is when changes made outside the app while it was closed show up as conflicts.
+ * Brings changes made in the folder (another device, `git pull`, an editor) into the app, before anything is
+ * written. Files changed on both sides stay as conflicts. Returns what came in, or null for a folder that is being
+ * (re)written from scratch.
+ */
+async function pullOne(fs: FolderApi, job: Job, take?: Set<string>): Promise<(Pulled & { incoming: Incoming['incoming'] }) | null> {
+  const state = await db.getFolderState(job.key)
+  if (!state || state === 'force') return null
+  const disk = await fs.read(job.dir)
+  const { parse } = await yaml()
+  const plan = planIncoming(disk, job.files, state, (t) => fs.hash(t), { parse, take })
+  const strays = (await fs.strays?.(job.dir).catch(() => [])) ?? []
+  if (plan.incoming.length) await job.apply(applyIncoming(job.files, plan.incoming), `what the folder ${job.dir} no longer has`)
+  const hashOf = new Map(disk.map((f) => [f.path, f.hash]))
+  const known = { ...state }
+  for (const f of plan.incoming) { if (f.text === null) delete known[f.path]; else known[f.path] = hashOf.get(f.path)! }
+  for (const [p, h] of Object.entries(plan.adopt)) { if (h === null) delete known[p]; else known[p] = h }
+  if (plan.incoming.length || Object.keys(plan.adopt).length) await db.putFolderState(job.key, known)
+  return { incoming: plan.incoming, copies: plan.copies, unreadable: plan.unreadable, strays }
+}
+
+/** Asks every linked folder to check for changes now (after a choice on a conflict, or when the window gets focus). */
+export function checkFolders() { globalThis.dispatchEvent?.(new Event('dispatch-check-folders')) }
+
+const jobFor = async (ws: WorkspaceApi, key: string) => {
+  const j = jobsFor(ws, await dump()).find((x) => x.key === key)
+  if (!j) throw new Error('That folder isn’t linked any more.')
+  return j
+}
+
+/** "Use the file's version" for one file in conflict (or any file): the folder's copy comes into the app. */
+export async function takeFile(ws: WorkspaceApi, fs: FolderApi, key: string, path: string) {
+  const job = await jobFor(ws, key)
+  await locked(key, () => pullOne(fs, job, new Set([path])))
+  checkFolders()
+}
+
+/**
+ * "Keep mine" for one file: the app's version is written over the folder's (or the file is deleted, when the app
+ * doesn't have it; that's also how a copy made by a cloud drive is removed).
+ */
+export async function keepMineFile(fs: FolderApi, key: string, dir: string, path: string) {
+  await locked(key, async () => {
+    const state = await db.getFolderState(key)
+    if (!state || state === 'force') return
+    const disk = (await fs.read(dir)).find((f) => f.path === path)
+    const known = { ...state }
+    if (disk) known[path] = disk.hash; else delete known[path]
+    await db.putFolderState(key, known)
+  })
+  checkFolders()
+}
+
+/** The two versions of one file, for "Show differences": the app's (null when it doesn't have it) and the folder's. */
+export async function fileVersions(ws: WorkspaceApi, fs: FolderApi, key: string, path: string, against?: string) {
+  const job = await jobFor(ws, key)
+  const disk = await fs.read(job.dir)
+  const theirs = disk.find((f) => f.path === path)?.text ?? null
+  // A copy is compared with the file it copies.
+  const mine = against ? (disk.find((f) => f.path === against)?.text ?? null) : (job.files.find((f) => f.path === path)?.text ?? null)
+  return { mine, theirs }
+}
+
+/** For a copy: the file it is a copy of (same id), if the folder has it. */
+export async function originalOf(fs: FolderApi, dir: string, path: string) {
+  const disk = await fs.read(dir)
+  const id = fileId(disk.find((f) => f.path === path)?.text ?? '')
+  return id ? disk.find((f) => f.path !== path && fileId(f.text) === id)?.path ?? null : null
+}
+
+/**
+ * Keeps every linked folder and the app in step. Before each write it brings in what changed in the folder
+ * (applied straight away when the app hasn't changed the same file; a conflict when both did). Runs on start, shortly
+ * after every edit, when the folder changes (desktop watcher), when the window gets focus, and on `checkFolders()`.
  */
 export function useFolderSync(ws: WorkspaceApi, notify: (m: string) => void, fs: FolderApi = desktopFolders) {
   const last = useRef(new Map<string, string>())
+  const [tick, setTick] = useState(0)
+  const desktop = !!ws.transport.unrestricted && ws.ready
+  const dirs = desktop ? [...new Set([...ws.spaces.map((x) => x.linkedDir), ...ws.allCollections.map((c) => c.linkedDir)].filter((d): d is string => !!d))].sort() : []
+  const dirsKey = dirs.join('\n')
+
+  // Checks asked for from outside (watcher, focus, a conflict choice) run every folder again.
   useEffect(() => {
-    if (!ws.transport.unrestricted || !ws.ready) return
-    const spaces = ws.spaces.filter((x) => x.linkedDir)
-    const cols = ws.allCollections.filter((c) => c.linkedDir)
-    if (!spaces.length && !cols.length) return
+    if (!desktop) return
+    const check = () => { last.current.clear(); setTick((t) => t + 1) }
+    const onFocus = () => check()
+    globalThis.addEventListener?.('dispatch-check-folders', check)
+    globalThis.addEventListener?.('focus', onFocus)
+    return () => { globalThis.removeEventListener?.('dispatch-check-folders', check); globalThis.removeEventListener?.('focus', onFocus) }
+  }, [desktop])
+
+  useEffect(() => {
+    if (!desktop || !dirs.length || !fs.watch) return
+    let stop: (() => void) | null = null, gone = false
+    fs.watch(dirs, () => checkFolders()).then((s) => { if (gone) s(); else stop = s }).catch(() => { /* still checked on start and focus */ })
+    return () => { gone = true; stop?.() }
+  }, [desktop, dirsKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!desktop || !dirs.length) return
     const t = setTimeout(() => {
       void (async () => {
-        const stringify = await dump()
-        const jobs: { key: string; dir: string; name: string; files: FileEntry[] }[] = [
-          ...spaces.map((x) => ({ key: spaceKey(x.id), dir: x.linkedDir!, name: x.name, files: workspaceToFiles(spaceContent(ws, x), stringify) })),
-          ...cols.map((c) => ({ key: collectionKey(c.id), dir: c.linkedDir, name: c.name, files: collectionToFiles(c, ws.folders, ws.requests, stringify) })),
-        ]
+        const jobs = jobsFor(ws, await dump())
         for (const j of jobs) {
           const sig = `${j.dir}\n${JSON.stringify(j.files)}`
           if (last.current.get(j.key) === sig) continue
           const before = ws.folderStatus[j.key]?.conflicts.length ?? 0
           try {
-            const conflicts = await syncOne(ws, fs, j.key, j.dir, j.files)
+            const r = await locked(j.key, async () => {
+              const pulled = await pullOne(fs, j)
+              // What came in changes the app; the next run (after it re-renders) writes the folder.
+              if (pulled?.incoming.length) return { pulled, conflicts: null }
+              return { pulled, conflicts: await syncOne(ws, fs, j.key, j.dir, j.files, false, pulled ?? undefined) }
+            })
+            if (r.pulled?.incoming.length) { notify(`Updated from ${j.dir}: ${describeIncoming(r.pulled.incoming)}.`); continue }
             last.current.set(j.key, sig)
-            if (conflicts.length && conflicts.length !== before) notify(`${conflicts.length} file${conflicts.length > 1 ? 's' : ''} in ${j.dir} changed outside Dispatch and ${conflicts.length > 1 ? 'were' : 'was'} left alone. Choose which version to keep on ${j.key.startsWith('space:') ? 'the Workspaces page' : `the “${j.name}” collection page`}.`)
-          } catch (e) { notify(`Couldn’t write ${j.name} to ${j.dir}: ${String(e)}`) }
+            const conflicts = r.conflicts ?? []
+            if (conflicts.length && conflicts.length !== before) notify(`${conflicts.length} file${conflicts.length > 1 ? 's' : ''} in ${j.dir} changed both there and in Dispatch, so neither was overwritten. Choose which version to keep on ${j.key.startsWith('space:') ? 'the Workspaces page' : `the “${j.name}” collection page`}.`)
+          } catch (e) { notify(`Couldn’t keep ${j.name} in step with ${j.dir}: ${String(e)}`) }
         }
       })()
     }, 800)
     return () => clearTimeout(t)
-  }, [ws.ready, ws.spaces, ws.allCollections, ws.folders, ws.requests, ws.allEnvironments, ws.allFlows]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ws.ready, tick, ws.spaces, ws.allCollections, ws.folders, ws.requests, ws.allEnvironments, ws.allFlows]) // eslint-disable-line react-hooks/exhaustive-deps
 }

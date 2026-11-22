@@ -1,6 +1,6 @@
 # Linked workspaces: a workspace kept as a folder of files
 
-Status: **accepted** (2026-11-05); phase 1 built. The owner chose option B from the gap analysis against the UX redesign canvas:
+Status: **accepted** (2026-11-05); phase 1 built; phase 2 (watching and conflicts) built 2026-11-22. The owner chose option B from the gap analysis against the UX redesign canvas:
 workspaces stay as they are, and any workspace can *optionally* be linked to a folder on disk. This replaces the
 canvas's "Desk" (every workspace is always a folder).
 
@@ -189,3 +189,19 @@ Each phase is its own PR and release.
 
 **Next build order:** phase 2 (watcher, reload, conflicts, cloud-drive copy handling), then the encrypted secrets file,
 then phase 3 (CLI). Each is its own PR.
+
+## Phase 2 as built (2026-11-22)
+
+- `src-tauri/src/folder_watch.rs`: one `notify` watcher over every linked folder (`watch_folders`, replaced when the
+  set changes), ignoring `.git/`, `node_modules/`, temp files and read-only access, and emitting `folder-changed`
+  after 500 ms of quiet. `folder_strays` lists copies whose names Dispatch doesn't read (`a.req (… conflicted
+  copy).yaml`, Syncthing's `.sync-conflict-…`).
+- `src/core/folderMerge.ts`: `planIncoming` compares folder, app and last-seen hash per file; `textHash` is the same
+  FNV-1a as the Rust side (shared test vectors). Copies are files named like copies, or new files carrying the id of
+  a file that is still there (a rename is not a copy).
+- `src/ui/linkedDirs.ts`: every run pulls first, then writes (one at a time per folder). Runs on start, after edits,
+  on `folder-changed`, on window focus and on `checkFolders()`. Changes from the folder are applied with
+  `keepEdits` (tabs with unsaved edits keep them) and items the folder no longer has go to the undo list. Per-file
+  choices: `takeFile`, `keepMineFile` (also deletes a copy), `fileVersions` for **Show differences**.
+- `src/ui/FolderIssues.tsx`: the list on the Workspaces page and a collection's Files section.
+- Whole-folder **Reload from folder** stays (with a backup first).

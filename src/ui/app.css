@@ -948,3 +948,34 @@ body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: 
 [data-look="grove"] .titleRow .protoPick { flex: none; width: 104px; min-width: 0; }
 [data-look="grove"] :is(.titleRow, .resHead) .btn.ghost { padding-inline: 9px; }
 .btn.withIcon { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Response body tools and the note for very big bodies (ResponsePane.tsx) */
+.bodyTools { margin-left: auto; display: flex; align-items: center; gap: 4px 8px; flex-wrap: wrap; }
+.bodyTools .jsonFilter { margin-left: 0; width: 220px; }
+.bigBody { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 8px 12px; margin-bottom: 8px; border: 1px solid var(--outline); border-radius: 8px; background: var(--sunken); }
+.bigBody > span { margin-right: auto; }
+/* Linked folders: files waiting for a choice (FolderIssues.tsx) */
+.folderIssues .folderFiles { list-style: none; margin: 4px 0 8px; padding: 0; display: grid; gap: 8px; }
+.folderIssues .folderFiles li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.folderIssues .folderFiles code { overflow-wrap: anywhere; }
+.folderIssues .folderFiles .actions { margin: 0; }
+.folderIssues .folderDiff { flex-basis: 100%; }
+
+/* Workspaces page: one card per workspace (SpacesView.tsx) */
+.spaceCards { list-style: none; margin: 16px 0; padding: 0; display: grid; gap: 12px; }
+.spaceCard { border: 1px solid var(--outline); border-radius: 12px; padding: 12px 16px; background: var(--surface); display: grid; gap: 8px; min-width: 0; }
+.spaceCard.on { border-color: var(--primary); }
+.spaceHead { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 32px; }
+.spaceName { font-weight: 600; }
+.spaceActions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 4px; }
+.spaceFolder { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding-top: 8px; border-top: 1px solid var(--outline); font-size: 13px; }
+.spaceFolderPath { min-width: 0; overflow-wrap: anywhere; }
+.spaceFolder .actions { margin: 0 0 0 auto; }
+.folderState { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.folderState::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--good); flex: none; }
+.folderState.warn { color: var(--ink); font-weight: 500; }
+.folderState.warn::before { background: var(--warn); }
+.folderState.bad { color: var(--danger); }
+.folderState.bad::before { background: var(--danger); }
+.spaceAi { padding-top: 8px; border-top: 1px solid var(--outline); }
+.spaceCards ~ .actions { margin-bottom: 12px; }

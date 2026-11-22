@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use tauri_plugin_dialog::DialogExt;
 use tokio::sync::oneshot;
 
+pub mod folder_watch;
 pub mod grpc;
 pub mod mcp_host;
 pub mod updater;
@@ -567,6 +568,22 @@ pub fn folder_sync(root: &str, files: Vec<(String, String)>, known: Option<HashM
 #[tauri::command]
 fn sync_folder(root: String, files: Vec<(String, String)>, known: Option<HashMap<String, String>>) -> Result<SyncOutcome, String> { folder_sync(&root, files, known) }
 
+/// Watches the linked folders (replacing the previous set) and emits `folder-changed` with the folders whose files
+/// changed. An empty list stops watching.
+#[tauri::command]
+fn watch_folders(app: tauri::AppHandle, state: tauri::State<'_, folder_watch::Watching>, roots: Vec<String>) -> Result<(), String> {
+    use tauri::Emitter;
+    let mut cur = state.0.lock().unwrap();
+    *cur = None; // stop the old watch first
+    if roots.is_empty() { return Ok(()); }
+    *cur = Some(folder_watch::FolderWatch::start(roots, move |changed| { let _ = app.emit("folder-changed", changed); })?);
+    Ok(())
+}
+
+/// Copies of Dispatch files that a cloud drive or sync tool made in a linked folder (never read or touched).
+#[tauri::command]
+fn folder_strays(root: String) -> Result<Vec<String>, String> { folder_watch::folder_strays(&root) }
+
 /// Older API, kept for tests and callers that read a single collection folder.
 pub fn collection_dir_read(root: String) -> Result<Vec<(String, String)>, String> {
     if !std::path::Path::new(&root).join("dispatch.collection.yaml").exists() { return Err(format!("{root} has no dispatch.collection.yaml.")); }
@@ -717,6 +734,7 @@ pub fn run() {
         .manage(std::sync::Arc::new(MockState::default()))
         .manage(std::sync::Arc::new(mcp_host::McpHost::default()))
         .manage(updater::PendingUpdate::default())
+        .manage(folder_watch::Watching::default())
         .setup(|app| {
             // Only builds that carry the update key load the updater (it refuses to start without one).
             #[cfg(desktop)]
@@ -725,7 +743,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![send_request, cancel_request, save_text_file, save_base64_file, open_url, oauth_listen, mock_start, mock_stop, mock_reply, grpc::grpc_describe, grpc::grpc_call, pick_folder, read_folder, sync_folder, notify_desktop, sse_open, sse_close, mcp_stdio_start, mcp_stdio_send, mcp_stdio_stop, browser_launch, browser_close, mcp_host::mcp_host_start, mcp_host::mcp_host_stop, mcp_host::mcp_host_reply, updater::update_check, updater::update_install])
+        .invoke_handler(tauri::generate_handler![send_request, cancel_request, save_text_file, save_base64_file, open_url, oauth_listen, mock_start, mock_stop, mock_reply, grpc::grpc_describe, grpc::grpc_call, pick_folder, read_folder, sync_folder, watch_folders, folder_strays, notify_desktop, sse_open, sse_close, mcp_stdio_start, mcp_stdio_send, mcp_stdio_stop, browser_launch, browser_close, mcp_host::mcp_host_start, mcp_host::mcp_host_stop, mcp_host::mcp_host_reply, updater::update_check, updater::update_install])
         .run(tauri::generate_context!())
         .expect("error while running Dispatch");
 }

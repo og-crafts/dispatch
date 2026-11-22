@@ -113,7 +113,8 @@ export function RequestPane({ ws, onSave, notify, authActions, scriptHelp, rende
               <span>Parameterize…</span></button>
           </div>
         </details>
-        <button type="button" className="btn ghost" onClick={onSave}>Save <kbd>Ctrl S</kbd></button>
+        {/* A saved request with nothing changed has nothing to save: the button waits for the next edit. */}
+        <button type="button" className="btn ghost" onClick={onSave} disabled={!!ws.saved && !ws.dirty} title={ws.saved && !ws.dirty ? 'Saved. Change something to save again.' : undefined}>{ws.saved && !ws.dirty ? 'Saved' : 'Save'} <kbd>Ctrl S</kbd></button>
       </div>
       {paramOpen && <ParameterizePanel ws={ws} notify={notify} onClose={() => setParamOpen(false)} />}
       <form className="urlBar" onSubmit={(e) => { e.preventDefault(); void ws.send() }}>

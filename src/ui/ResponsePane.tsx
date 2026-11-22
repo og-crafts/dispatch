@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { contentType, formatBytes, formatMs, prettyJson, statusTone } from '../core/format'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { contentType, formatBytes, formatMs, prettyJson, prettyXml, statusTone } from '../core/format'
 import { toCurl } from '../core/curl'
 import { queryJson } from '../core/jsonpath'
 import { parseSetCookie } from '../core/cookies'
@@ -7,11 +7,15 @@ import { uid } from '../core/types'
 import type { WorkspaceApi } from './useWorkspace'
 import { CodeArea } from './CodeArea'
 import { Icon } from './Icons'
+import type { Editor, Lang } from './editor/codemirror'
 import { ResponseHistory, useRequestHistory } from './ResponseHistory'
 
 type Tab = 'body' | 'preview' | 'visualize' | 'headers' | 'cookies' | 'tests' | 'history' | 'sent'
 
 /** Shows long bodies in full only on request, so a huge response doesn't freeze the page. */
+/** Bodies up to this size open in the code viewer (colours, matching brackets, folding); it only draws what's on screen. */
+const VIEWER_LIMIT = 5_000_000
+/** Bigger bodies show their start as plain text until "Show all". */
 const PREVIEW_LIMIT = 200_000
 
 export interface FileSaver { (fileName: string, data: { text?: string; base64?: string }, type: string): Promise<boolean> }
@@ -35,8 +39,15 @@ export function ResponsePane({ ws, notify, saveFile, onShare }: { ws: WorkspaceA
     if (!filter.trim() || !res || pretty == null) return null
     try { return { text: JSON.stringify(queryJson(JSON.parse(res.body), filter), null, 2), error: null } } catch (e) { return { text: '', error: e instanceof Error ? e.message : String(e) } }
   }, [filter, res, pretty])
-  const shown = !res ? '' : filtered && !filtered.error ? filtered.text : raw || pretty == null ? res.body : pretty
-  const truncated = shown.length > PREVIEW_LIMIT && !full
+  const isXml = !!res && !res.binary && pretty == null && (/[/+]xml\b/.test(ct) || /^\s*<\?xml/.test(res.body.slice(0, 100)))
+  const prettyX = useMemo(() => (isXml && res ? prettyXml(res.body) : null), [isXml, res])
+  const shown = !res ? '' : filtered && !filtered.error ? filtered.text : raw ? res.body : pretty ?? prettyX ?? res.body
+  // The language the viewer colours and folds by; Raw shows the body exactly as it came, as plain text.
+  const lang: Lang = raw ? 'text' : (filtered && !filtered.error) || pretty != null ? 'json' : isXml ? 'xml' : ct.includes('html') ? 'html' : /javascript|ecmascript/.test(ct) ? 'javascript' : 'text'
+  const huge = shown.length > VIEWER_LIMIT
+  const truncated = huge && shown.length > PREVIEW_LIMIT && !full
+  const viewer = useRef<Editor | null>(null)
+  const foldable = !huge && lang !== 'text'
   const cookies = useMemo(() => (res ? res.headers.filter(([k]) => k.toLowerCase() === 'set-cookie').map(([, v]) => parseSetCookie(v)) : []), [res])
   const tests = result?.tests ?? []
   const passed = tests.filter((t) => t.passed).length
@@ -50,6 +61,10 @@ export function ResponsePane({ ws, notify, saveFile, onShare }: { ws: WorkspaceA
   const avail: Tab[] = res ? ['body', ...(result?.visualizer ? ['visualize' as Tab] : []), ...(canPreview ? ['preview' as Tab] : []), 'headers', ...(cookies.length ? ['cookies' as Tab] : []), ...(tests.length ? ['tests' as Tab] : []), ...(older.length ? ['history' as Tab] : []), 'sent'] : [...(tests.length ? ['tests' as Tab] : []), 'sent']
   const current: Tab = avail.includes(tab) ? tab : avail[0]
 
+  const saveBody = async () => {
+    if (!res || !saveFile) return
+    try { if (await saveFile(`response.${extFor(ct)}`, res.binary ? { base64: res.base64 } : { text: res.body }, ct || 'application/octet-stream')) notify('Response saved.') } catch (e) { notify(`Couldn’t save: ${String(e)}`) }
+  }
   const copy = async (text: string, what: string) => {
     try { await navigator.clipboard.writeText(text); notify(`${what} copied.`) } catch { notify('Couldn’t reach the clipboard.') }
   }
@@ -93,9 +108,7 @@ export function ResponsePane({ ws, notify, saveFile, onShare }: { ws: WorkspaceA
           <Icon name="share" size={14} /> Share</button>}
         <button type="button" className="btn ghost small" onClick={() => copy(toCurl(result.sent), 'curl command')}>Copy as curl</button>
         {res && !res.binary && <button type="button" className="btn ghost small" onClick={() => copy(res.body, 'Body')}>Copy body</button>}
-        {res && saveFile && <button type="button" className="btn ghost small" onClick={async () => {
-          try { if (await saveFile(`response.${extFor(ct)}`, res.binary ? { base64: res.base64 } : { text: res.body }, ct || 'application/octet-stream')) notify('Response saved.') } catch (e) { notify(`Couldn’t save: ${String(e)}`) }
-        }}>Save to file</button>}
+        {res && saveFile && <button type="button" className="btn ghost small" onClick={() => void saveBody()}>Save to file</button>}
         {res && !res.binary && <button type="button" className="btn ghost small" onClick={() => {
           ws.setDraft((d) => ({ ...d, examples: [...d.examples, { id: uid(), name: `${res.status} ${res.statusText}`.trim(), status: res.status, headers: res.headers, body: res.body }] }))
           notify('Saved as an example on this request (save the request to keep it).')
@@ -104,10 +117,14 @@ export function ResponsePane({ ws, notify, saveFile, onShare }: { ws: WorkspaceA
       {result.error && <p className="errorBox" role="alert">{result.error}</p>}
       <div className="tabs" role="tablist" aria-label="Response parts">
         {avail.map((t) => <button key={t} type="button" role="tab" aria-selected={current === t} className={current === t ? 'on' : ''} onClick={() => setTab(t)}>{label[t]}</button>)}
-        {res && current === 'body' && !res.binary && pretty != null && <>
-          <input className="mono jsonFilter" placeholder="Filter: $.items[*].id" aria-label="JSON filter" value={filter} onChange={(e) => setFilter(e.target.value)} />
-          <label className="toggle small"><input type="checkbox" checked={raw} onChange={(e) => setRaw(e.target.checked)} /> Raw</label>
-        </>}
+        {res && current === 'body' && !res.binary && res.body !== '' && <span className="bodyTools">
+          {pretty != null && <input className="mono jsonFilter" placeholder="Filter: $.items[*].id" aria-label="JSON filter" value={filter} onChange={(e) => setFilter(e.target.value)} />}
+          {foldable && <>
+            <button type="button" className="btn small ghost" onClick={() => viewer.current?.collapseAll()} title="Fold every block to its first line">Collapse all</button>
+            <button type="button" className="btn small ghost" onClick={() => viewer.current?.expandAll()}>Expand all</button>
+          </>}
+          {(pretty != null || prettyX != null) && <label className="toggle small"><input type="checkbox" checked={raw} onChange={(e) => setRaw(e.target.checked)} /> Raw</label>}
+        </span>}
       </div>
       <div className="tabBody" role="tabpanel">
         {res && current === 'body' && (res.binary
@@ -115,10 +132,14 @@ export function ResponsePane({ ws, notify, saveFile, onShare }: { ws: WorkspaceA
           : res.body === '' ? <p className="muted">Empty body.</p>
           : <>
               {filtered?.error && <p className="warnLine small">Filter: {filtered.error}</p>}
-              {pretty != null && !raw && !filtered && !truncated
-                ? <CodeArea key={res.timeMs + res.size} label="Response body" lang="json" readOnly value={shown} onChange={() => {}} rows={20} />
-                : <pre className="code mono out">{truncated ? shown.slice(0, PREVIEW_LIMIT) : shown}</pre>}
-              {truncated && <button type="button" className="btn small" onClick={() => setFull(true)}>Show all {formatBytes(shown.length)}</button>}
+              {huge && <div className="bigBody small" role="status">
+                <span>{truncated ? <>Showing the first {formatBytes(PREVIEW_LIMIT)} of {formatBytes(shown.length)}, as plain text.</> : <>All {formatBytes(shown.length)}, as plain text (too big to colour and fold).</>}{pretty != null && !filtered ? ' The filter can narrow it down.' : ''}</span>
+                {truncated && <button type="button" className="btn small" onClick={() => setFull(true)}>Show all</button>}
+                {saveFile && <button type="button" className="btn small ghost" onClick={() => void saveBody()}>Save to file</button>}
+              </div>}
+              {huge
+                ? <pre className="code mono out">{truncated ? shown.slice(0, PREVIEW_LIMIT) : shown}</pre>
+                : <CodeArea key={`${res.timeMs}-${res.size}-${lang}`} label="Response body" lang={lang} readOnly value={shown} onChange={() => {}} rows={20} editorRef={viewer} />}
             </>)}
         {res && current === 'preview' && (isImage
           ? <img className="imgPreview" alt="Response image" src={`data:${ct};base64,${res.base64}`} />

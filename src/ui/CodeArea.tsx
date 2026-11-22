@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { type MutableRefObject, useEffect, useRef, useState } from 'react'
 import type { GraphQLSchema } from 'graphql'
 import type { Editor, Lang } from './editor/codemirror'
 
@@ -14,6 +14,8 @@ interface Props {
   /** Names offered after "{{". */
   variables?: () => { name: string; detail?: string }[]
   schema?: GraphQLSchema | null
+  /** Set to the CodeMirror editor once it is ready (null before, in the test DOM, and after it is gone). */
+  editorRef?: MutableRefObject<Editor | null>
 }
 
 /** CodeMirror is used in real browsers; the test DOM (jsdom) gets a plain textarea. */
@@ -23,7 +25,7 @@ const rich = typeof navigator !== 'undefined' && !/jsdom/i.test(navigator.userAg
  * A code editor: a plain textarea first, upgraded to CodeMirror once it has loaded (it's loaded on demand).
  * Same props either way, so callers don't care which one they got.
  */
-export function CodeArea({ label, value, onChange, rows = 10, placeholder, mono = true, readOnly, lang = 'text', variables, schema }: Props) {
+export function CodeArea({ label, value, onChange, rows = 10, placeholder, mono = true, readOnly, lang = 'text', variables, schema, editorRef }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const ed = useRef<Editor | null>(null)
   const [ready, setReady] = useState(false)
@@ -45,9 +47,10 @@ export function CodeArea({ label, value, onChange, rows = 10, placeholder, mono 
         variables: () => latest.current.variables?.() ?? [], schema,
       })
       if (gone) { ed.current.destroy(); ed.current = null; return }
+      if (editorRef) editorRef.current = ed.current
       setReady(true)
     })
-    return () => { gone = true; ed.current?.destroy(); ed.current = null; setReady(false) }
+    return () => { gone = true; ed.current?.destroy(); ed.current = null; if (editorRef) editorRef.current = null; setReady(false) }
   }, [lang, readOnly]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Outside changes (Tidy, snippets, templates) flow into the editor.
