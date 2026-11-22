@@ -157,7 +157,7 @@ Updated 2026-11-22. **Pending work is tracked on the Kan board "Dispatch"**
 Lists: Waiting on you (owner actions), To do, In progress, Testing, Done; labels Release, Feature, Bug, Testing,
 Infra. Keep the cards current at the end of each session (as with the Native Android Apps board).
 
-**State.** Versioning restarted at **0.1.0** (PR #24). Next release = tag **`v0.1.0-SNAPSHOT`** (a GitHub
+**State.** Versioning restarted at **0.1.0** (PR #24). Releases: **`v0.1.0-SNAPSHOT`** was published 2026-11-22 as a pre-release; the plain **`v0.1.0`** comes next (a GitHub
 pre-release, not offered as an in-app update; app version stays 0.1.0 because MSI needs numeric versions) until real
 testing gives solid evidence; then a plain `v0.1.0` and the clean-up of the old v0.5.x releases/tags. `main` has,
 since the last published preview (0.5.1): local MCP endpoint, drag and drop, branded installers (art rebuilt with
@@ -208,18 +208,16 @@ focus on the URL at all, both fixed in #50. gRPC over the internet couldn't be c
 9000/9001 time out from the homelab and the Predator) and grpc.postman-echo.com fails the TLS handshake
 ("InvalidContentType") with the old crates on `main` exactly as with #53, so TLS behaves as before; the local
 end-to-end and grpc-js tests cover plaintext.
-**Resume here (2026-11-22 night, read first):** the owner asked to work end to end: sync secrets, then phase 3, then
-a plain 0.1.0 release for a Product Hunt launch. Merged today: #67 (folder watch) … #73 (folder order, Windows drag
-fix, feedback e-mail; owner checked it on the Predator). Open, stacked: **#74** Sync secrets (opt-in
-`secrets.dispatch-vault`, PBKDF2-SHA-256 600k + AES-256-GCM, deterministic IV from HMAC; `src/core/secretsVault.ts`,
-Rust `read_vault`/`put_vault`, `linkedDirs.syncVault`, `PassphraseDialog`) and **#75** on top of it (`dispatch-run`
-on workspace folders: `--env` by name, `--flow`, `mcp`; CI secrets `DISPATCH_SECRET_<KEY>` and
-`DISPATCH_VAULT_PASSPHRASE`). Merge #74 **without deleting its branch** (or retarget #75 to `main` first), then #75.
-The owner tests #75's CI build first (`Dispatch_0.1.0_x64-setup-secrets-cli.exe` on the Predator).
-**Then the plain 0.1.0 release:** a prep PR (changelog date, `docs/TESTING-WINDOWS.md` → v0.1.0, status), tag
-`v0.1.0` on `main` (channel "release"), the owner publishes the draft **as Latest**, then (owner's OK) delete the
-v0.5.0/v0.5.1 releases and tags so in-app updates find `latest.json`; publish the site from the tag (regenerate
-`site/release.json`, version "0.1.0"), bump ogcrafts.cloud `apps.json`. Release notes draft from `changelog.json`.
+**Resume here (2026-11-22 late night, read first):** everything from the owner's "work end to end" list is merged:
+#74 Sync secrets (opt-in `secrets.dispatch-vault`; `src/core/secretsVault.ts`, Rust `read_vault`/`put_vault`,
+`linkedDirs.syncVault`, `PassphraseDialog`) and #75 `dispatch-run` on workspace folders (`--env`, `--flow`, `mcp`;
+`DISPATCH_SECRET_<KEY>`, `DISPATCH_VAULT_PASSPHRASE`); the owner tested both on the Predator. Earlier today: #67–#73
+(folder watch, Save, response viewer, share from response, folder order + Windows drag fix + feedback e-mail).
+**Next: the plain 0.1.0 release** for the Product Hunt launch (`docs/RELEASING.md` "After publishing" and "The first
+plain release"): merge this prep PR, tag `v0.1.0` on `main`, the owner publishes the draft **as Latest**, then (owner's
+OK) delete the v0.5.x releases and old tags, publish the site from the tag (`VITE_DISPATCH_CHANNEL=release`,
+`site/release.json` version "0.1.0") and bump ogcrafts.cloud `apps.json`. Then the Product Hunt kit (tagline,
+description, gallery 1270×760, promo video, maker's first comment; problem-led, no comparisons).
 Flaky under a loaded full run (pass alone): `dnd.test.tsx`, `handoff.test.tsx`, `regressions.test.tsx`.
 
 **Earlier on 2026-11-22:** **v0.1.0-SNAPSHOT is out.** The tag is on `main` 0a46658 (#60

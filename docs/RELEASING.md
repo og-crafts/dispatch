@@ -13,6 +13,26 @@
 
 The installers aren't signed yet, so Windows SmartScreen and macOS Gatekeeper warn on first launch.
 
+### After publishing (every release)
+
+1. **Latest:** a plain tag (`vX.Y.Z`) is published as **Latest**: installed apps check
+   `releases/latest/download/latest.json`, so only the Latest release reaches them. Suffixed tags (`-SNAPSHOT`,
+   `-rc.1`) are pre-releases and never reach installed apps.
+2. **Site:** from a worktree at the tag, regenerate `site/release.json` from the release (checksums from the API's
+   `digest` field; `version` is the plain number, with "(snapshot)" only for snapshots), export
+   `VITE_APTABASE_APP_KEY` / `VITE_SENTRY_DSN` from the repo variables and `VITE_DISPATCH_CHANNEL=release`, and run
+   `scripts/publish-site.sh`. Commit the same `site/release.json` to `main`.
+3. **ogcrafts.cloud:** bump Dispatch's `version` in `apps.json` (repo og-crafts/site) and push.
+
+### The first plain release (0.1.0, once)
+
+The previews v0.5.0 and v0.5.1 (built as OneLifeStack, another bundle ID) are still GitHub releases, and v0.5.1 is
+marked Latest, so `latest.json` isn't found and Check for updates says "No update found". Publishing v0.1.0 as Latest
+fixes that. Then, **with the owner's OK**, delete the v0.5.0 / v0.5.1 releases and the old `v0.2.0`–`v0.5.1` tags
+(`gh release delete vX --cleanup-tag`); their history stays in the commits and the private archive repo. The
+`v0.1.0-SNAPSHOT` pre-release can stay or go (owner's choice).
+
+
 ## Installer look
 
 The Windows setup (NSIS `.exe` and `.msi`) and the macOS `.dmg` use branded artwork from `src-tauri/installer/`

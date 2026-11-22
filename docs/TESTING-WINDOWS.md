@@ -1,11 +1,11 @@
-# Testing Dispatch 0.1.0 (snapshot) on Windows
+# Testing Dispatch 0.1.0 on Windows
 
 Instructions for a tester (a person or an AI agent) on a Windows 10/11 machine. Work through each section, record
 **PASS / FAIL / BLOCKED** for every numbered check, and write the results into a report (template at the end).
 
 Dispatch is OGCrafts' local-first API client: a desktop app (Tauri 2, WebView2), a web build and a command-line
-tool, `dispatch-run`. You are testing the **`v0.1.0-SNAPSHOT`** pre-release: the build that has to give solid
-evidence before a plain 0.1.0. It passes automated tests on Linux, Windows and macOS in CI, and parts of it were
+tool, `dispatch-run`. You are testing **`v0.1.0`**, the first release of Dispatch by OGCrafts (the
+`v0.1.0-SNAPSHOT` pre-release came before it). It passes automated tests on Linux, Windows and macOS in CI, and parts of it were
 clicked through on one Windows 11 PC, but most of it has never been tried by hand on Windows. Expect to find real
 bugs; that's the point.
 
@@ -49,7 +49,7 @@ cd dispatch           # stay on main: it has the demo login page and example fil
 npm ci
 npm run build:cli          # builds dist-cli\dispatch-run.mjs
 mkdir ..\installers
-gh release download v0.1.0-SNAPSHOT --repo og-crafts/dispatch -p "*x64-setup.exe" -p "*x64_en-US.msi" -D ..\installers
+gh release download v0.1.0 --repo og-crafts/dispatch -p "*x64-setup.exe" -p "*x64_en-US.msi" -D ..\installers
 ```
 
 The release starts as a **draft**, visible only to accounts with write access to the repo, and is then published
@@ -428,8 +428,8 @@ Run these from the repo folder in PowerShell.
 8.5. **Send feedback:** ☰ → Send feedback… opens a form. Don't send anything real; check that it says what will be
      sent, then cancel.
 
-8.6. **Updates:** ☰ → Check for updates… must answer within a few seconds ("you're up to date" or a clear message).
-     A snapshot is a pre-release, so it is not offered as an update; record what it says.
+8.6. **Updates:** ☰ → Check for updates… must answer within a few seconds. On 0.1.0 (the Latest release) it says
+     you have the newest version; record what it says.
 
 8.7. **AI assistants** (optional; needs Claude Desktop, Claude Code or another MCP client): Settings → AI
      assistants → turn the local endpoint on and follow the on-screen steps. The assistant lists your requests and
@@ -447,7 +447,7 @@ comment (drag them into the comment box, or `gh issue comment <number> --repo og
 failure, titled `[Windows] <problem>`, and link it from the report.
 
 ```markdown
-# Dispatch 0.1.0-SNAPSHOT — Windows test report
+# Dispatch 0.1.0 — Windows test report
 
 - Date / tester:
 - Windows version (winver) and build:
