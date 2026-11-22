@@ -367,6 +367,12 @@ On 2026-11-20 the site source moved to the app's Dispatch look (graphite and amb
 Nunito), got new screenshots incl. Grove (`scripts/screenshots.mjs site`), a new `og.png`, JSON-LD, and a short
 promo video with captions; the video and og.png come from `promo/` (Remotion, local Kokoro voice, synthesized
 music; see `promo/README.md`). Still unpublished, same rule: it goes live with the tag.
+On 2026-11-22 the site got the app's looks: a Look menu in the header (`site/src/look.js`, loaded in `<head>` so the
+pick applies before drawing; Dispatch, Grove, Grove classic × System/Light/Dark, kept in localStorage
+`dispatch-site-look`). `site.css` holds the palettes as `/* tokens: <name> */` blocks (dispatch-light/dark,
+grove-light/dark); `build.py` checks every one against WCAG AA and that the forced-dark copies match. Every figure
+has six screenshots (`<shot>[-grove|-grove-classic][-dark].png`, `node scripts/screenshots.mjs site`); look.js swaps
+them. Without scripts the site is the Dispatch look following the system.
 
 **Waiting on the owner.**
 - **Aptabase App Key and Sentry DSN** as repo variables `APTABASE_APP_KEY` / `SENTRY_DSN`: the only thing blocking
