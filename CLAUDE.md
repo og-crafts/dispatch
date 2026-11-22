@@ -149,7 +149,7 @@ unpack it from `apt-get download libasound2t64` with `dpkg-deb -x` and set `LD_L
 
 ## Where we left off
 
-Updated 2026-11-21. **Pending work is tracked on the Kan board "Dispatch"**
+Updated 2026-11-22. **Pending work is tracked on the Kan board "Dispatch"**
 (https://kanban.gautamlabs.io/boards/mb7hut0k7z77; CLI: `KAN_BOARD=mb7hut0k7z77 ~/bin/kan show|card|move|note|desc`).
 Lists: Waiting on you (owner actions), To do, In progress, Testing, Done; labels Release, Feature, Bug, Testing,
 Infra. Keep the cards current at the end of each session (as with the Native Android Apps board).
@@ -177,8 +177,12 @@ legal-page dates (#52), the gRPC crates moved up together with end-to-end tests 
 Share as HTML… and Parameterize…, then Save). All merged by Claude on the owner's word; #54, #55 and #56 were
 installed and tried by the owner on the Predator first. `main` = 793026f, CI green on every job (updater skipped as
 always); 363 vitest tests.
-**Open PRs: only Dependabot #39, #40, #41, #43, #45** (owner to review; #42/#44 were closed by Dependabot once #53
-merged). Merged branches were deleted on GitHub and locally (2026-11-20 and 2026-11-21, incl. the throwaway
+**No PRs open (2026-11-22).** The Dependabot PRs were merged on the owner's word, each checked on top of the new
+`main` first: #39 GitHub Actions to new majors (checkout v7, setup-node v7, upload-artifact v7, download-artifact v8,
+action-gh-release v3; the two release-only actions just need Node 24, no input changes), #41 tauri 2.12.6 + plugins,
+#40 Tauri CLI/api 2.12.5 (installer template header line only) + small npm bumps, #43 jsdom 31, #45 vitest 5.1.1
+(vite 6.4.5 is enough). `main` = c0f0116; 363 tests. The release-only steps (download-artifact v8, gh-release v3)
+first run for real on the snapshot tag: watch that run. #42/#44 were closed by Dependabot once #53 merged. Merged branches were deleted on GitHub and locally (2026-11-20 and 2026-11-21, incl. the throwaway
 `test/windows-2026-11-21`). Left on purpose: `docs/after-installers` (PR #11 closed unmerged), the old local branches
 that are copies of the `archive` remote (`feature/flows`, `feature/inbox`, `feature/v0.3`, …), `site/0.5.0-ogcrafts`
 (local, unmerged), and `site/0.5.1-ogcrafts`, checked out in the worktree `../onelifestack-dispatch-site` with staged,
@@ -201,9 +205,10 @@ focus on the URL at all, both fixed in #50. gRPC over the internet couldn't be c
 9000/9001 time out from the homelab and the Predator) and grpc.postman-echo.com fails the TLS handshake
 ("InvalidContentType") with the old crates on `main` exactly as with #53, so TLS behaves as before; the local
 end-to-end and grpc-js tests cover plaintext.
-**Resume here (next session, after 2026-11-21):** nothing of Claude's is open. Options: the Dependabot PRs (#39, #41,
-#45 pass as they are; #40 and #43 carry Claude's fixes; #45 is vitest 2 → 5, a major bump: check it before merging);
-items from the Kan "To do" list. The snapshot tag still waits on the owner's Aptabase/Sentry keys.
+**Resume here (next session, after 2026-11-22):** nothing is open on GitHub. Options: items from the Kan "To do" list.
+Dependabot tip: after one npm PR merges, the others conflict in `package-lock.json`; Dependabot rebases its own PRs
+(even over a pushed merge commit, as it did with #45), and a branch Claude pushed to is fixed by merging `main`,
+taking main's lockfile and running `npm install`. The snapshot tag still waits on the owner's Aptabase/Sentry keys.
 Seen for real on 2026-11-21: the new icon, the splash and the app in a real install on the Predator (owner). Not yet:
 the .dmg window, the splash at 125/150/200 % scaling.
 The Predator (2026-11-21 evening): Dispatch installed by the owner from the #56 build (current main minus #49–#54);
@@ -339,7 +344,7 @@ comes, fix in a PR, bump the version everywhere `tests/version.test.ts` checks, 
   blocks named "End" can't be told apart in flow selects; importing a
   backup into the same workspace duplicates everything; error texts include Rust internals (`os error 10061`).
 - Issue #9: the next Windows round (see above).
-- Open PRs (2026-11-21 evening): only Dependabot #39, #40, #41, #43, #45.
+- Open PRs (2026-11-22): none.
 - Flaky CI: `tests/browser.test.ts` ("The browser didn't start in time") and the Linux `linuxdeploy` step each
   failed once and passed on `gh run rerun --failed`. The browser test failed again on PR #18 (2026-11-16).
 - The macOS job (universal build) hit its 15-minute limit on every run 2026-11-16/17 (#26, #27, #28, `main`), so no
@@ -370,6 +375,8 @@ music; see `promo/README.md`). Still unpublished, same rule: it goes live with t
   approval sets up the SignPath project and token, then approves each release in SignPath. All in `docs/SIGNING.md`.
 - A look at the .dmg window (branded installers, PR #10, merged). The Windows setup was seen on the Predator
   2026-11-19 (above); its header art was redrawn with the new logo on 2026-11-20 (not yet seen in a real installer).
+- Turn on secret scanning + push protection (repo Settings → Code security; free for public repos). Off as of
+  2026-11-22, together with Dependabot security updates.
 - Sync design.
 - OGCrafts email extras: Gmail "Send mail as" via Resend and a DMARC record (see the memory note ogcrafts-brand).
 
