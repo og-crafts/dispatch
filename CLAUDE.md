@@ -211,10 +211,12 @@ end-to-end and grpc-js tests cover plaintext.
 **Resume here (2026-11-23, read first): Dispatch 0.1.0 is OUT.** #76 merged, tag `v0.1.0` on `main` 10fd7d8, CI green
 on every job incl. updater; the owner published it as **Latest** 2026-11-23 (notes from the changelog). `latest.json`
 lists 0.1.0 for all five platforms, so in-app updates work from now on. The v0.5.0/v0.5.1 releases and tags were
-deleted (owner's OK); the older tags v0.2.0–v0.4.4 are still there. Site published from the tag
+deleted (owner's OK), and so were the old preview tags v0.2.0–v0.4.4: only `v0.1.0` and `v0.1.0-SNAPSHOT` are left. Site published from the tag
 (`VITE_DISPATCH_CHANNEL=release`): /download/ links the v0.1.0 files, no snapshot wording; `site/release.json` on `main`
-matches. ogcrafts.cloud already listed 0.1.0 (no change needed). **Next: the Product Hunt kit** (tagline, description,
-gallery 1270×760, promo video, maker's first comment; problem-led, no comparisons).
+matches. ogcrafts.cloud already listed 0.1.0 (no change needed). **Product Hunt kit: `promo/product-hunt/`** (README =
+listing copy, gallery order, maker's comment, replies, launch plan; `gallery/` = 7 slides 1270×760 + thumbnail from
+`gallery.mjs`, shots from `node scripts/screenshots.mjs ph`). Waiting on the owner: Product Hunt account + reconnect
+the claude.ai Product Hunt connector, YouTube upload of the promo, launch date. Nothing is submitted without the owner.
 
 **Earlier (2026-11-22 late night):** everything from the owner's "work end to end" list is merged:
 #74 Sync secrets (opt-in `secrets.dispatch-vault`; `src/core/secretsVault.ts`, Rust `read_vault`/`put_vault`,
