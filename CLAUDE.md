@@ -152,7 +152,7 @@ unpack it from `apt-get download libasound2t64` with `dpkg-deb -x` and set `LD_L
 
 ## Where we left off
 
-Updated 2026-11-22. **Pending work is tracked on the Kan board "Dispatch"**
+Updated 2026-11-23. **Pending work is tracked on the Kan board "Dispatch"**
 (https://kanban.gautamlabs.io/boards/mb7hut0k7z77; CLI: `KAN_BOARD=mb7hut0k7z77 ~/bin/kan show|card|move|note|desc`).
 Lists: Waiting on you (owner actions), To do, In progress, Testing, Done; labels Release, Feature, Bug, Testing,
 Infra. Keep the cards current at the end of each session (as with the Native Android Apps board).
@@ -208,7 +208,15 @@ focus on the URL at all, both fixed in #50. gRPC over the internet couldn't be c
 9000/9001 time out from the homelab and the Predator) and grpc.postman-echo.com fails the TLS handshake
 ("InvalidContentType") with the old crates on `main` exactly as with #53, so TLS behaves as before; the local
 end-to-end and grpc-js tests cover plaintext.
-**Resume here (2026-11-22 late night, read first):** everything from the owner's "work end to end" list is merged:
+**Resume here (2026-11-23, read first): Dispatch 0.1.0 is OUT.** #76 merged, tag `v0.1.0` on `main` 10fd7d8, CI green
+on every job incl. updater; the owner published it as **Latest** 2026-11-23 (notes from the changelog). `latest.json`
+lists 0.1.0 for all five platforms, so in-app updates work from now on. The v0.5.0/v0.5.1 releases and tags were
+deleted (owner's OK); the older tags v0.2.0–v0.4.4 are still there. Site published from the tag
+(`VITE_DISPATCH_CHANNEL=release`): /download/ links the v0.1.0 files, no snapshot wording; `site/release.json` on `main`
+matches. ogcrafts.cloud already listed 0.1.0 (no change needed). **Next: the Product Hunt kit** (tagline, description,
+gallery 1270×760, promo video, maker's first comment; problem-led, no comparisons).
+
+**Earlier (2026-11-22 late night):** everything from the owner's "work end to end" list is merged:
 #74 Sync secrets (opt-in `secrets.dispatch-vault`; `src/core/secretsVault.ts`, Rust `read_vault`/`put_vault`,
 `linkedDirs.syncVault`, `PassphraseDialog`) and #75 `dispatch-run` on workspace folders (`--env`, `--flow`, `mcp`;
 `DISPATCH_SECRET_<KEY>`, `DISPATCH_VAULT_PASSPHRASE`); the owner tested both on the Predator. Earlier today: #67–#73
