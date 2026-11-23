@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// Takes the website's screenshots (site/src/assets/shots, 1440×900) or the promo video's (promo/public/shots, 2x)
+// Takes the website's screenshots (site/src/assets/shots, 1440×900), the promo video's (promo/public/shots, 2x) or the
+// Product Hunt gallery's (promo/product-hunt/shots, 2x; see promo/product-hunt/gallery.mjs)
 // from the real web app: it imports examples/demo-shop.dispatch.json, makes a "Demo shop (local)"
 // environment, sends requests to examples/demo-server.mjs and runs the runner and a load test.
 //
 //   npm run build                      # the web app in dist/
-//   node scripts/screenshots.mjs site  # or: promo
+//   node scripts/screenshots.mjs site  # or: promo, ph
 //
 // Needs Playwright with a Chromium. Point PLAYWRIGHT at a playwright or playwright-core package directory and,
 // if its own browser isn't installed, CHROMIUM at a chrome binary. Ports 4318 (demo API) and 5291 (preview) must be free.
@@ -17,7 +18,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..')
 const target = process.argv[2]
-if (!['site', 'promo'].includes(target)) { console.error('usage: node scripts/screenshots.mjs site|promo'); process.exit(2) }
+if (!['site', 'promo', 'ph'].includes(target)) { console.error('usage: node scripts/screenshots.mjs site|promo|ph'); process.exit(2) }
 if (!existsSync(join(REPO, 'dist/index.html'))) { console.error('dist/ is missing: run npm run build first'); process.exit(2) }
 const pw = process.env.PLAYWRIGHT
 if (!pw) { console.error('Set PLAYWRIGHT to a playwright or playwright-core package directory.'); process.exit(2) }
@@ -26,7 +27,15 @@ const { chromium } = createRequire(join(pw, 'package.json'))(pw)
 // [file name, scheme, look, which shots]. The site wants 1x, the video 2x for sharp zooms.
 const SITE = join(REPO, 'site/src/assets/shots')
 const PROMO = join(REPO, 'promo/public/shots')
-const RUNS = target === 'site'
+const PH = join(REPO, 'promo/product-hunt/shots')
+const RUNS = target === 'ph'
+  ? [
+      { scheme: 'light', look: 'dispatch', which: ['request', 'scripts', 'docs'], prefix: 'light' },
+      { scheme: 'dark', look: 'dispatch', which: ['request', 'runner', 'load'], prefix: 'dark' },
+      { scheme: 'dark', look: 'grove', which: ['request'], prefix: 'grove-dark' },
+      { scheme: 'light', look: 'grove', which: ['request'], prefix: 'grove' },
+    ].map((r) => ({ ...r, dpr: 2, name: (s) => `${PH}/${r.prefix}-${s}.png` }))
+  : target === 'site'
   ? [
       // Every figure in every look, light and dark: request.png, request-dark.png, request-grove.png, … (site/build.py
       // and site/src/look.js pick the visitor's).
