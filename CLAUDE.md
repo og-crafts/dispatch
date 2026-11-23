@@ -217,6 +217,15 @@ matches. ogcrafts.cloud already listed 0.1.0 (no change needed). **Product Hunt 
 listing copy, gallery order, maker's comment, replies, launch plan; `gallery/` = 7 slides 1270×760 + thumbnail from
 `gallery.mjs`, shots from `node scripts/screenshots.mjs ph`). Waiting on the owner: Product Hunt account + reconnect
 the claude.ai Product Hunt connector, YouTube upload of the promo, launch date. Nothing is submitted without the owner.
+Since then (2026-11-23): #78 (the kit) and #79 merged (`main` 8dea53c); #79 rewrote the macOS first-run steps on
+/download/#unsigned after the owner hit "Apple could not verify Dispatch is free of malware" on a Mac: newer macOS
+has no Control-click → Open for apps that aren't notarized, so the steps lead with System Settings → Privacy & Security →
+Open Anyway, with `xattr -dr com.apple.quarantine /Applications/Dispatch.app` as the fallback. Site republished from
+`main` (app code identical to the tag). **Apple signing: deferred by the owner (2026-11-23).** Recommended: the owner's
+own Apple Developer account (US$99/yr, Individual), not a friend's Developer ID (their name shows as signer, their
+account carries the risk). When it comes: a CI signing + notarization step from repo secrets (`.p12` + password, Team
+ID, App Store Connect API key), built so the credentials can be swapped. In-app updates use Dispatch's own key, so
+a later change of Apple signer breaks nothing. No PRs open.
 
 **Earlier (2026-11-22 late night):** everything from the owner's "work end to end" list is merged:
 #74 Sync secrets (opt-in `secrets.dispatch-vault`; `src/core/secretsVault.ts`, Rust `read_vault`/`put_vault`,
