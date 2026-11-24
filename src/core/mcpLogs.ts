@@ -75,7 +75,11 @@ export class Redactor {
     this.values = [...new Set(plain.flatMap((v) => [v, JSON.stringify(v).slice(1, -1), urlText(v), urlText(v).replace(/%20/g, '+')]))].sort((a, b) => b.length - a.length)
   }
   text(s: string): string {
-    let out = hideInText(s)
+    return this.known(hideInText(s))
+  }
+  /** Only the known values hidden, wherever they appear. */
+  known(s: string): string {
+    let out = s
     for (const v of this.values) if (out.includes(v)) out = out.split(v).join(HIDDEN)
     return out
   }
