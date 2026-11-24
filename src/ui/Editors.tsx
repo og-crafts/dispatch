@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Auth, Collection, Environment, Folder, Scripts } from '../core/types'
-import { KVTable } from './KVTable'
+import { VariablesEditor } from './VariablesEditor'
 import { AuthEditor, authLabel } from './AuthEditor'
 import { CodeArea } from './CodeArea'
 import { FolderIssues } from './FolderIssues'
@@ -71,9 +71,8 @@ export function CollectionEditor({ ws, confirm, collection, authActions, renderD
       <p className="muted small">Requests and folders set to “Inherit from parent” use this.</p>
       <AuthEditor auth={c.auth} allowInherit={false} onChange={(auth) => setC({ ...c, auth })}
         onGetToken={authActions ? () => authActions.getToken(c.auth, (auth: Auth) => setC({ ...c, auth })) : undefined} gettingToken={authActions?.gettingToken} />
-      <h2>Variables</h2>
-      <p className="muted small">Available to every request in this collection as <code>{'{{name}}'}</code>. The active environment overrides them. Secret values are hidden and left out of backups.</p>
-      <KVTable label="Collection variables" keyPlaceholder="Variable" allowSecrets rows={c.variables} onChange={(variables) => setC({ ...c, variables })} />
+      <VariablesEditor label="Collection" note={<p className="muted small">Available to every request in this collection as <code>{'{{name}}'}</code>. The active environment overrides them.</p>}
+        rows={c.variables} onChange={(variables) => setC({ ...c, variables })} />
       <ScriptsEditor scope="collection" scripts={c.scripts} onChange={(scripts) => setC({ ...c, scripts })} />
       <div className="actions">
         <button type="button" className="btn danger" onClick={async () => {
@@ -180,7 +179,7 @@ function LayersEditor({ vars, onChange }: { vars: KV[]; onChange: (v: KV[]) => v
                   const name = e.target.value
                   upd(setOptions({ ...v, active: v.active === o.name ? name : v.active }, v.options!.map((x) => (x.id === o.id ? { ...x, name } : x))))
                 }} /></td>
-                <td><input className="mono" aria-label={`${v.key} alternative ${i + 1} value`} value={o.value} onChange={(e) => upd(setOptions(v, v.options!.map((x) => (x.id === o.id ? { ...x, value: e.target.value } : x))))} /></td>
+                <td><input className="mono" type={v.secret ? 'password' : 'text'} autoComplete="off" aria-label={`${v.key} alternative ${i + 1} value`} value={o.value} onChange={(e) => upd(setOptions(v, v.options!.map((x) => (x.id === o.id ? { ...x, value: e.target.value } : x))))} /></td>
                 <td className="kv-x">{v.options!.length > 1 && <button type="button" className="icon" aria-label={`Remove ${o.name}`} onClick={() => upd(setOptions(v, v.options!.filter((x) => x.id !== o.id)))}>×</button>}</td>
               </tr>
             ))}
@@ -215,14 +214,13 @@ export function EnvironmentEditor({ ws, confirm, environment }: Common & { envir
     <section className="editor" aria-label="Environment">
       <p className="eyebrow">Environment</p>
       <input className="titleInput" value={e.name} aria-label="Environment name" onChange={(ev) => setE({ ...e, name: ev.target.value })} />
-      <p className="muted small">Changes save automatically. Values stay on this device; secret values are left out of backups.</p>
+      <p className="muted small">Changes save automatically. Values stay on this device unless you sync the workspace.</p>
       <div className="actions">
         <button type="button" className={`btn ${active ? '' : 'primary'}`} onClick={() => ws.setSettings({ activeEnvId: active ? null : e.id })}>
           {active ? 'Stop using' : 'Use this environment'}
         </button>
       </div>
-      <h2>Variables</h2>
-      <KVTable label="Environment variables" keyPlaceholder="Variable" allowSecrets rows={e.variables} onChange={(variables) => setE({ ...e, variables: syncLayerValues(variables) })} />
+      <VariablesEditor label="Environment" rows={e.variables} onChange={(variables) => setE({ ...e, variables: syncLayerValues(variables) })} />
       <LayersEditor vars={e.variables} onChange={(variables) => setE({ ...e, variables })} />
       <div className="actions">
         <button type="button" className="btn" onClick={async () => { const c = await ws.duplicateEnvironment(e); ws.setView({ kind: 'environment', id: c.id }) }}>Duplicate</button>
@@ -239,7 +237,7 @@ export function GlobalsEditor({ ws }: { ws: WorkspaceApi }) {
       <p className="eyebrow">Globals</p>
       <h1 className="titleInput">Global variables</h1>
       <p className="muted small">Available to every request, whatever the environment. Collections and environments override them.</p>
-      <KVTable label="Global variables" keyPlaceholder="Variable" allowSecrets rows={ws.globals} onChange={(g) => void ws.setGlobals(g)} />
+      <VariablesEditor label="Global" rows={ws.globals} onChange={(g) => void ws.setGlobals(g)} />
     </section>
   )
 }

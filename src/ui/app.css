@@ -159,6 +159,9 @@ button.icon:hover { color: var(--ink); background: var(--primary-soft); }
 .kv td .valueField { display: block; width: 100%; min-height: 0; padding: 6px 8px; resize: none; overflow: hidden; line-height: 1.45; overflow-wrap: anywhere; }
 .kv tr.off .valueField { opacity: .5; text-decoration: line-through; }
 .kv .kv-on input { margin-top: 9px; }
+.kv .kv-more { width: 32px; text-align: center; }
+.kv .kvHint { font-size: 12px; text-align: left; margin: 2px 8px 6px; }
+.layerCard .kv .kv-on { width: 64px; }
 .kv td input:not([type="checkbox"]) { width: 100%; padding: 6px 8px; }
 .kv .kv-on { width: 28px; text-align: center; } .kv .kv-x { width: 32px; }
 .kv tr.off input:not([type="checkbox"]) { opacity: .5; text-decoration: line-through; }
@@ -998,4 +1001,4 @@ body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: 
 .extractValue { max-height: 120px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
 .extractExpr { overflow-wrap: anywhere; }
 .extractDialog .toggle { padding-left: 0; justify-content: flex-start; }
-.setsNote { font-size: 12.5px; }
+.resHead .setsNote { font-size: 12.5px; }
