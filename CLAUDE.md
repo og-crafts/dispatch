@@ -208,12 +208,12 @@ focus on the URL at all, both fixed in #50. gRPC over the internet couldn't be c
 9000/9001 time out from the homelab and the Predator) and grpc.postman-echo.com fails the TLS handshake
 ("InvalidContentType") with the old crates on `main` exactly as with #53, so TLS behaves as before; the local
 end-to-end and grpc-js tests cover plaintext.
-**Resume here (2026-11-24, read first): the six-feature round is BUILT, four stacked PRs wait for the owner.**
-#81 polish (rename in place, curl naming, wrapping values) <- #82 extract into variable <- #83 Secrets section <- #84
-cookies per environment. **Merge all four, bottom up, without deleting base branches until the next PR is retargeted to
-`main`**; the review fixes for all of them are in the top PR (#84, 2861eaf), so don't release only some. CI green on all
-four (no updater, as always), 574 tests. Setup for the owner: Predator `Downloads\Dispatch_0.1.0_x64-setup-extract-cookies.exe`
-(it upgrades the cookie store of the installed app; going back to 0.1.0 starts fine but without those cookies).
+**Resume here (2026-11-24, read first): the six-feature round is MERGED.** The owner tested the setup
+(`Dispatch_0.1.0_x64-setup-extract-cookies.exe`) and said merge: #81 polish (rename in place, curl naming, wrapping values),
+#82 extract into variable, #83 Secrets section, #84 cookies per environment + all review fixes, with merge commits
+(`main` 9ad8cd6, same tree as 8b7114e, which was green on #84; 574 tests). Merged branches are kept on origin. Not released:
+next is a version bump with its changelog entry, when the owner wants a release. Going back to 0.1.0 from this build
+starts fine but without the cookies.
 Design + plan: `docs/superpowers/specs/2026-11-23-extract-variables-and-polish-design.md`,
 `docs/superpowers/plans/2026-11-24-extract-variables-and-polish.md`. The rule line differs from the design on purpose:
 `{ const v = <expr>; if (v != null && v !== '') dx.env.set('token', v) } // extracted` (a failed login keeps the token).
