@@ -22,22 +22,15 @@ export const checkForUpdate = () => call<UpdateInfo>('update_check')
 /** Downloads, checks the signature, installs and restarts Dispatch. */
 export const installUpdate = () => call<void>('update_install')
 
-type Notify = (msg: string, action?: { label: string; run: () => void }) => void
+export type Notify = (msg: string, action?: { label: string; run: () => void }) => void
+export type Confirm = (msg: string) => Promise<boolean>
 
-/**
- * One check, with what to tell the person. `quiet` (the check on start) says nothing unless there's an update.
- * Installing always asks first.
- */
-export async function runUpdateCheck(notify: Notify, confirm: (m: string) => Promise<boolean>, quiet = false) {
-  let info: UpdateInfo
-  try { info = await checkForUpdate() } catch (e) { if (!quiet) notify(String(e instanceof Error ? e.message : e)); return }
-  if (!info.version) { if (!quiet) notify(`You have the newest version (${info.current}).`); return }
-  const install = async () => {
-    const notes = info.notes?.trim() ? `\n\n${info.notes.trim().slice(0, 600)}` : ''
-    if (!(await confirm(`Install Dispatch ${info.version}? You have ${info.current}. Dispatch restarts when it’s done; open tabs and drafts are kept.${notes}`))) return
-    notify(`Downloading Dispatch ${info.version}…`)
-    try { await installUpdate() } catch (e) { notify(String(e instanceof Error ? e.message : e)) }
-  }
-  if (quiet) notify(`Dispatch ${info.version} is available.`, { label: 'Install…', run: () => void install() })
-  else await install()
+/** True in desktop builds that carry an update key; others never check on their own. */
+export const updatesConfigured = async () => updatesAvailable() && (await call<boolean>('update_configured'))
+
+export const installQuestion = (i: UpdateInfo) => {
+  const notes = i.notes?.trim() ? `\n\n${i.notes.trim().slice(0, 600)}` : ''
+  return `Install Dispatch ${i.version}? You have ${i.current}. Dispatch restarts when it’s done; open tabs and drafts are kept.${notes}`
 }
+
+export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))

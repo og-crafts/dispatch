@@ -34,6 +34,12 @@ pub fn configured<R: Runtime>(app: &AppHandle<R>) -> bool {
         .is_some_and(|k| !k.trim().is_empty())
 }
 
+/// Whether this build can look for updates at all (asks nobody).
+#[tauri::command]
+pub fn update_configured(app: AppHandle) -> bool {
+    configured(&app)
+}
+
 #[tauri::command]
 pub async fn update_check(app: AppHandle) -> Result<UpdateInfo, String> {
     let current = app.package_info().version.to_string();
