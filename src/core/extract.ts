@@ -1,5 +1,6 @@
 /** "Extract into variable": from a value picked in a response to the script line that takes it on every send. */
 import { fmt } from './scripts'
+import { type KV, kv } from './types'
 
 export type Source = { ok: true; expr: string; value: string; name: string; unique: boolean } | { ok: false; reason: string }
 export type Scope = 'env' | 'collection' | 'globals'
@@ -83,10 +84,11 @@ export function headerSource(name: string, value: string): Source {
 }
 
 const AROUND = 20
-const lit = (s: string) => s.replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&').replace(/\r?\n/g, '\\r?\\n').replace(/\t/g, '\\t').replace(/\r/g, '\\r').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
+const lit = (s: string) => s.replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&').replace(/\s*\n\s*/g, '\\s*').replace(/\t/g, '\\t').replace(/\r/g, '\\r').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
 const noHalves = (s: string) => s.replace(/^[\uDC00-\uDFFF]/, '').replace(/[\uD800-\uDBFF]$/, '')
 
-export function textSource(body: string, start: number, end: number): Source {
+/** `real` is the body as it came, when `body` is a tidied view of it (the rule runs on the real one). */
+export function textSource(body: string, start: number, end: number, real = body): Source {
   let from = start, to = end
   while (to > from && /\s/.test(body[to - 1])) to--
   while (from < to && /\s/.test(body[from])) from++
@@ -105,15 +107,28 @@ export function textSource(body: string, start: number, end: number): Source {
   const source = `${open}(${shape})${shut}`
   const re = new RegExp(source, 'g')
   const found: string[] = [] // two are enough to know; places may overlap
-  for (let m = re.exec(body); m && found.length < 2; m = re.exec(body)) { found.push(m[1]); re.lastIndex = m.index + 1 }
+  for (let m = re.exec(real); m && found.length < 2; m = re.exec(real)) { found.push(m[1]); re.lastIndex = m.index + 1 }
   const tag = /<([\w:-]+)[^<>]*>\s*$/.exec(body.slice(0, from))?.[1] ?? /([\w-]+)["']?\s*[=:]\s*["']?$/.exec(body.slice(0, from))?.[1]
-  return { ok: true, expr: `(dx.response.text().match(/${source}/) || [])[1]`, value, name: tag ? nameFrom(tag) : 'value', unique: found.length === 1 && found[0] === value }
+  return { ok: true, expr: `(dx.response.text().match(/${source}/) || [])[1]`, value, name: tag ? nameFrom(tag) : 'value', unique: found.length === 1 && found[0].replace(/\r\n/g, '\n') === value }
 }
 
 /** By content, as the viewer does: JSON when it parses, whatever the Content-Type. */
-export function bodySource(text: string, from: number, to: number): Source {
-  try { JSON.parse(text) } catch { return textSource(text, from, to) }
+export function bodySource(text: string, from: number, to: number, real = text): Source {
+  try { JSON.parse(text) } catch { return textSource(text, from, to, real) }
   return jsonSource(text, from, to)
+}
+
+/** Sets a variable in a table: the row requests use (the last one that's on), or a new one. */
+export function setVar(rows: KV[], name: string, value: string, secret: boolean): { rows: KV[]; undo: (rows: KV[]) => KV[] } {
+  const same = rows.filter((r) => r.key.trim() === name)
+  const old = same.filter((r) => r.enabled).pop() ?? same.pop()
+  if (!old) {
+    const added: KV = { ...kv(name, value), secret }
+    return { rows: [...rows, added], undo: (now) => now.filter((r) => r.id !== added.id) }
+  }
+  const options = old.options?.map((o) => (o.name === old.active ? { ...o, value } : o))
+  const next: KV = { ...old, value, secret, enabled: true, ...(options ? { options } : {}) }
+  return { rows: rows.map((r) => (r === old ? next : r)), undo: (now) => now.map((r) => (r.id === old.id ? old : r)) }
 }
 
 const MARK = '// extracted'

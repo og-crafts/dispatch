@@ -1,6 +1,6 @@
 /** Working out the script line that takes a selected response value. */
 import { describe, expect, it } from 'vitest'
-import { bodySource, extractedTargets, headerSource, jsonSource, ruleLine, textSource, withRule, withoutRule, type Source } from '../src/core/extract'
+import { bodySource, extractedTargets, headerSource, jsonSource, ruleLine, setVar, textSource, withRule, withoutRule, type Source } from '../src/core/extract'
 import { compileWithFunction, runScript } from '../src/core/scripts'
 import { isSecretName } from '../src/core/share'
 
@@ -127,3 +127,37 @@ describe('the rule in the script', () => {
 })
 
 it('knows secret-looking names', () => { expect([isSecretName('api_token'), isSecretName('host')]).toEqual([true, false]) })
+
+describe('a pretty-printed view of XML', () => {
+  it('gives a rule that works on the body as it came', async () => {
+    const raw = '<r><id>1</id><token>abc</token></r>', shown = '<r>\n  <id>1</id>\n  <token>abc</token>\n</r>'
+    const i = shown.indexOf('abc')
+    const s = ok(textSource(shown, i, i + 3, raw))
+    expect(s.unique).toBe(true)
+    expect(await runRule(s.expr, raw)).toBe('abc')
+  })
+})
+
+describe('setting the variable now', () => {
+  const row = { id: '1', key: 'token', value: 'old', enabled: true, secret: true }
+  it('replaces the value and flag, and can be undone', () => {
+    const r = setVar([row], 'token', 'new', false)
+    expect(r.rows).toEqual([{ ...row, value: 'new', secret: false }])
+    expect(r.undo([...r.rows, { id: '2', key: 'other', value: '', enabled: true }])).toEqual([row, { id: '2', key: 'other', value: '', enabled: true }])
+  })
+  it('adds a row, and undo takes only that out', () => {
+    const r = setVar([], 'token', 'new', true)
+    expect(r.rows).toMatchObject([{ key: 'token', value: 'new', secret: true, enabled: true }])
+    expect(r.undo(r.rows)).toEqual([])
+  })
+  it('turns on a row that was off, and keeps the active option in step', () => {
+    const o = { ...row, enabled: false, active: 'b', options: [{ id: 'a', name: 'a', value: '1' }, { id: 'b', name: 'b', value: 'old' }] }
+    const r = setVar([o], 'token', 'new', true)
+    expect(r.rows[0]).toMatchObject({ enabled: true, options: [{ value: '1' }, { value: 'new' }] })
+    expect(r.undo(r.rows)).toEqual([o])
+  })
+  it('sets the row requests use when there are several', () => {
+    const r = setVar([row, { ...row, id: '2' }, { ...row, id: '3', enabled: false }], 'token', 'new', true)
+    expect(r.rows.map((x) => x.value)).toEqual(['old', 'new', 'old'])
+  })
+})

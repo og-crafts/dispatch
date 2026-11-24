@@ -993,3 +993,9 @@ body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: 
 .spaceCards ~ .actions { margin-bottom: 12px; }
 .spaceSecrets { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 13px; }
 .spaceSecrets .actions { margin: 0 0 0 auto; }
+
+/* Extract into variable */
+.extractValue { max-height: 120px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+.extractExpr { overflow-wrap: anywhere; }
+.extractDialog .toggle { padding-left: 0; justify-content: flex-start; }
+.setsNote { font-size: 12.5px; }

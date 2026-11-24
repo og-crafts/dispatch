@@ -153,6 +153,8 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
     },
   }
 
+  /** Asks the request pane to show the after-response script (counts up on each ask). */
+  const [showScript, setShowScript] = useState(0)
   const notify = useCallback((msg: string, action?: { label: string; run: () => void }) => {
     setToast({ text: msg, action }); clearTimeout(toastTimer.current)
     toastTimer.current = setTimeout(() => setToast(null), action ? 9000 : msg.length > 80 ? 8000 : 3500)
@@ -416,9 +418,9 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
           : <>
               {ws.draft.protocol === 'http' ? (
                 <SplitPane
-                  first={<RequestPane ws={ws} onSave={save} onSaveAs={() => void saveAs()} notify={notify} authActions={authActions} renderDocs={renderDocs}
+                  first={<RequestPane ws={ws} showScript={showScript} onSave={save} onSaveAs={() => void saveAs()} notify={notify} authActions={authActions} renderDocs={renderDocs}
                     onShare={() => setSharing({ kind: 'request', requestId: ws.draft.id, draft: ws.draft, lastResponse: ws.result?.response ?? null })} />}
-                  second={<ResponsePane ws={ws} notify={notify} saveFile={saveAnyFile}
+                  second={<ResponsePane ws={ws} onShowScript={() => setShowScript((n) => n + 1)} notify={notify} saveFile={saveAnyFile}
                     onShare={() => setSharing({ kind: 'request', requestId: ws.draft.id, draft: ws.draft, lastResponse: ws.result?.response ?? null, open: 'response' })} />} />
               ) : (
                 <div className="nonHttp">
