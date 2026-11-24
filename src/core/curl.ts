@@ -185,6 +185,12 @@ export function nameFromUrl(url: string): string {
   } catch { return url.slice(0, 60) || 'New request' }
 }
 
+/** The name after pasting a curl command: the new URL's, unless the person gave the request a name of their own. */
+export function nameAfterPaste(current: string, previousUrl: string, imported: string): string {
+  const automatic = ['New request', nameFromUrl(previousUrl), nameFromUrl(withScheme(previousUrl))]
+  return automatic.includes(current) ? imported : current
+}
+
 /** POSIX single-quoting. */
 const q = (s: string) => (/^[A-Za-z0-9_\-.,:/@%+=]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`)
 

@@ -3,7 +3,7 @@ import type { GraphQLSchema } from 'graphql'
 import type { Auth, BodyKind, Method, RequestDef } from '../core/types'
 import { METHODS } from '../core/types'
 import { paramsFromUrl, urlWithParams } from '../core/url'
-import { fromCurl, looksLikeCurl } from '../core/curl'
+import { fromCurl, looksLikeCurl, nameAfterPaste } from '../core/curl'
 import { effectiveAuth, jsonProblem, pathVarsFromUrl } from '../core/prepare'
 import { FilePick, KVTable } from './KVTable'
 import { AuthEditor, authLabel } from './AuthEditor'
@@ -65,7 +65,7 @@ export function RequestPane({ ws, onSave, notify, authActions, scriptHelp, rende
     e.preventDefault()
     try {
       const { request, warnings } = fromCurl(text)
-      setDraft((d) => ({ ...request, id: d.id, name: d.name === 'New request' ? request.name : d.name, collectionId: d.collectionId, folderId: d.folderId, pathVars: pathVarsFromUrl(request.url, []) }))
+      setDraft((d) => ({ ...request, id: d.id, name: nameAfterPaste(d.name, d.url, request.name), collectionId: d.collectionId, folderId: d.folderId, pathVars: pathVarsFromUrl(request.url, []) }))
       notify(warnings.length ? `Imported from curl. ${warnings.join(' ')}` : 'Imported from curl. Turn its hard-coded values into variables?', { label: 'Parameterize', run: () => setParamOpen(true) })
     } catch (err) {
       notify(err instanceof Error ? err.message : String(err))

@@ -56,6 +56,17 @@ describe('Dispatch app', () => {
     expect((screen.getByLabelText('URL') as HTMLInputElement).value).toBe('https://a.test/x?page')
   })
 
+  it('takes the name of each pasted curl command', async () => {
+    render(<App transport={new FakeTransport()} />)
+    const url = await screen.findByLabelText('URL')
+    const paste = (u: string) => fireEvent.paste(url, { clipboardData: { getData: () => `curl ${u}` } })
+    paste('https://a.test/one?q=1'); paste('https://b.test/two')
+    expect((screen.getByLabelText('Request name') as HTMLInputElement).value).toBe('b.test/two')
+    fireEvent.change(screen.getByLabelText('Request name'), { target: { value: 'Mine' } })
+    paste('https://c.test/three')
+    expect((screen.getByLabelText('Request name') as HTMLInputElement).value).toBe('Mine')
+  })
+
   it('imports a pasted curl command', async () => {
     await start()
     fireEvent.paste(screen.getByLabelText('URL'), { clipboardData: { getData: () => `curl -X POST https://api.test/users -H 'X-Trace: 1' --data-raw '{"a":1}'` } })
