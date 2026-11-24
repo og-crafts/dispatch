@@ -12,6 +12,7 @@ import type { Workspace } from '../core/backup'
 import { type Execution, type Pipeline, type RunContext, execute, folderChain, prepareContext, sendOptions } from '../core/runtime'
 import { type ScriptEngine, scriptPipeline } from '../core/scriptPipeline'
 import { WorkerEngine } from '../core/workerEngine'
+import { type Scope, ruleFor, setVar, withRule, withoutRule } from '../core/extract'
 import { type Flow, type FlowRun, type FlowStep, newFlow, runFlow } from '../core/flows'
 import { FAKE } from '../core/fake'
 import { authPipeline } from '../core/auth'
@@ -123,10 +124,13 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   })
   const [ready, setReady] = useState(false)
   const [collections, setCollections] = useState<Collection[]>([])
+  const collectionsRef = useRef(collections); collectionsRef.current = collections
   const [folders, setFolders] = useState<Folder[]>([])
   const [requests, setRequests] = useState<RequestDef[]>([])
   const [environments, setEnvironments] = useState<Environment[]>([])
+  const environmentsRef = useRef(environments); environmentsRef.current = environments
   const [globals, setGlobalsState] = useState<KV[]>([])
+  const globalsRef = useRef(globals); globalsRef.current = globals
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [settings, setSettingsState] = useState<Settings>(defaultSettings)
   const [tabs, setTabs] = useState<Tab[]>(() => [newTab()])
@@ -451,6 +455,13 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     setFolders((fs) => [...fs, f])
     return f
   }, [])
+  /** Saves variables a run changed, onto the collections as they are now (they may have been edited meanwhile). */
+  const saveCollectionVars = useCallback(async (changed: Record<string, KV[]>) => {
+    for (const c of collectionsRef.current) {
+      const variables = changed[c.id]
+      if (variables && JSON.stringify(variables) !== JSON.stringify(c.variables)) await updateCollection({ ...c, variables })
+    }
+  }, [updateCollection])
   const updateFolder = useCallback(async (f: Folder) => {
     const next = { ...f, updatedAt: Date.now() }
     setFolders((fs) => fs.map((x) => (x.id === f.id ? next : x)))
@@ -495,6 +506,32 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     return copy
   }, [])
   const setGlobals = useCallback(async (g: KV[]) => { setGlobalsState(g); await db.putGlobals(g) }, [])
+
+  /** "Extract into variable": sets the value now and adds the rule to the request's script. Returns how to undo both. */
+  const extractVariable = useCallback(async (o: { scope: Scope; name: string; value: string; secret: boolean; expr: string }) => {
+    const draftId = tabsRef.current.find((t) => t.id === activeIdRef.current)!.draft.id
+    const onDraft = (fn: (post: string) => string) => setTabs((ts) => ts.map((t) => (t.draft.id === draftId ? { ...t, draft: { ...t.draft, scripts: { ...t.draft.scripts, post: fn(t.draft.scripts.post) } } } : t)))
+    const draft = tabsRef.current.find((t) => t.draft.id === draftId)!.draft
+    const ownerId = o.scope === 'env' ? settingsRef.current.activeEnvId : draft.collectionId
+    /** The table as it is now, and how to save it. */
+    const table = (): { rows: KV[]; save: (rows: KV[]) => Promise<void> } | null => {
+      if (o.scope === 'globals') return { rows: globalsRef.current, save: setGlobals }
+      if (o.scope === 'env') { const e = environmentsRef.current.find((x) => x.id === ownerId); return e ? { rows: e.variables, save: (variables) => updateEnvironment({ ...e, variables }) } : null }
+      const c = collectionsRef.current.find((x) => x.id === ownerId)
+      return c ? { rows: c.variables, save: (variables) => updateCollection({ ...c, variables }) } : null
+    }
+    const t = table()
+    if (!t) throw new Error('That place for the variable is gone.')
+    const set = setVar(t.rows, o.name, o.value, o.secret)
+    const before = ruleFor(draft.scripts.post, o.scope, o.name)
+    await t.save(set.rows)
+    onDraft((post) => withRule(post, o.scope, o.name, o.expr))
+    return async () => {
+      onDraft((post) => withoutRule(post, o.scope, o.name, o.expr, before))
+      const now = table()
+      if (now) await now.save(set.undo(now.rows))
+    }
+  }, [setGlobals, updateEnvironment, updateCollection])
 
   const importWorkspace = useCallback(async (w0: Workspace) => {
     // Imports land in the workspace you're looking at (unless they name one that exists here).
@@ -546,9 +583,10 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     const r = await runFlow(f, { collections, folders, requests, environment: env, globals, settings: settingsRef.current }, transport, pipelineRef.current, engine, { onStep, signal })
     if (r.environment && env && JSON.stringify(r.environment) !== JSON.stringify(env.variables)) await updateEnvironment({ ...env, variables: r.environment })
     if (JSON.stringify(r.globals) !== JSON.stringify(globals)) await setGlobals(r.globals)
+    await saveCollectionVars(r.collections)
     log([...r.logs, { level: r.ok ? 'info' : 'error', at: Date.now(), source: 'flow', text: `${f.name}: ${r.ok ? 'passed' : `failed — ${r.error}`} (${r.steps.length} steps, ${r.durationMs} ms)` }])
     return r
-  }, [environments, collections, folders, requests, globals, transport, engine, updateEnvironment, setGlobals, log])
+  }, [environments, collections, folders, requests, globals, transport, engine, updateEnvironment, setGlobals, saveCollectionVars, log])
 
   // ---------- workspaces ----------
   const activeSpaceId = spaces.some((x) => x.id === settings.activeSpaceId) ? settings.activeSpaceId : DEFAULT_SPACE.id
@@ -625,7 +663,6 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
    * Saves what an MCP assistant made or changed in its own workspace (added the first time) or in a workspace the
    * user lets it edit. Anything elsewhere is ignored.
    */
-  const collectionsRef = useRef(collections); collectionsRef.current = collections
   const requestsRef = useRef(requests); requestsRef.current = requests
   const saveAssistant = useCallback(async (c: { collections: Collection[]; folders: Folder[]; requests: RequestDef[] }) => {
     if (!spacesRef.current.some((x) => x.id === ASSISTANT_SPACE.id)) await saveSpaces([...spacesRef.current, ASSISTANT_SPACE])
@@ -919,7 +956,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     setDraft, setView, setSettings, setLogs, log, openRequest, startNew, closeTab, closeTabs, duplicateTab, selectTab, saveDraft, saveDraftAs, renameRequest,
     moveRequest, removeRequest, duplicateRequest, saveAssistant, removeForAssistant, handToAssistant, send, cancel, applyChanges, applyAuthUpdate, openHistory, clearHistory,
     addCollection, updateCollection, removeCollection, addFolder, updateFolder, removeFolder,
-    addEnvironment, updateEnvironment, removeEnvironment, duplicateEnvironment, setGlobals, importWorkspace,
+    addEnvironment, updateEnvironment, removeEnvironment, duplicateEnvironment, setGlobals, saveCollectionVars, extractVariable, importWorkspace,
   }
 }
 

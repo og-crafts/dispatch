@@ -59,6 +59,21 @@ fills in `{{variables}}` and leaves unknown ones as they are.
 | `dx.response.validate(schema)` | Checks the body against a JSON Schema: `{ valid, errors }`. |
 | `dx.visualize(template, data)` | Shows a [Handlebars](https://handlebarsjs.com) template in the Visualize tab. The template's own scripts can read `window.dx.data`. |
 
+### Extract into variable
+
+You don't have to write these lines by hand. Select a value in a response (or right-click a response header), choose
+**Extract into variable…**, and give it a name. Dispatch sets the variable straight away and adds a line like this to
+the request's after-response script:
+
+```js
+{ const v = dx.response.json('data.token'); if (v != null) dx.env.set('token', v) } // extracted
+```
+
+It runs on every send, in the runner, in flows and in `dispatch-run`. When a response doesn't have the value (a login
+that failed, say), the variable keeps what it had. The line is ordinary script: change it as you like. Lines that end in
+`// extracted` are the ones listed as "Sets {{token}}" by the response, and extracting the same variable again replaces
+its line; remove the marker to keep a line as your own.
+
 ### Sending and running
 
 | | |

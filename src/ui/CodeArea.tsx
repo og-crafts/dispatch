@@ -16,6 +16,8 @@ interface Props {
   schema?: GraphQLSchema | null
   /** Set to the CodeMirror editor once it is ready (null before, in the test DOM, and after it is gone). */
   editorRef?: MutableRefObject<Editor | null>
+  /** Right-click (or Shift+F10): what is selected, as offsets in `text`, the editor's own document. */
+  onContextMenu?: (e: React.MouseEvent, sel: { text: string; from: number; to: number }) => void
 }
 
 /** CodeMirror is used in real browsers; the test DOM (jsdom) gets a plain textarea. */
@@ -25,7 +27,7 @@ const rich = typeof navigator !== 'undefined' && !/jsdom/i.test(navigator.userAg
  * A code editor: a plain textarea first, upgraded to CodeMirror once it has loaded (it's loaded on demand).
  * Same props either way, so callers don't care which one they got.
  */
-export function CodeArea({ label, value, onChange, rows = 10, placeholder, mono = true, readOnly, lang = 'text', variables, schema, editorRef }: Props) {
+export function CodeArea({ label, value, onChange, rows = 10, placeholder, mono = true, readOnly, lang = 'text', variables, schema, editorRef, onContextMenu }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const ed = useRef<Editor | null>(null)
   const [ready, setReady] = useState(false)
@@ -62,7 +64,12 @@ export function CodeArea({ label, value, onChange, rows = 10, placeholder, mono 
 
   if (rich) {
     return (
-      <div className={`cmHost ${ready ? 'ready' : ''}`}>
+      <div className={`cmHost ${ready ? 'ready' : ''}`} onContextMenu={onContextMenu && ((e) => {
+        const view = ed.current?.view
+        if (!view) return
+        const { from, to } = view.state.selection.main
+        onContextMenu(e, { text: view.state.doc.toString(), from, to })
+      })}>
         {!ready && <textarea className={`code ${mono ? 'mono' : ''}`} value={value} aria-label={label} rows={rows} readOnly={readOnly} placeholder={placeholder} spellCheck={false} onChange={(e) => onChange(e.target.value)} />}
         <div ref={host} />
       </div>
@@ -71,6 +78,7 @@ export function CodeArea({ label, value, onChange, rows = 10, placeholder, mono 
   return (
     <textarea className={`code ${mono ? 'mono' : ''}`} value={value} aria-label={label} spellCheck={false} rows={rows} placeholder={placeholder} readOnly={readOnly}
       onChange={(e) => onChange(e.target.value)}
+      onContextMenu={onContextMenu && ((e) => onContextMenu(e, { text: e.currentTarget.value, from: e.currentTarget.selectionStart, to: e.currentTarget.selectionEnd }))}
       onKeyDown={(e) => {
         if (e.key !== 'Tab' || e.shiftKey || readOnly || !mono) return
         e.preventDefault()

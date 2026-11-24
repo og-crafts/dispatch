@@ -162,7 +162,7 @@ export async function createEditor(parent: HTMLElement, o: EditorOptions): Promi
     keymap.of([...searchKeymap, ...foldKeymap]),
   ]
   if (o.lang !== 'text' && o.lang !== 'markdown') extensions.push(lineNumbers(), foldGutter(), highlightActiveLineGutter())
-  if (o.readOnly) extensions.push(EditorState.readOnly.of(true), EditorView.editable.of(false))
+  if (o.readOnly) extensions.push(EditorState.readOnly.of(true), EditorView.editable.of(false), EditorView.contentAttributes.of({ tabindex: '0' }))
   else {
     extensions.push(history(), indentOnInput(), closeBrackets(), highlightActiveLine(),
       Prec.highest(keymap.of(completionKeymap)),

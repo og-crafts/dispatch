@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import type { GraphQLSchema } from 'graphql'
 import type { Auth, BodyKind, Method, RequestDef } from '../core/types'
 import { METHODS } from '../core/types'
@@ -49,10 +49,12 @@ const BODY_KINDS: [BodyKind, string][] = [
 
 const closeMenu = (e: React.MouseEvent) => { (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open') }
 
-export function RequestPane({ ws, onSave, notify, authActions, scriptHelp, renderDocs, onShare, onSaveAs }: Props & { onShare?: () => void; onSaveAs?: () => void }) {
+export function RequestPane({ ws, onSave, notify, authActions, scriptHelp, renderDocs, onShare, onSaveAs, showScript = 0 }: Props & { showScript?: number; onShare?: () => void; onSaveAs?: () => void }) {
   const { draft, setDraft, sending } = ws
   const [tab, setTab] = useState<Tab>('params')
   const [scriptTab, setScriptTab] = useState<'pre' | 'post'>('pre')
+  const shownScript = useRef(showScript)
+  useEffect(() => { if (showScript !== shownScript.current) { shownScript.current = showScript; setTab('scripts'); setScriptTab('post') } }, [showScript])
   const [gqlSchema, setGqlSchema] = useState<GraphQLSchema | null>(null)
   const [paramOpen, setParamOpen] = useState(false)
   const set = (patch: Partial<RequestDef>) => setDraft((d) => ({ ...d, ...patch }))

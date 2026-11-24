@@ -6,6 +6,9 @@ import { parseSetCookie } from '../core/cookies'
 import { uid } from '../core/types'
 import type { WorkspaceApi } from './useWorkspace'
 import { CodeArea } from './CodeArea'
+import { useContextMenu } from './ContextMenu'
+import { ExtractDialog, type ExtractChoice, type ExtractTarget } from './ExtractDialog'
+import { type Source, bodySource, extractedTargets, headerSource } from '../core/extract'
 import { Icon } from './Icons'
 import type { Editor, Lang } from './editor/codemirror'
 import { ResponseHistory, useRequestHistory } from './ResponseHistory'
@@ -23,7 +26,7 @@ export interface FileSaver { (fileName: string, data: { text?: string; base64?: 
 const extFor = (ct: string) => ct.includes('json') ? 'json' : ct.includes('html') ? 'html' : ct.includes('xml') ? 'xml' : ct.includes('png') ? 'png'
   : ct.includes('jpeg') ? 'jpg' : ct.includes('gif') ? 'gif' : ct.includes('pdf') ? 'pdf' : ct.includes('csv') ? 'csv' : ct.startsWith('text/') ? 'txt' : 'bin'
 
-export function ResponsePane({ ws, notify, saveFile, onShare }: { ws: WorkspaceApi; notify: (m: string) => void; saveFile?: FileSaver; onShare?: () => void }) {
+export function ResponsePane({ ws, notify, saveFile, onShare, onShowScript }: { ws: WorkspaceApi; notify: (m: string, action?: { label: string; run: () => void }) => void; onShowScript?: () => void; saveFile?: FileSaver; onShare?: () => void }) {
   const { result, sending } = ws
   const earlier = useRequestHistory(ws)
   const [showEarlier, setShowEarlier] = useState(false)
@@ -69,6 +72,42 @@ export function ResponsePane({ ws, notify, saveFile, onShare }: { ws: WorkspaceA
     try { await navigator.clipboard.writeText(text); notify(`${what} copied.`) } catch { notify('Couldn’t reach the clipboard.') }
   }
 
+  // ---------- extract into variable ----------
+  const ctx = useContextMenu()
+  const [extracting, setExtracting] = useState<Extract<Source, { ok: true }> | null>(null)
+  useEffect(() => setExtracting(null), [result])
+  const targets: ExtractTarget[] = [
+    { scope: 'env', label: ws.environment ? `Environment: ${ws.environment.name}` : 'No environment selected', rows: ws.environment?.variables ?? [], disabled: !ws.environment },
+    { scope: 'collection', label: ws.collection ? `This collection: ${ws.collection.name}` : 'This collection (the request isn’t in one)', rows: ws.collection?.variables ?? [], disabled: !ws.collection },
+    { scope: 'globals', label: 'Globals', rows: ws.globals },
+  ]
+  /** `find` is null when there's nothing to take; `why` then says so. */
+  const extractMenu = (e: React.MouseEvent, text: string, find: (() => Source) | null, why?: string) => ctx.open(e, [
+    { label: 'Copy', disabled: !text, run: () => void copy(text, 'Selection') },
+    { label: 'Extract into variable…', disabled: !find, hint: find ? undefined : why, run: () => { const s = find!(); if (s.ok) setExtracting(s); else notify(s.reason) } },
+  ], 'Response')
+  const bodyMenu = (e: React.MouseEvent, sel: { text: string; from: number; to: number }) => {
+    const text = sel.text.slice(sel.from, sel.to)
+    const filtering = !!filtered
+    extractMenu(e, text, text.trim() && !filtering ? () => bodySource(sel.text, sel.from, sel.to, res!.body) : null, filtering ? 'Clear the filter first' : 'Select a value first')
+  }
+  /** A big body is plain text on the page; its selection is measured from the start of the text. */
+  const bigMenu = (e: React.MouseEvent<HTMLElement>) => {
+    const s = window.getSelection()
+    const r = s?.rangeCount ? s.getRangeAt(0) : null
+    if (!r || !e.currentTarget.contains(r.startContainer) || !e.currentTarget.contains(r.endContainer)) { bodyMenu(e, { text: shown, from: 0, to: 0 }); return }
+    const lead = document.createRange(); lead.setStart(e.currentTarget, 0); lead.setEnd(r.startContainer, r.startOffset)
+    const from = lead.toString().length
+    bodyMenu(e, { text: shown, from, to: from + r.toString().length })
+  }
+  const doExtract = async (s: Extract<Source, { ok: true }>, c: ExtractChoice) => {
+    try {
+      const undo = await ws.extractVariable({ ...c, value: s.value, expr: s.expr })
+      notify(`Saved {{${c.name}}}. Every send of this request refreshes it. Save the request to keep the rule.`, { label: 'Undo', run: () => { void undo() } })
+    } catch (e) { notify(e instanceof Error ? e.message : String(e)) }
+  }
+  const sets = extractedTargets(ws.draft.scripts.post)
+
   if (sending) return <section className="response empty" aria-label="Response" aria-busy="true"><p className="pulse">Sending…</p></section>
   if (!result) {
     return (
@@ -102,6 +141,7 @@ export function ResponsePane({ ws, notify, saveFile, onShare }: { ws: WorkspaceA
           </span>
           <span className="metric" title="Size">{formatBytes(res.size)}</span>
         </span> : <span className="status bad">{result.error?.startsWith('Skipped') ? 'Skipped' : 'Not sent'}</span>}
+        {sets.length > 0 && <button type="button" className="linkBtn small setsNote" title="Show the after-response script" onClick={onShowScript}>Sets {sets.map((t) => `{{${t.name}}}`).join(', ')}</button>}
         {tests.length > 0 && <span className={`metric ${passed === tests.length ? 'goodText' : 'badText'}`}>{passed}/{tests.length} tests passed</span>}
         <span className="grow" />
         {res && onShare && <button type="button" className="btn ghost small withIcon" onClick={onShare} title="Save the request and this response as one HTML page anyone can open: tabs, copy buttons, foldable JSON. Secrets and personal values are left out.">
@@ -138,8 +178,8 @@ export function ResponsePane({ ws, notify, saveFile, onShare }: { ws: WorkspaceA
                 {saveFile && <button type="button" className="btn small ghost" onClick={() => void saveBody()}>Save to file</button>}
               </div>}
               {huge
-                ? <pre className="code mono out">{truncated ? shown.slice(0, PREVIEW_LIMIT) : shown}</pre>
-                : <CodeArea key={`${res.timeMs}-${res.size}-${lang}`} label="Response body" lang={lang} readOnly value={shown} onChange={() => {}} rows={20} editorRef={viewer} />}
+                ? <pre className="code mono out" onContextMenu={bigMenu}>{truncated ? shown.slice(0, PREVIEW_LIMIT) : shown}</pre>
+                : <CodeArea key={`${res.timeMs}-${res.size}-${lang}`} label="Response body" lang={lang} readOnly value={shown} onChange={() => {}} rows={20} editorRef={viewer} onContextMenu={bodyMenu} />}
             </>)}
         {res && current === 'preview' && (isImage
           ? <img className="imgPreview" alt="Response image" src={`data:${ct};base64,${res.base64}`} />
@@ -153,7 +193,7 @@ export function ResponsePane({ ws, notify, saveFile, onShare }: { ws: WorkspaceA
         </>}
         {res && current === 'headers' && (
           <table className="kv readonly" aria-label="Response headers">
-            <tbody>{res.headers.map(([k, v], i) => <tr key={i}><th className="mono">{k}</th><td className="mono">{v}</td></tr>)}</tbody>
+            <tbody>{res.headers.map(([k, v], i) => <tr key={i} tabIndex={0} onContextMenu={(e) => extractMenu(e, v, v ? () => headerSource(k, v) : null, 'This header is empty')}><th className="mono">{k}</th><td className="mono">{v}</td></tr>)}</tbody>
           </table>
         )}
         {res && current === 'cookies' && (
@@ -180,6 +220,8 @@ export function ResponsePane({ ws, notify, saveFile, onShare }: { ws: WorkspaceA
           </div>
         )}
       </div>
+      {ctx.node}
+      {extracting && <ExtractDialog source={extracting} targets={targets} onExtract={(c) => doExtract(extracting, c)} onClose={() => setExtracting(null)} />}
     </section>
   )
 }

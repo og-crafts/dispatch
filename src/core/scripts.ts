@@ -60,7 +60,7 @@ export interface ScriptHost {
 
 export type Compile = (code: string, params: string[]) => (...args: unknown[]) => unknown
 
-const fmt = (v: unknown): string => {
+export const fmt = (v: unknown): string => {
   if (typeof v === 'string') return v
   if (v instanceof Error) return `${v.name}: ${v.message}`
   try { return JSON.stringify(v, null, 2) ?? String(v) } catch { return String(v) }

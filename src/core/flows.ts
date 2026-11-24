@@ -67,7 +67,8 @@ export interface FlowStep {
   status_code?: number
   tests?: TestResult[]
 }
-export interface FlowRun { ok: boolean; error: string | null; steps: FlowStep[]; logs: LogLine[]; environment: KV[] | null; globals: KV[]; vars: Record<string, string>; durationMs: number }
+/** `collections`: the variables of collections whose scripts changed them, by collection id. */
+export interface FlowRun { ok: boolean; error: string | null; steps: FlowStep[]; logs: LogLine[]; environment: KV[] | null; globals: KV[]; collections: Record<string, KV[]>; vars: Record<string, string>; durationMs: number }
 
 export interface FlowWorld {
   collections: Collection[]; folders: Folder[]; requests: RequestDef[]; environment: Environment | null; globals: KV[]; settings: Settings
@@ -100,12 +101,17 @@ export function checkFlow(f: Flow, requests: RequestDef[]): string[] {
 export async function runFlow(f: Flow, w: FlowWorld, transport: Transport, pipeline: Pipeline, engine: ScriptEngine, hooks: FlowHooks = {}): Promise<FlowRun> {
   const started = Date.now()
   const sleep = hooks.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
-  const run: FlowRun = { ok: true, error: null, steps: [], logs: [], environment: null, globals: w.globals, vars: {}, durationMs: 0 }
+  const run: FlowRun = { ok: true, error: null, steps: [], logs: [], environment: null, globals: w.globals, collections: {}, vars: {}, durationMs: 0 }
   const problems = checkFlow(f, w.requests)
   if (problems.length) return { ...run, ok: false, error: problems.join(' ') }
   const locals = new Map<string, string>()
+  /** A collection with the variables this run has given it so far. */
+  const collection = (id: string): Collection | null => {
+    const c = w.collections.find((x) => x.id === id)
+    return c ? { ...c, variables: run.collections[id] ?? c.variables } : null
+  }
   const ctx = (req: RequestDef | null): RunContext => ({
-    collection: req?.collectionId ? w.collections.find((c) => c.id === req.collectionId) ?? null : null,
+    collection: req?.collectionId ? collection(req.collectionId) : null,
     folders: w.folders, environment, globals: run.globals, locals,
   })
   let environment = w.environment ? structuredClone(w.environment) : null
@@ -156,6 +162,7 @@ export async function runFlow(f: Flow, w: FlowWorld, transport: Transport, pipel
           const c = ctx(req)
           const x = await execute(req, c, transport, sendOptions(req, w.settings, hooks.signal), pipeline)
           environment = c.environment
+          if (x.changes.collection && req.collectionId) run.collections[req.collectionId] = x.changes.collection
           if (x.changes.globals) run.globals = x.changes.globals
           run.logs.push(...x.logs)
           if (x.response) last = x.response

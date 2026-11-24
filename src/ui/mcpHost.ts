@@ -78,7 +78,7 @@ async function answerOne(body: string, ws: WorkspaceApi): Promise<string | null>
   try { msg = JSON.parse(body) } catch { return JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }) }
   const one = async (m: any) => {
     const started = Date.now()
-    const r = await handleMcp(m, options(ws))
+    const r = await handleMcp(m, mcpOptions(ws))
     if (m?.method === 'tools/call') {
       const failed = !!r?.error || !!r?.result?.isError
       ws.log([{ level: failed ? 'warn' : 'info', at: Date.now(), source: 'mcp', text: `AI assistant: ${m.params?.name}${m.params?.arguments?.name ? ` “${m.params.arguments.name}”` : ''}${m.params?.arguments?.folder ? ` “${m.params.arguments.folder}”` : ''} → ${failed ? 'failed' : 'ok'} (${Date.now() - started} ms)` }])
@@ -93,7 +93,8 @@ async function answerOne(body: string, ws: WorkspaceApi): Promise<string | null>
   return r ? JSON.stringify(r) : null
 }
 
-function options(ws: WorkspaceApi) {
+/** What the endpoint serves, from the app as it is now (exported for tests). */
+export function mcpOptions(ws: WorkspaceApi) {
   const ownCols = ws.allCollections.filter((c) => spaceOf(c) === ASSISTANT_SPACE.id)
   const ownIds = new Set(ownCols.map((c) => c.id))
   // The open workspace, when the user lets assistants edit it (Workspaces page).
@@ -123,9 +124,10 @@ function options(ws: WorkspaceApi) {
         // Shows in History and Home, and gives Share a sample response.
         if (request) await ws.recordHistory(request, x)
       },
-      afterRun: async (s: { finalEnvironment?: unknown; finalGlobals?: unknown }) => {
+      afterRun: async (s: { finalEnvironment?: unknown; finalGlobals?: unknown; finalCollections?: unknown }) => {
         if (s.finalEnvironment && ws.environment) await ws.updateEnvironment({ ...ws.environment, variables: s.finalEnvironment as never })
         if (s.finalGlobals && JSON.stringify(s.finalGlobals) !== JSON.stringify(ws.globals)) await ws.setGlobals(s.finalGlobals as never)
+        if (s.finalCollections) await ws.saveCollectionVars(s.finalCollections as never)
       },
       runFlow: (f: Parameters<WorkspaceApi['runFlowNow']>[0]) => ws.runFlowNow(f, () => {}),
     },
