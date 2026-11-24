@@ -31,7 +31,7 @@ const PH = join(REPO, 'promo/product-hunt/shots')
 const RUNS = target === 'ph'
   ? [
       { scheme: 'light', look: 'dispatch', which: ['request', 'scripts', 'docs'], prefix: 'light' },
-      { scheme: 'dark', look: 'dispatch', which: ['request', 'runner', 'load'], prefix: 'dark' },
+      { scheme: 'dark', look: 'dispatch', which: ['extract', 'request', 'runner', 'load'], prefix: 'dark' },
       { scheme: 'dark', look: 'grove', which: ['request'], prefix: 'grove-dark' },
       { scheme: 'light', look: 'grove', which: ['request'], prefix: 'grove' },
     ].map((r) => ({ ...r, dpr: 2, name: (s) => `${PH}/${r.prefix}-${s}.png` }))
@@ -105,8 +105,8 @@ async function capture(browser, { scheme, look, dpr, which, name }) {
   await page.locator('dialog[open] .btn.primary', { hasText: 'OK' }).click(); await wait(600)
   const vars = [['user', 'ann'], ['item', 'espresso'], ['qty', '2']]
   for (let i = 0; i < vars.length; i++) {
-    await page.locator(`input[aria-label="Environment variables Variable ${i + 1}"]`).fill(vars[i][0])
-    await page.locator(`input[aria-label="Environment variables Value ${i + 1}"]`).fill(vars[i][1]); await wait(150)
+    await page.locator(`[aria-label="Environment variables Variable ${i + 1}"]`).fill(vars[i][0])
+    await page.locator(`[aria-label="Environment variables Value ${i + 1}"]`).fill(vars[i][1]); await wait(150)
   }
   await page.locator('.btn.primary', { hasText: 'Use this environment' }).click(); await wait(500)
   await rail('Collections')
@@ -119,14 +119,25 @@ async function capture(browser, { scheme, look, dpr, which, name }) {
     await page.locator('button', { hasText: 'After response (tests)' }).click(); await shot('scripts')
     await page.locator('button', { hasText: /^Params/ }).first().click()
   }
+  if (want('extract')) {
+    // Select the token's value in the response and open the dialog; nothing is extracted.
+    await dismissToasts()
+    await page.locator('.response .cm-line', { hasText: '"token"' }).locator('span', { hasText: /^"[^"]{8,}"$/ }).last().dblclick(); await wait(200)
+    await page.locator('.response .cm-line', { hasText: '"token"' }).locator('span', { hasText: /^"[^"]{8,}"$/ }).last().click({ button: 'right' }); await wait(300)
+    await page.locator('button, [role=menuitem]', { hasText: 'Extract into variable' }).first().click(); await shot('extract')
+    await page.locator('dialog[open] button', { hasText: 'Cancel' }).click(); await wait(300)
+  }
   await row('2 Create order').click(); await wait(400)
   await page.locator('button', { hasText: /^Body/ }).first().click(); await wait(200)
   await send(); await dismissToasts()
   if (want('request')) await shot('request')
 
   if (want('docs')) {
-    await page.locator('summary[aria-label="More for Demo shop"]').click(); await wait(200)
-    await page.locator('button', { hasText: 'View docs' }).click(); await wait(900); await shot('docs')
+    // The demo's login keeps its token in a plain variable: mark it secret, so the docs leave its value out.
+    await page.locator('.folderName', { hasText: 'Demo shop' }).click(); await wait(500)
+    await page.locator('.kvHint', { hasText: 'make it secret' }).first().click(); await wait(300)
+    await wait(1200) // saves by itself
+    await page.locator('.editor button', { hasText: 'View docs' }).click(); await wait(900); await shot('docs')
   }
   if (want('runner')) {
     await rail('Runner')

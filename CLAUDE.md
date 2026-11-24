@@ -211,7 +211,7 @@ end-to-end and grpc-js tests cover plaintext.
 **Resume here (2026-11-24, read first): Dispatch 0.2.0 is OUT.** #86 merged, tag `v0.2.0` on `main` ec241ec, CI green
 on every job incl. updater; the owner published it as **Latest**. Site published from the tag (`VITE_DISPATCH_CHANNEL=release`),
 `site/release.json` on `main` matches, ogcrafts.cloud `apps.json` 0.2.0. Not yet recorded: the first in-app update
-(0.1.0 -> 0.2.0) on a real machine. The Product Hunt kit still says 0.1.0.
+(0.1.0 -> 0.2.0) on a real machine. The Product Hunt kit is refreshed for 0.2.0 (8 slides, new `03-extract.png`).
 
 **Earlier on 2026-11-24: the six-feature round was merged.** The owner tested the setup
 (`Dispatch_0.1.0_x64-setup-extract-cookies.exe`) and said merge: #81 polish (rename in place, curl naming, wrapping values),
