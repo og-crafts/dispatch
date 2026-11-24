@@ -59,6 +59,7 @@ export interface ShareDoc {
 }
 
 export const SECRET_NAME = /(authorization|cookie|token|secret|passw(?:or)?d|(?:^|[-_])pwd$|api[-_]?key|session|credential|signature|private[-_]?key|otp|cvv|ssn|card[-_]?number)/i
+export const isSecretName = (name: string) => SECRET_NAME.test(name)
 const IS_VAR = /^\s*\{\{[^{}]+\}\}\s*$/
 const JWT = /\beyJ[\w-]{5,}\.[\w-]{5,}\.[\w-]{5,}/g
 const AUTH_SCHEME = /\b(Bearer|Basic|Digest|Token)\s+(?!<)(?!\{\{)[A-Za-z0-9._~+/=-]{8,}/g
