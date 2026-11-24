@@ -673,16 +673,16 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   const setSpaceFolder = useCallback(async (id: string, dir: string | undefined) => {
     await saveSpaces(spacesRef.current.map((x) => (x.id === id ? { ...x, linkedDir: dir } : x)))
   }, [saveSpaces])
-  const renameSpace = useCallback((id: string, name: string) => saveSpaces(spaces.map((x) => (x.id === id ? { ...x, name } : x))), [spaces, saveSpaces])
+  const renameSpace = useCallback((id: string, name: string) => saveSpaces(spacesRef.current.map((x) => (x.id === id ? { ...x, name } : x))), [saveSpaces])
   /** Only empty workspaces can be removed (move or delete their collections and environments first). */
   const removeSpace = useCallback(async (id: string) => {
     if (id === DEFAULT_SPACE.id || collections.some((c) => spaceOf(c) === id) || environments.some((e) => spaceOf(e) === id)) return false
-    await saveSpaces(spaces.filter((x) => x.id !== id))
+    await saveSpaces(spacesRef.current.filter((x) => x.id !== id))
     try { await deleteChats(id) } catch { /* the sweep on the next start finishes it */ } // Chats go for good with their workspace (no undo).
     jars.delete(jarKey(null, id))
     if (settingsRef.current.activeSpaceId === id) switchSpace(DEFAULT_SPACE.id)
     return true
-  }, [collections, environments, spaces, saveSpaces, switchSpace])
+  }, [collections, environments, saveSpaces, switchSpace])
   const moveToSpace = useCallback(async (kind: 'collection' | 'environment', id: string, spaceId: string) => {
     if (kind === 'collection') {
       const c = collections.find((x) => x.id === id); if (c) await updateCollection({ ...c, workspaceId: spaceId })

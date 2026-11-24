@@ -55,4 +55,20 @@ describe('chats and workspaces', () => {
     await waitFor(async () => expect((await db.getChatIndex()).map((e) => e.id)).toEqual(['keep']))
     expect(await db.getChatRecord('orphan')).toBeUndefined()
   })
+
+  it.each(['rename', 'remove'])('%s from a stale screen keeps a workspace added since, so its chats survive the sweep', async (how) => {
+    const h = await mount()
+    let old = ''
+    await act(async () => { old = (await h.result.current.addSpace('Old')).id })
+    const stale = h.result.current
+    let fresh = ''
+    await act(async () => {
+      fresh = (await stale.addSpace('Fresh')).id
+      await chats.saveChat(chat('f', fresh))
+      if (how === 'rename') await stale.renameSpace(old, 'Older'); else await stale.removeSpace(old)
+    })
+    expect((await db.getSpaces()).map((x) => x.id)).toContain(fresh)
+    await chats.sweepChats()
+    expect((await chats.listChats(fresh)).map((c) => c.id)).toEqual(['f'])
+  })
 })

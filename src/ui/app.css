@@ -1008,3 +1008,11 @@ body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: 
 @media (max-width: 1000px) { .updateTo { display: none; } }
 .updateNotice { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--outline); background: var(--sunken); font-size: 13px; }
 @media (max-width: 760px) { .updateNotice { flex-wrap: wrap; } }
+
+/* ---------- Dispatch assistant ---------- */
+.connections { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 8px; }
+.connections > li { border: 1px solid var(--outline); border-radius: var(--radius); padding: 8px 12px; background: var(--surface); min-width: 0; }
+.connection { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.connectionText { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
+.connectionChecks { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; margin-right: 12px; }
+.connectionDialog .toggle { padding-left: 0; margin-left: 0; justify-content: flex-start; }

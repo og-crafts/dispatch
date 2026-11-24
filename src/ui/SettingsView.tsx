@@ -5,6 +5,7 @@ import type { StoredCookie } from '../core/cookies'
 import type { WorkspaceApi } from './useWorkspace'
 import { type McpHostStatus, mcpMethods, newMcpToken } from './mcpHost'
 import { telemetryAvailable, telemetryOffered } from './telemetry'
+import { AssistantSettings } from './assistant/AssistantSettings'
 import { ERRORS_TEXT, USAGE_TEXT } from './PrivacyDialogs'
 
 const readText = (file: File) => new Promise<string>((resolve, reject) => {
@@ -161,7 +162,7 @@ export function SettingsView({ ws, notify, mcpHost = { state: 'off' } }: { ws: W
         ))}
         <div className="actions"><button type="button" className="btn small" onClick={() => ws.setSettings({ clientCerts: [...st.clientCerts, { id: uid(), host: '', cert: '', key: '', enabled: true }] })}>+ Add certificate</button></div>
         </>}
-        {shown === 'ai' && <McpHostSettings ws={ws} notify={notify} status={mcpHost} />}
+        {shown === 'ai' && <><AssistantSettings ws={ws} notify={notify} /><McpHostSettings ws={ws} notify={notify} status={mcpHost} /></>}
       </>}
       </div>
     </section>
