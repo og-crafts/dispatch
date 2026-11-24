@@ -7,7 +7,7 @@ import { CookieTransport, type Transport, defaultTransport, isDesktop } from '..
 import { browserHook } from '../core/browserPipeline'
 import type { BrowserLauncher } from '../core/browser'
 import { desktopLauncher } from './desktopBrowser'
-import { CookieJar } from '../core/cookies'
+import { CookieJars, cookieKey, jarKey } from '../core/cookies'
 import type { Workspace } from '../core/backup'
 import { type Execution, type Pipeline, type RunContext, execute, folderChain, prepareContext, sendOptions } from '../core/runtime'
 import { type ScriptEngine, scriptPipeline } from '../core/scriptPipeline'
@@ -110,6 +110,8 @@ const newTab = (draft: RequestDef = newRequest()): Tab => ({ id: uid(), draft, r
 export interface WorkspaceOptions {
   transport?: Transport
   engine?: ScriptEngine
+  /** Keep cookies around a transport passed in too (tests). */
+  cookies?: boolean
   browserLauncher?: BrowserLauncher
   /** Extra hooks merged after scripts (auth signing...). */
   extend?: (base: Pipeline, transport: Transport) => Pipeline
@@ -118,9 +120,12 @@ export interface WorkspaceOptions {
 export function useWorkspace(opts: WorkspaceOptions = {}) {
   const settingsRef = useRef<Settings>(defaultSettings)
   // On desktop, cookies from responses go back on later requests (the browser does this itself on the web).
+  // Each environment has its own; `activeJar` names the one in use on screen.
+  const [jars] = useState(() => new CookieJars())
+  const activeJar = useRef<() => string>(() => jarKey(null, DEFAULT_SPACE.id))
   const [transport] = useState<Transport>(() => {
     const t = opts.transport ?? defaultTransport()
-    return t.unrestricted && !opts.transport ? new CookieTransport(t, new CookieJar(), () => settingsRef.current.cookieJar) : t
+    return t.unrestricted && (!opts.transport || opts.cookies) ? new CookieTransport(t, (key) => jars.get(key ?? activeJar.current()), () => settingsRef.current.cookieJar) : t
   })
   const [ready, setReady] = useState(false)
   const [collections, setCollections] = useState<Collection[]>([])
@@ -155,10 +160,18 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     const scripted = authPipeline(scriptPipeline({ engine, transport, sendOptions: sendOpts }), transport, sendOpts)
     // Browser login steps need a browser the app can start: the desktop app (or a launcher passed in, for tests).
     const launcher = opts.browserLauncher ?? (isDesktop() ? desktopLauncher : null)
-    const base: Pipeline = launcher ? { ...scripted, browser: browserHook(launcher, () => (transport instanceof CookieTransport ? transport.jar : null)) } : scripted
+    const base: Pipeline = launcher ? { ...scripted, browser: browserHook(launcher, (ctx) => (transport instanceof CookieTransport ? transport.jar(cookieKey(ctx)) : null)) } : scripted
     return opts.extend ? opts.extend(base, transport) : base
   })
   const pipelineRef = useRef(pipeline)
+  const jarTimer = useRef<ReturnType<typeof setTimeout>>()
+  const saveJars = useRef(() => { clearTimeout(jarTimer.current); jarTimer.current = undefined; void db.putCookieJars(jars.entries()) })
+  // Closing right after a change must not lose it.
+  useEffect(() => {
+    const flush = () => { if (jarTimer.current) saveJars.current() }
+    window.addEventListener('pagehide', flush)
+    return () => { window.removeEventListener('pagehide', flush); flush() }
+  }, [])
 
   useEffect(() => {
     let live = true
@@ -173,9 +186,12 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
       setSpacesState(await db.getSpaces())
       setFlows(await db.listFlows())
       if (transport instanceof CookieTransport) {
-        transport.jar.load(await db.getCookies() as never[])
-        let timer: ReturnType<typeof setTimeout> | undefined
-        transport.jar.onChange = () => { clearTimeout(timer); timer = setTimeout(() => { void db.putCookies(transport.jar.entries()) }, 300) }
+        const saved = await db.getCookieJars(jarKey(e.some((x) => x.id === s.activeEnvId) ? s.activeEnvId : null, s.activeSpaceId))
+        if (!live) return
+        jars.load(saved)
+        // Written back at once, so a list from before jars isn't taken for another environment's next time.
+        if (Object.keys(saved).length) await db.putCookieJars(jars.entries())
+        jars.onChange = () => { clearTimeout(jarTimer.current); jarTimer.current = setTimeout(saveJars.current, 300) }
       }
       // A daily backup, taken quietly when the app opens.
       void (async () => {
@@ -220,6 +236,9 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   const dirty = isDirty(draft)
   const collection = collections.find((c) => c.id === draft.collectionId) ?? null
   const environment = environments.find((e) => e.id === settings.activeEnvId) ?? null
+  activeJar.current = () => jarKey(environmentsRef.current.some((e) => e.id === settingsRef.current.activeEnvId) ? settingsRef.current.activeEnvId : null, settingsRef.current.activeSpaceId)
+  /** The cookies in use on screen, or null where the browser keeps them. */
+  const cookieJar = useCallback(() => (transport instanceof CookieTransport ? transport.jar() : null), [transport])
   const runContext = useCallback((d: RequestDef, extra: Partial<RunContext> = {}): RunContext => ({
     collection: collections.find((c) => c.id === d.collectionId) ?? null,
     folders, environment, globals, ...extra,
@@ -405,7 +424,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     const ctrl = new AbortController(); aborts.current.set(tab.id, ctrl)
     patchTab(tab.id, { sending: true })
     const ctx = runContext(tab.draft)
-    const x = await execute(tab.draft, ctx, transport, sendOptions(tab.draft, settings, ctrl.signal), pipelineRef.current)
+    const x = await execute(tab.draft, ctx, transport, { ...sendOptions(tab.draft, settings, ctrl.signal), jar: cookieKey(ctx) ?? activeJar.current() }, pipelineRef.current)
     aborts.current.delete(tab.id)
     patchTab(tab.id, { sending: false, result: { sent: x.sent, response: x.response, error: x.error, tests: x.tests, visualizer: x.visualizer, browser: x.browser } })
     log([...x.logs, {
@@ -493,6 +512,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   const removeEnvironment = useCallback(async (id: string) => {
     const e = environments.find((x) => x.id === id)
     await db.deleteEnvironment(id)
+    jars.delete(id)
     setEnvironments((es) => es.filter((e) => e.id !== id))
     setSettingsState((s) => { if (s.activeEnvId !== id) return s; const n = { ...s, activeEnvId: null }; void db.putSettings(n); return n })
     setView((v) => (v.kind === 'environment' && v.id === id ? { kind: 'request' } : v))
@@ -638,6 +658,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   const removeSpace = useCallback(async (id: string) => {
     if (id === DEFAULT_SPACE.id || collections.some((c) => spaceOf(c) === id) || environments.some((e) => spaceOf(e) === id)) return false
     await saveSpaces(spaces.filter((x) => x.id !== id))
+    jars.delete(jarKey(null, id))
     if (settingsRef.current.activeSpaceId === id) switchSpace(DEFAULT_SPACE.id)
     return true
   }, [collections, environments, spaces, saveSpaces, switchSpace])
@@ -872,7 +893,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     }
     const colIds = new Set([...goneCols, ...w.collections.map((c) => c.id)])
     for (const id of colIds) await db.deleteCollection(id)
-    for (const id of goneEnvs) await db.deleteEnvironment(id)
+    for (const id of goneEnvs) { await db.deleteEnvironment(id); jars.delete(id) }
     for (const id of goneFlows) { deletedFlows.current.add(id); await db.deleteFlow(id) }
     for (const f of w.flows) deletedFlows.current.delete(f.id)
     await db.putMany(w)
@@ -956,7 +977,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     setDraft, setView, setSettings, setLogs, log, openRequest, startNew, closeTab, closeTabs, duplicateTab, selectTab, saveDraft, saveDraftAs, renameRequest,
     moveRequest, removeRequest, duplicateRequest, saveAssistant, removeForAssistant, handToAssistant, send, cancel, applyChanges, applyAuthUpdate, openHistory, clearHistory,
     addCollection, updateCollection, removeCollection, addFolder, updateFolder, removeFolder,
-    addEnvironment, updateEnvironment, removeEnvironment, duplicateEnvironment, setGlobals, saveCollectionVars, extractVariable, importWorkspace,
+    addEnvironment, updateEnvironment, removeEnvironment, duplicateEnvironment, setGlobals, saveCollectionVars, extractVariable, cookieJar, cookieJars: jars, importWorkspace,
   }
 }
 

@@ -1,3 +1,4 @@
+import type { StoredCookie } from './cookies'
 import type { Collection, Environment, Folder, HistoryEntry, KV, RequestDef, Settings } from './types'
 import { defaultSettings, normalizeCollection, normalizeFolder, normalizeRequest } from './types'
 import { resetVaultForTests, secretsOf, seal, unseal, vaultKey } from './vault'
@@ -143,13 +144,19 @@ export async function putSettings(s: Settings) {
   await put('meta', { ...s, mcpHostToken: s.mcpHostToken ? await f(s.mcpHostToken) : '', clientCerts: await Promise.all(s.clientCerts.map(async (c) => ({ ...c, key: await f(c.key) }))) }, 'settings')
 }
 
-/** The cookie jar (desktop), sealed as a whole: cookies are often session secrets. */
-export async function getCookies(): Promise<unknown[]> {
-  const sealedJar = await getMeta<string>('cookies')
-  if (!sealedJar) return []
-  try { return JSON.parse(await (await unsealer())(sealedJar)) } catch { return [] }
+/**
+ * The cookie jars (desktop), by environment, sealed as a whole: cookies are often session secrets. Versions up to 0.1
+ * kept one list for the whole app; it becomes the jar named by `legacyKey`.
+ */
+export async function getCookieJars(legacyKey: string): Promise<Record<string, StoredCookie[]>> {
+  const sealedJars = await getMeta<string>('cookies')
+  if (!sealedJars) return {}
+  try {
+    const v = JSON.parse(await (await unsealer())(sealedJars)) as StoredCookie[] | Record<string, StoredCookie[]> | null
+    return Array.isArray(v) ? { [legacyKey]: v } : v && typeof v === 'object' ? v : {}
+  } catch { return {} }
 }
-export async function putCookies(list: unknown[]) { await put('meta', await (await sealer())(JSON.stringify(list)), 'cookies') }
+export async function putCookieJars(jars: Record<string, StoredCookie[]>) { await put('meta', await (await sealer())(JSON.stringify(jars)), 'cookies') }
 
 /** Writes a whole workspace (imports) in one transaction. */
 export async function putMany(plain: { collections?: Collection[]; folders?: Folder[]; requests?: RequestDef[]; environments?: Environment[]; flows?: Flow[] }) {

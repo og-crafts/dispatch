@@ -3,6 +3,7 @@ import { METHODS } from './types'
 import type { Compile, PmRequestData, PmResponseData, ScriptHost, ScriptInput, ScriptOutput, Vars } from './scripts'
 import { SendError, type SendOptions, type Transport } from './transport'
 import { type Execution, type Pipeline, type RunContext, folderChain } from './runtime'
+import { cookieKey } from './cookies'
 import { paramsFromUrl, withScheme } from './url'
 
 export interface ScriptEngine { run(input: ScriptInput, host: ScriptHost): Promise<ScriptOutput> }
@@ -86,17 +87,17 @@ export interface ScriptPipelineOptions {
 
 /** Pipeline hooks that run collection → folders → request scripts before sending and after the response. */
 export function scriptPipeline(o: ScriptPipelineOptions): Pipeline {
-  const host: ScriptHost = {
+  const hostFor = (ctx: RunContext): ScriptHost => ({
     async sendRequest(r: PmRequestData): Promise<PmResponseData> {
       const method = (METHODS.includes(r.method.toUpperCase() as Method) ? r.method.toUpperCase() : 'GET') as Method
       const p: PreparedRequest = {
         method, url: withScheme(r.url), headers: r.headers.filter((h) => !h.disabled).map((h) => [h.key, h.value]),
         body: r.body.mode === 'none' ? null : r.body.raw, unresolved: [],
       }
-      const res = await o.transport.send(p, o.sendOptions())
+      const res = await o.transport.send(p, { ...o.sendOptions(), jar: cookieKey(ctx) })
       return { code: res.status, status: res.statusText, headers: res.headers, body: res.body, responseTime: res.timeMs, responseSize: res.size }
     },
-  }
+  })
 
   const scriptsFor = (req: RequestDef, ctx: RunContext, phase: 'pre' | 'post') => {
     const folders = folderChain(ctx.folders, req.folderId).reverse() // outermost first
@@ -119,6 +120,7 @@ export function scriptPipeline(o: ScriptPipelineOptions): Pipeline {
     let vars = start
     let request = pmReq
     let skip = false
+    const host = hostFor(ctx)
     const it = o.iteration?.() ?? { iteration: 0, iterationCount: 1 }
     for (const s of scripts) {
       const r = await o.engine.run({ phase, source: s.source, code: s.code, request, response, vars, info: { requestName: req.name, requestId: req.id, ...it } }, host)

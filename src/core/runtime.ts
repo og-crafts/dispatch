@@ -1,3 +1,4 @@
+import { cookieKey } from './cookies'
 import type { Auth, Collection, Environment, Folder, HttpResponse, KV, LogLine, PreparedRequest, RequestDef, Settings, TestResult } from './types'
 import { prepare, type PrepareContext } from './prepare'
 import { SendError, type SendOptions, type Transport } from './transport'
@@ -91,7 +92,8 @@ export interface Pipeline {
 }
 
 /** Runs one request: hooks, variables, auth, send, tests. Never throws; failures land in `error`. */
-export async function execute(req: RequestDef, ctx: RunContext, transport: Transport, opts: SendOptions, pipeline: Pipeline = {}): Promise<Execution> {
+export async function execute(req: RequestDef, ctx: RunContext, transport: Transport, sendOpts: SendOptions, pipeline: Pipeline = {}): Promise<Execution> {
+  const opts = { ...sendOpts, jar: sendOpts.jar ?? cookieKey(ctx) }
   const out: Execution = { sent: prepare(req, prepareContext(ctx, req)), response: null, error: null, tests: [], logs: [], changes: noChanges() }
   if (req.protocol === 'browser') {
     if (!pipeline.browser) { out.error = 'Browser login needs the desktop app or dispatch-run (a web page can’t start a browser).'; return out }

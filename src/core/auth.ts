@@ -3,6 +3,7 @@
  * OAuth 2 (client credentials, password, authorization code + PKCE, refresh). Uses WebCrypto, so it runs in
  * browsers, the desktop webview and Node alike. MD5 (needed by Digest) isn't in WebCrypto, so it's here.
  */
+import { cookieKey } from './cookies'
 import type { Auth, HttpResponse, PreparedRequest, RequestDef } from './types'
 import { type Pipeline, type RunContext, folderChain, prepareContext } from './runtime'
 import { effectiveAuth, scopeFor } from './prepare'
@@ -243,7 +244,7 @@ export function authPipeline(base: Pipeline, transport: Transport, sendOpts?: ()
         out = await signAwsV4(out, a)
       } else if (a.kind === 'oauth2' && a.refreshToken && a.expiresAt && a.expiresAt < Date.now() + 10_000) {
         // Expired: refresh for this send (the auth tab's "Get new token" saves a new one).
-        const t = await refreshToken(a, transport, sendOpts?.() ?? { timeoutMs: 30_000, followRedirects: true, insecureTls: false })
+        const t = await refreshToken(a, transport, { ...(sendOpts?.() ?? { timeoutMs: 30_000, followRedirects: true, insecureTls: false }), jar: cookieKey(ctx) })
         out = { ...out, headers: [...out.headers.filter(([k]) => k.toLowerCase() !== 'authorization'), ['Authorization', `Bearer ${t.accessToken}`]] }
         // Save the new token where the auth lives, and let later requests in this run reuse it.
         const patch = { accessToken: t.accessToken, refreshToken: t.refreshToken, expiresAt: t.expiresAt }
