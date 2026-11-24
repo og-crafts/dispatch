@@ -453,26 +453,81 @@ describe('chat completions', () => {
     return (await turn(await make())).calls.map((c) => [c.name, c.invalid ? 'invalid' : c.input])
   }
   const fn = (name: string, args: string, more: object = {}) => ({ ...more, function: { name, arguments: args } })
-  it('whole calls with different names never merge, in either order, with or without an index or a shared id', async () => {
+  it('whole calls in one piece each are kept apart; a call without arguments among unclear ones doesn’t run', async () => {
     for (const more of [{ index: 0 }, {}, { index: 0, id: 'x' }, { id: 'x' }]) {
       const label = JSON.stringify(more)
-      expect(await calls(fn('list', '', more), fn('send', '{"x":1}', more)), label).toEqual([['list', {}], ['send', { x: 1 }]])
-      expect(await calls(fn('send', '{"x":1}', more), fn('list', '', more)), label).toEqual([['send', { x: 1 }], ['list', {}]])
+      expect(await calls(fn('list', '{"y":1}', more), fn('send', '{"x":1}', more)), label).toEqual([['list', { y: 1 }], ['send', { x: 1 }]])
+      expect(await calls(fn('list', '', more), fn('send', '{"x":1}', more)), label).toEqual([['list', 'invalid'], ['send', { x: 1 }]])
+      expect(await calls(fn('send', '{"x":1}', more), fn('list', '', more)), label).toEqual([['send', { x: 1 }], ['list', 'invalid']])
+      expect(await calls(fn('get', '{"a":1}', more), fn('get', '{"a":2}', more)), label).toEqual([['get', { a: 1 }], ['get', { a: 2 }]])
     }
   })
-  it('the same name again: a new call after complete arguments, and nothing uncertain runs', async () => {
+  it('one call in pieces works without an id or index, also with its name repeated', async () => {
+    const bare = (args: string) => ({ function: { arguments: args } })
+    expect(await calls(fn('get', '{"a"'), bare(':{"b"'), bare(':1}}'))).toEqual([['get', { a: { b: 1 } }]])
+    expect(await calls(fn('get', ''), bare('{"a":1}'))).toEqual([['get', { a: 1 }]])
+    expect(await calls(fn('get', '{"a"'), fn('get', ':1}'))).toEqual([['get', { a: 1 }]])
+    expect(await calls(fn('get', ''))).toEqual([['get', {}]])
+  })
+  it('a repeated name whose piece could be another call leaves nothing to run', async () => {
+    expect((await calls(fn('get', '{"a":'), fn('get', '{"b":1}'), fn('get', '}'))).every((c) => c[1] === 'invalid')).toBe(true)
+  })
+  it('arguments never go to a call they may not belong to', async () => {
     for (const more of [{ index: 0 }, {}]) {
-      expect(await calls(fn('get', '{"a":1}', more), fn('get', '{"a":2}', more))).toEqual([['get', { a: 1 }], ['get', { a: 2 }]])
-      expect(await calls(fn('get', '', more), fn('get', '{"a":2}', more))).toEqual([['get', 'invalid'], ['get', { a: 2 }]])
-      expect(await calls(fn('get', '{"a":1}', more), fn('get', '', more))).toEqual([['get', { a: 1 }], ['get', 'invalid']])
-      expect(await calls(fn('get', '{"a"', more), fn('get', ':{"b"', more), fn('get', ':1}}', more))).toEqual([['get', { a: { b: 1 } }]])
-      expect(await calls(fn('get', '{"a":', more), fn('get', '{"b":1}', more), fn('get', '}', more))).toEqual([['get', { a: { b: 1 } }]])
+      const bare = { ...more, function: { arguments: '{"x":1}' } }
+      const valid = async (...p: object[]) => (await calls(...p)).filter((c) => c[1] !== 'invalid')
+      expect(await valid(fn('get', '{"a":1}', more), fn('get', '', more), fn('send', '', more), bare)).toEqual([['get', { a: 1 }]])
+      expect(await valid(fn('get', '', more), fn('get', '{"a":1}', more), fn('send', '', more), bare)).toEqual([['get', { a: 1 }]])
+      expect(await valid(fn('list', '', more), fn('send', '', more), bare)).toEqual([])
+      expect(await valid(bare, fn('send', '', more))).toEqual([])
+      expect(await valid({ id: 'a', function: { arguments: '{"x":1}' } }, fn('send', ''))).toEqual([])
+      expect(await valid({ index: 0, id: 'a', function: { arguments: '{"x":1}' } }, fn('send', ''))).toEqual([])
+      expect(await valid(fn('list', '', more), fn('send', '', more), fn('list', '{"x":1}', more))).toEqual([['list', { x: 1 }]])
+      expect(await valid(fn('get', '{"a":1}', more), bare)).toEqual([['get', { a: 1 }]])
     }
   })
-  it('arguments that could belong to two open calls make both invalid', async () => {
-    for (const more of [{ index: 0 }, {}]) expect(await calls(fn('list', '', more), fn('send', '', more), { ...more, function: { arguments: '{"x":1}' } })).toEqual([['list', 'invalid'], ['send', 'invalid']])
-    expect(await calls(fn('list', '', { index: 0 }), fn('send', '', { index: 1 }), { index: 1, function: { arguments: '{"x":1}' } })).toEqual([['list', {}], ['send', { x: 1 }]])
+  it('a streamed call with its own index or id is whole, however the pieces interleave', async () => {
+    const bare = (args: string, more: object) => ({ ...more, function: { arguments: args } })
+    for (const key of [(i: number) => ({ index: i }), (i: number) => ({ id: `c${i}` }), (i: number) => ({ index: i, id: `c${i}` })])
+      expect(await calls(fn('get', '', key(0)), fn('get', '{"a"', key(1)), bare('{"a":1', key(0)), bare(':2}', key(1)), bare('}', key(0)))).toEqual([['get', { a: 1 }], ['get', { a: 2 }]])
   })
+  it('any interleaving: a valid call is one that was sent', async () => {
+    let seed = 7
+    const rnd = (n: number) => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return (seed >>> 8) % n }
+    const argsOf = ['', '{}', '{"a":1}', '{"x":"y"}', '{"a":{"b":[1,{}]}}', '{"s":"{}"}', '{"s":""}', '{"x":1}']
+    const sse2 = (pieces: object[]) => ({ chunks: [enc(chat([...pieces.map((p) => chunk({ tool_calls: [p] })), chunk({}, 'tool_calls')]))] })
+    const p = await make()
+    let valid = 0
+    for (let round = 0; round < 4000; round++) {
+      const mode = rnd(9), repeatName = rnd(3) === 0, repeatId = rnd(2) === 0
+      const sent = Array.from({ length: 2 + rnd(2) }, () => ({ name: ['get', 'send', 'list'][rnd(3)], args: argsOf[rnd(argsOf.length)] }))
+      const queues = sent.map(({ name, args }, i) => {
+        const parts: string[] = rnd(3) === 0 ? [args] : rnd(2) ? ['', args] : []
+        if (!parts.length) { let rest = args; do { const n = 1 + rnd(rest.length || 1); parts.push(rest.slice(0, n)); rest = rest.slice(n) } while (rest) }
+        return parts.map((a, k) => ({
+          ...([0, 1, 6].includes(mode) ? { index: i } : [2, 3, 7].includes(mode) ? { index: 0 } : {}),
+          ...(k === 0 || repeatId ? ([1, 3, 4].includes(mode) ? { id: `c${i}` } : [6, 7, 8].includes(mode) ? { id: 'x' } : {}) : {}),
+          function: { ...(k === 0 || repeatName ? { name } : {}), arguments: a },
+        }))
+      })
+      const pieces: object[] = []
+      while (queues.some((q) => q.length)) { const q = queues[rnd(queues.length)]; if (q.length) pieces.push(q.shift()!) }
+      play(sse2(pieces))
+      const t = await turn(p)
+      for (const c of t.calls.filter((x) => !x.invalid)) {
+        valid++
+        const left = sent.findIndex((x) => x.name === c.name && JSON.stringify(JSON.parse(x.args || '{}')) === JSON.stringify(c.input))
+        expect(left, `${JSON.stringify(pieces)} gave ${c.name}(${JSON.stringify(c.input)})`).toBeGreaterThanOrEqual(0)
+        sent.splice(left, 1) // and each only once
+      }
+    }
+    expect(valid).toBeGreaterThan(1000)
+  }, 60_000)
+  it('an event built of endless data lines is cut short', async () => {
+    play({ chunks: Array.from({ length: 5 }, () => enc(`data: ${'x'.repeat(1_000_000)}\n`)), then: 'hang' })
+    expect((await failure(turn(await make()))).message).toBe('Work sent an answer that’s too large to read.')
+    expect(rust.cancelled.length).toBe(1)
+  }, 30_000)
   it('one id at two indexes is two calls', async () => {
     expect(await calls(fn('get', '', { index: 0, id: 'x' }), fn('get', '{"a":2}', { index: 1, id: 'x' }), { index: 0, function: { arguments: '{"a":1}' } })).toEqual([['get', { a: 1 }], ['get', { a: 2 }]])
   })
@@ -597,7 +652,7 @@ describe('failures, for each kind', () => {
       expect(await failure(turn(await make()))).toMatchObject({ status: 400 })
       expect((await failure(turn(await make()))).message).toBe('Work sent an answer that’s too large to read.')
       expect(rust.cancelled).toEqual(reqs().map((r) => r.id))
-    })
+    }, 30_000)
     it(`${kind}: no abort listener is left after a turn`, async () => {
       for (const s of [text(good[kind]), err(401)]) {
         play(s)

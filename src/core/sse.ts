@@ -1,7 +1,11 @@
 /** A server-sent events (text/event-stream) parser, fed text as it arrives. */
 export interface SseEvent { event: string; data: string; id: string | null; retry: number | null }
 
+/** One event's data went over the parser's limit. */
+export class SseTooLarge extends Error { constructor() { super('The event is too large.') } }
+
 export class SseParser {
+  private size = 0
   private buf = ''
   private skipLf = false
   private data: string[] = []
@@ -9,6 +13,9 @@ export class SseParser {
   private id: string | null = null
   private retry: number | null = null
   lastEventId: string | null = null
+
+  /** `maxEvent`: the most characters of data one event may have (unlimited unless given). */
+  constructor(private readonly maxEvent = Infinity) {}
 
   /** Feeds a chunk; returns the events it completed. */
   push(chunk: string): SseEvent[] {
@@ -28,7 +35,7 @@ export class SseParser {
           out.push({ event: this.event || 'message', data: this.data.join('\n'), id: this.id, retry: this.retry })
           if (this.id !== null) this.lastEventId = this.id
         }
-        this.data = []; this.event = ''; this.retry = null
+        this.data = []; this.size = 0; this.event = ''; this.retry = null
         continue
       }
       if (line.startsWith(':')) continue // comment / keep-alive
@@ -36,12 +43,17 @@ export class SseParser {
       const field = i >= 0 ? line.slice(0, i) : line
       let value = i >= 0 ? line.slice(i + 1) : ''
       if (value.startsWith(' ')) value = value.slice(1)
-      if (field === 'data') this.data.push(value)
+      if (field === 'data') {
+        this.size += value.length
+        if (this.size > this.maxEvent) throw new SseTooLarge()
+        this.data.push(value)
+      }
       else if (field === 'event') this.event = value
       else if (field === 'id' && !value.includes('\0')) this.id = value
       else if (field === 'retry' && /^\d+$/.test(value)) this.retry = Number(value)
     }
     this.buf += text.slice(at)
+    if (this.size + this.buf.length > this.maxEvent + 8) throw new SseTooLarge() // 8: room for the field name
     return out
   }
 }

@@ -20,6 +20,12 @@ function randomId(): number {
   return (hi & 0x1fffff) * 0x1_0000_0000 + lo
 }
 
+function decode(base64: string): Uint8Array {
+  const text = atob(base64), out = new Uint8Array(text.length)
+  for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i)
+  return out
+}
+
 const parse = (url: string): URL | null => { try { return new URL(url) } catch { return null } }
 
 /** The request's URL, or an error for anything this connection may not call. */
@@ -73,7 +79,7 @@ export function nativeFetch(conn: Connection, net: NetSettings): typeof fetch {
           }
           answered = true
         } else if (ev.kind === 'chunk') {
-          out?.enqueue(Uint8Array.from(atob(ev.base64), (c) => c.charCodeAt(0)))
+          out?.enqueue(decode(ev.base64))
         } else if (ev.kind === 'end') {
           if (!answered) fail(new AssistantError(scrub(`${conn.name} ended the connection without an answer.`, conn)))
           else if (finish()) out?.close()

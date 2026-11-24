@@ -61,6 +61,7 @@ const waitOf = (h: string | null | undefined): number | undefined => (h && /^\d+
 
 export const cutShort = (conn: Connection) => new AssistantError(scrub(`The connection to ${conn.name} ended before the answer was finished. Try again.`, conn))
 export const unreadable = (conn: Connection) => new AssistantError(scrub(`${conn.name} sent an answer Dispatch couldn’t read. Check the address and try again.`, conn))
+export const tooLarge = (conn: Connection) => new AssistantError(scrub(`${conn.name} sent an answer that’s too large to read.`, conn))
 
 const DELAYS = [500, 2000]
 const LONGEST_WAIT = 10_000
@@ -119,12 +120,12 @@ export function limited(conn: Connection, fetch: typeof globalThis.fetch): typeo
           if (size >= ERROR_BYTES) { c.close(); reader.cancel().catch(() => {}) }
           return
         }
-        const isEnd = (b: number) => b === 10 || b === 13
-        const first = value.findIndex(isEnd)
+        const lf = value.indexOf(10), cr = value.indexOf(13)
+        const first = lf < 0 || cr < 0 ? Math.max(lf, cr) : Math.min(lf, cr)
         const longest = size + (first < 0 ? value.length : first)
         size = first < 0 ? longest : value.length - 1 - Math.max(value.lastIndexOf(10), value.lastIndexOf(13))
         if (Math.max(longest, size) > LINE_BYTES) {
-          c.error(new AssistantError(scrub(`${conn.name} sent an answer that’s too large to read.`, conn)))
+          c.error(tooLarge(conn))
           reader.cancel().catch(() => {})
           return
         }

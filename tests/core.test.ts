@@ -351,6 +351,14 @@ describe('network settings', () => {
 
 import { SseParser } from '../src/core/sse'
 describe('server-sent events', () => {
+  it('refuses an event over the limit, when there is one', () => {
+    const p = new SseParser(10)
+    expect(p.push('data: 12345\ndata: 1234\n\ndata: 1234567890\n\n').length).toBe(2)
+    p.push('data: 12345\n')
+    expect(() => p.push('data: 123456\n')).toThrow('too large')
+    expect(() => new SseParser(10).push('data: 12345678901234567')).toThrow('too large')
+    expect(new SseParser().push(`data: ${'x'.repeat(5_000_000)}\n\n`).length).toBe(1)
+  })
   it('counts a CRLF split between chunks as one line end, and gives a CR-ended event at once', () => {
     const all = 'event: a\r\ndata: 1\r\ndata: 2\r\n\r\nevent: b\r\ndata: 3\r\n\r\n'
     for (let i = 1; i < all.length; i++) {
