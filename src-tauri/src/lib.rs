@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use tauri_plugin_dialog::DialogExt;
 use tokio::sync::oneshot;
 
+pub mod ai;
 pub mod folder_watch;
 pub mod grpc;
 pub mod mcp_host;
@@ -771,6 +772,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .manage(InFlight::default())
+        .manage(ai::AiInFlight::default())
         .manage(SseStreams::default())
         .manage(McpProcs::default())
         .manage(Browsers::default())
@@ -786,7 +788,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![send_request, cancel_request, save_text_file, save_base64_file, open_url, oauth_listen, mock_start, mock_stop, mock_reply, grpc::grpc_describe, grpc::grpc_call, pick_folder, read_folder, sync_folder, watch_folders, folder_strays, read_vault, put_vault, notify_desktop, sse_open, sse_close, mcp_stdio_start, mcp_stdio_send, mcp_stdio_stop, browser_launch, browser_close, mcp_host::mcp_host_start, mcp_host::mcp_host_stop, mcp_host::mcp_host_reply, updater::update_configured, updater::update_check, updater::update_install])
+        .invoke_handler(tauri::generate_handler![send_request, cancel_request, save_text_file, save_base64_file, open_url, oauth_listen, mock_start, mock_stop, mock_reply, grpc::grpc_describe, grpc::grpc_call, pick_folder, read_folder, sync_folder, watch_folders, folder_strays, read_vault, put_vault, notify_desktop, sse_open, sse_close, mcp_stdio_start, mcp_stdio_send, mcp_stdio_stop, browser_launch, browser_close, mcp_host::mcp_host_start, mcp_host::mcp_host_stop, mcp_host::mcp_host_reply, updater::update_configured, updater::update_check, updater::update_install, ai::ai_stream, ai::ai_cancel])
         .run(tauri::generate_context!())
         .expect("error while running Dispatch");
 }
