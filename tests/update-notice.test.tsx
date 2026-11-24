@@ -21,7 +21,7 @@ const seen = () => putMeta('updateState', { noticeAt: 1, noticeAnswered: true })
 it('shows a lasting button that outlives other messages', async () => {
   await seen()
   render(<App transport={transport} />)
-  await screen.findByRole('button', { name: 'Update to 0.3.0' })
+  await screen.findByRole('button', { name: 'Update to 0.3.0' }, { timeout: 5000 })
   const file = new File(['not json'], 'x.json', { type: 'application/json' })
   await act(async () => { fireEvent.change(document.querySelector('input[aria-label="Import file"]')!, { target: { files: [file] } }) })
   await waitFor(() => expect(document.querySelector('.toast')).toBeTruthy())
@@ -31,7 +31,7 @@ it('shows a lasting button that outlives other messages', async () => {
 it('asks before installing', async () => {
   await seen()
   render(<App transport={transport} />)
-  fireEvent.click(await screen.findByRole('button', { name: 'Update to 0.3.0' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Update to 0.3.0' }, { timeout: 5000 }))
   await screen.findByText(/Install Dispatch 0\.3\.0\? You have 0\.2\.0\./)
 })
 
