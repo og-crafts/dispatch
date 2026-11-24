@@ -1,6 +1,8 @@
+import { useRef, useState } from 'react'
 import type { FileData, KV } from '../core/types'
 import { kv } from '../core/types'
 import { formatBytes } from '../core/format'
+import { ValueField } from './ValueField'
 
 interface Props {
   rows: KV[]
@@ -48,6 +50,13 @@ export function FilePick({ file, onPick, label, onError }: { file: FileData | nu
   )
 }
 
+const MIN_KEY = 120, MAX_KEY = 600, DEFAULT_KEY = 240
+const clampKey = (n: number) => Math.min(MAX_KEY, Math.max(MIN_KEY, Math.round(n)))
+const keyName = (label: string) => `dispatch.kvKey.${label}`
+function savedKey(label: string) {
+  try { const n = Number(localStorage.getItem(keyName(label))); return n ? clampKey(n) : DEFAULT_KEY } catch { return DEFAULT_KEY }
+}
+
 /** An editable key/value table that always ends with an empty row to type into.
  * Rows are keyed by position so typing into the empty row keeps focus when it becomes a real row. */
 export function KVTable({ rows, onChange, label, keyPlaceholder = 'Key', valuePlaceholder = 'Value', allowFiles, allowSecrets, fixedKeys }: Props) {
@@ -57,13 +66,29 @@ export function KVTable({ rows, onChange, label, keyPlaceholder = 'Key', valuePl
     if (i === rows.length) { onChange([...rows, { ...ghost, ...patch }]); return }
     onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
   }
+  const [keyW, setKeyW] = useState(() => savedKey(label))
+  const resizing = useRef<{ x: number; w: number } | null>(null)
+  const setKey = (n: number) => { const w = clampKey(n); setKeyW(w); try { localStorage.setItem(keyName(label), String(w)) } catch { /* not remembered */ } }
   const remove = (i: number) => onChange(rows.filter((_, j) => j !== i))
 
   return (
-    <table className="kv" aria-label={label}>
+    <div className="kvWrap"><table className="kv" aria-label={label}>
       <thead>
         <tr>
-          <th className="kv-on"><span className="sr">On</span></th><th>{keyPlaceholder}</th>
+          <th className="kv-on"><span className="sr">On</span></th><th className="kv-key" style={{ width: `min(${keyW}px, 45cqw)` }}>{keyPlaceholder}
+            <div className="kvResizer" role="separator" aria-orientation="vertical" aria-label="Resize the key column" tabIndex={0}
+              aria-valuemin={MIN_KEY} aria-valuemax={MAX_KEY} aria-valuenow={keyW} title="Drag to resize; double-click to reset"
+              onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); resizing.current = { x: e.clientX, w: keyW }; document.body.classList.add('resizing') }}
+              onPointerMove={(e) => { if (resizing.current) setKeyW(clampKey(resizing.current.w + e.clientX - resizing.current.x)) }}
+              onPointerUp={(e) => { if (!resizing.current) return; resizing.current = null; document.body.classList.remove('resizing'); setKey(keyW); e.currentTarget.releasePointerCapture?.(e.pointerId) }}
+              onPointerCancel={() => { resizing.current = null; document.body.classList.remove('resizing') }}
+              onDoubleClick={() => setKey(DEFAULT_KEY)}
+              onKeyDown={(e) => {
+                const step = e.shiftKey ? 64 : 16
+                const to = e.key === 'ArrowLeft' ? keyW - step : e.key === 'ArrowRight' ? keyW + step : e.key === 'Home' ? MIN_KEY : e.key === 'End' ? MAX_KEY : null
+                if (to !== null) { e.preventDefault(); setKey(to) }
+              }} />
+          </th>
           {allowFiles && <th className="kv-type">Type</th>}
           <th>{valuePlaceholder}</th>
           {allowSecrets && <th className="kv-type">Secret</th>}
@@ -93,8 +118,7 @@ export function KVTable({ rows, onChange, label, keyPlaceholder = 'Key', valuePl
               <td>
                 {isFile
                   ? <FilePick file={r.file} label={`${label} file ${i + 1}`} onPick={(file) => update(i, { file })} />
-                  : <input className="mono" value={r.value} type={r.secret ? 'password' : 'text'} placeholder={valuePlaceholder}
-                      aria-label={`${label} ${valuePlaceholder} ${i + 1}`} spellCheck={false} autoComplete="off" onChange={(e) => update(i, { value: e.target.value })} />}
+                  : <ValueField value={r.value} secret={r.secret} placeholder={valuePlaceholder} label={`${label} ${valuePlaceholder} ${i + 1}`} onChange={(value) => update(i, { value })} />}
               </td>
               {allowSecrets && (
                 <td className="kv-type">
@@ -106,6 +130,6 @@ export function KVTable({ rows, onChange, label, keyPlaceholder = 'Key', valuePl
           )
         })}
       </tbody>
-    </table>
+    </table></div>
   )
 }
