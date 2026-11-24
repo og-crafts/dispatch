@@ -70,15 +70,23 @@ export function logTools(envNames: string[]) {
 export class Redactor {
   private values: string[]
   constructor(values: Iterable<string>) {
-    // Longest first, so a value that contains another is hidden whole.
-    this.values = [...new Set([...values].map((v) => v.trim()).filter((v) => v.length >= 6 && !IS_VAR.test(v)))].sort((a, b) => b.length - a.length)
+    // Also as JSON and URLs write them. Longest first, so a value that contains another is hidden whole.
+    const plain = [...values].map((v) => v.trim()).filter((v) => v.length >= 6 && !IS_VAR.test(v))
+    this.values = [...new Set(plain.flatMap((v) => [v, JSON.stringify(v).slice(1, -1), urlText(v), urlText(v).replace(/%20/g, '+')]))].sort((a, b) => b.length - a.length)
   }
   text(s: string): string {
     let out = hideInText(s)
     for (const v of this.values) if (out.includes(v)) out = out.split(v).join(HIDDEN)
     return out
   }
+  /** A header's value as an assistant may see it. */
+  header(k: string, v: string): string {
+    return SENSITIVE_HEADER.test(k) ? hide('authorization', v) : this.text(hide(k, v))
+  }
 }
+
+/** encodeURIComponent throws on half a surrogate pair. */
+const urlText = (v: string) => { try { return encodeURIComponent(v) } catch { return v } }
 
 /** Every secret value in what the assistant may see, for `Redactor`. */
 export function knownSecrets(x: { environments: Environment[]; globals: KV[]; collections: Collection[]; folders: Folder[]; requests: RequestDef[]; extra?: string[] }): string[] {
@@ -155,20 +163,20 @@ export function logCall(name: string, args: any, x: LogCallContext): [string, bo
     if (!hits.length) return [`No send “${id}” in the open workspace’s history. Use list_history.`, true]
     if (hits.length > 1) return [`“${id}” matches ${hits.length} sends; give more of the id.`, true]
     const h = hits[0]
-    const hdr = (k: string, v: string) => `  ${k}: ${SENSITIVE_HEADER.test(k) ? hide('authorization', v) : R(hide(k, v))}`
+    const hdr = (k: string, v: string) => `  ${k}: ${x.redact.header(k, v)}`
     const lines = [
       `“${h.request.name}” sent ${time(h.at)} UTC`,
       `${h.sent.method} ${R(h.sent.url)}`,
       h.sent.headers.length ? `Request headers:\n${h.sent.headers.map(([k, v]) => hdr(k, v)).join('\n')}` : 'Request headers: none',
     ]
-    if (h.sent.body) lines.push(`Request body:\n${R(cut(h.sent.body))}`)
+    if (h.sent.body) lines.push(`Request body:\n${cut(R(h.sent.body))}`)
     if (h.sent.unresolved.length) lines.push(`Unresolved variables: ${h.sent.unresolved.map((v) => `{{${v}}}`).join(', ')}`)
     if (h.error) lines.push(`Error: ${R(h.error)}`)
     if (h.response) {
       const r = h.response
       lines.push(`→ ${r.status} ${r.statusText} (${r.timeMs} ms, ${r.size} bytes)`)
       lines.push(r.headers.length ? `Response headers:\n${r.headers.map(([k, v]) => hdr(k, v)).join('\n')}` : 'Response headers: none')
-      lines.push(r.binary ? `Response body: binary, ${r.size} bytes` : `Response body:\n${R(cut(r.body))}`)
+      lines.push(r.binary ? `Response body: binary, ${r.size} bytes` : `Response body:\n${cut(R(r.body))}`)
     }
     if (h.tests?.length) lines.push(`Tests:\n${h.tests.map((t) => `  ${t.passed ? '✓' : '✗'} ${t.name}${t.error ? ` — ${R(t.error)}` : ''}`).join('\n')}`)
     return [lines.join('\n'), false]
