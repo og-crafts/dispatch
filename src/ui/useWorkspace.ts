@@ -9,7 +9,7 @@ import type { BrowserLauncher } from '../core/browser'
 import { desktopLauncher } from './desktopBrowser'
 import { CookieJars, type StoredCookie, cookieKey, jarKey } from '../core/cookies'
 import type { Workspace } from '../core/backup'
-import { deleteChats } from '../core/assistant/chats'
+import { deleteChats, sweepChats } from '../core/assistant/chats'
 import { type Execution, type Pipeline, type RunContext, execute, folderChain, prepareContext, sendOptions } from '../core/runtime'
 import { type ScriptEngine, scriptPipeline, mergeVars } from '../core/scriptPipeline'
 import { WorkerEngine } from '../core/workerEngine'
@@ -191,6 +191,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
       setCollections(c.sort(byName)); setFolders(f); setRequests(r); setEnvironments(e.sort(byName)); setGlobalsState(g)
       setHistory(h); setSettingsState(s)
       setSpacesState(await db.getSpaces())
+      sweepChats().catch(() => {}) // chats of a workspace removed before its chats were
       setFlows(await db.listFlows())
       if (transport instanceof CookieTransport) {
         const saved = await db.getCookieJars(jarKey(e.some((x) => x.id === s.activeEnvId) ? s.activeEnvId : null, s.activeSpaceId))
@@ -677,7 +678,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   const removeSpace = useCallback(async (id: string) => {
     if (id === DEFAULT_SPACE.id || collections.some((c) => spaceOf(c) === id) || environments.some((e) => spaceOf(e) === id)) return false
     await saveSpaces(spaces.filter((x) => x.id !== id))
-    await deleteChats(id) // Chats go for good with their workspace (workspaces have no undo).
+    try { await deleteChats(id) } catch { /* the sweep on the next start finishes it */ } // Chats go for good with their workspace (no undo).
     jars.delete(jarKey(null, id))
     if (settingsRef.current.activeSpaceId === id) switchSpace(DEFAULT_SPACE.id)
     return true

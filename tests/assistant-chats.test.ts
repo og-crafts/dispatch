@@ -1,9 +1,9 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { exportWorkspace } from '../src/core/backup'
 import * as db from '../src/core/db'
 import { workspaceToFiles } from '../src/core/workspaceFiles'
 import { CHATS_PER_SPACE, deleteChat, deleteChats, listChats, saveChat, type Chat } from '../src/core/assistant/chats'
-import { defaultSettings, newCollection } from '../src/core/types'
+import { DEFAULT_SPACE, defaultSettings, newCollection } from '../src/core/types'
 
 beforeEach(() => db.resetForTests())
 
@@ -141,5 +141,82 @@ describe('saved chats', () => {
     await deleteChats('default')
     expect(await db.getChatRecord('bad')).toBeUndefined()
     expect(await db.getChatIndex()).toEqual([])
+  })
+})
+
+describe('saved chats: fix round 1', () => {
+  it('saveChat says whether the chat stayed: an entry older than the 50 kept is dropped and returns false', async () => {
+    for (let i = 1; i <= 50; i++) await saveChat(chat(`c${i}`, { updatedAt: 100 + i }))
+    expect(await saveChat(chat('ancient', { updatedAt: 1 }))).toBe(false)
+    expect(await db.getChatRecord('ancient')).toBeUndefined()
+    expect(await listChats('default')).toHaveLength(50)
+  })
+
+  it('always accepts the default workspace, even if the stored list lacks it', async () => {
+    await db.putSpaces([{ id: 'other', name: 'Other' }] as never)
+    expect(await saveChat(chat('a', { spaceId: DEFAULT_SPACE.id }))).toBe(true)
+  })
+
+  it('refuses an id that already belongs to another workspace', async () => {
+    await db.putSpaces([{ id: 'default', name: 'Default' }, { id: 's2', name: 'Two' }] as never)
+    await saveChat(chat('same', { spaceId: 's2', title: 'Mine' }))
+    expect(await saveChat(chat('same', { spaceId: 'default', title: 'Other' }))).toBe(false)
+    expect((await listChats('s2'))[0].title).toBe('Mine')
+    expect(await listChats('default')).toEqual([])
+  })
+
+  it('deleteChats() with no argument also removes records a damaged index forgot', async () => {
+    await saveChat(chat('a')); await saveChat(chat('b'))
+    await db.putMeta('assistantChatIndex', 'damaged')
+    await deleteChats()
+    expect(await db.getChatRecord('a')).toBeUndefined()
+    expect(await db.getChatRecord('b')).toBeUndefined()
+  })
+
+  it('an index entry with a bad time stays findable and removable, never orphaned', async () => {
+    await saveChat(chat('a', { updatedAt: 5 }))
+    await db.putMeta('assistantChatIndex', [{ id: 'a', spaceId: 'default', updatedAt: 'x' }])
+    expect((await listChats('default')).map((c) => c.id)).toEqual(['a'])
+    await saveChat(chat('b', { updatedAt: 6 }))
+    expect((await listChats('default')).map((c) => c.id)).toEqual(['b', 'a'])
+    // read as the oldest: the first to go when the 50 are full, record removed with it
+    for (let i = 1; i <= 49; i++) await saveChat(chat(`c${i}`, { updatedAt: 100 + i }))
+    expect((await listChats('default')).map((c) => c.id)).not.toContain('a')
+    expect(await db.getChatRecord('a')).toBeUndefined()
+    expect(await listChats('default')).toHaveLength(50)
+    await deleteChats('default')
+    expect(await db.getChatRecord('a')).toBeUndefined()
+  })
+
+  it('a delete that lands while a save is still sealing wins: nothing comes back', async () => {
+    await db.putSpaces([{ id: 'default', name: 'Default' }, { id: 'gone', name: 'Gone' }] as never)
+    await saveChat(chat('warm', { spaceId: 'gone' })) // makes the key
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    const real = crypto.subtle.encrypt.bind(crypto.subtle)
+    const spy = vi.spyOn(crypto.subtle, 'encrypt').mockImplementation(async (...a: Parameters<typeof real>) => { await gate; return real(...a) })
+    try {
+      const pending = saveChat(chat('late', { spaceId: 'gone' }))
+      await vi.waitFor(() => expect(spy).toHaveBeenCalled())
+      await db.putSpaces([{ id: 'default', name: 'Default' }] as never)
+      await deleteChats('gone')
+      release()
+      expect(await pending).toBe(false)
+    } finally { release(); spy.mockRestore() }
+    expect(await listChats('gone')).toEqual([])
+    expect(await db.getChatIndex()).toEqual([])
+    expect(await db.getChatRecord('late')).toBeUndefined()
+  })
+
+  it('removeChatsOfMissingSpaces drops chats of workspaces no longer listed, and never sweeps when the list is unreadable', async () => {
+    await db.putSpaces([{ id: 'default', name: 'Default' }, { id: 'x', name: 'X' }] as never)
+    await saveChat(chat('keep')); await saveChat(chat('orphan', { spaceId: 'x' }))
+    await db.putMeta('spaces', 'not a list')
+    await db.removeChatsOfMissingSpaces()
+    expect(await db.getChatIndex()).toHaveLength(2)
+    await db.putSpaces([{ id: 'default', name: 'Default' }] as never)
+    await db.removeChatsOfMissingSpaces()
+    expect((await db.getChatIndex()).map((e) => e.id)).toEqual(['keep'])
+    expect(await db.getChatRecord('orphan')).toBeUndefined()
   })
 })

@@ -14,7 +14,7 @@ const isChat = (x: unknown): x is Chat => {
 
 /**
  * Saves (or replaces) a chat on this device, sealed whole. Does nothing when keeping chats is off or the workspace is
- * gone. Returns whether it was stored.
+ * gone. Returns whether it is stored afterwards (false too when it is older than the 50 kept).
  */
 export async function saveChat(chat: Chat): Promise<boolean> {
   if (!(await db.getSettings()).keepChats) return false
@@ -39,4 +39,6 @@ export async function listChats(spaceId: string): Promise<Chat[]> {
 
 export const deleteChat = (id: string) => db.removeChatRecords((e) => e.id === id)
 /** One workspace's chats, or every chat when no workspace is given. */
-export const deleteChats = (spaceId?: string) => db.removeChatRecords((e) => spaceId === undefined || e.spaceId === spaceId)
+export const deleteChats = (spaceId?: string) => db.removeChatRecords((e) => spaceId === undefined || e.spaceId === spaceId, spaceId === undefined)
+/** For app start: chats of workspaces that are gone (a delete that didn't finish). */
+export const sweepChats = db.removeChatsOfMissingSpaces
