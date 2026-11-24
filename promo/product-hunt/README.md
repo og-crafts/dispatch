@@ -1,7 +1,7 @@
-# Product Hunt launch kit: Dispatch 0.1.0
+# Product Hunt launch kit: Dispatch 0.2.0
 
 Everything to paste into the Product Hunt composer, plus the launch-day plan. Copy follows the repo rule: warm,
-problem-led, no other API tool named or compared, no claim beyond what 0.1.0 does. Nothing is submitted without the
+problem-led, no other API tool named or compared, no claim beyond what 0.2.0 does. Nothing is submitted without the
 owner's go-ahead.
 
 ## Listing
@@ -32,17 +32,18 @@ Upload in this order (1270×760, in `gallery/`); the first is also the social pr
 |---|---|---|
 | 1 | `01-cover.png` | Work on your APIs without an account |
 | 2 | `02-local.png` | No sign-up. Nothing stored on our servers. |
-| 3 | `03-scripts.png` | Test every response, in a sandbox |
-| 4 | `04-runner.png` | Run whole collections, not one call at a time |
-| 5 | `05-load.png` | See how an API holds up under load |
-| 6 | `06-docs.png` | Share a request without sharing your secrets |
-| 7 | `07-looks.png` | Windows, macOS, Linux, or the browser |
+| 3 | `03-extract.png` | Stop copying tokens by hand |
+| 4 | `04-scripts.png` | Test every response, in a sandbox |
+| 5 | `05-runner.png` | Run whole collections, not one call at a time |
+| 6 | `06-load.png` | See how an API holds up under load |
+| 7 | `07-docs.png` | Share a request without sharing your secrets |
+| 8 | `08-looks.png` | Windows, macOS, Linux, or the browser |
 
 Thumbnail: `gallery/thumbnail.png` (240×240, the app icon). Rebuild everything with `gallery.mjs` (steps at its top).
 
 **Video:** Product Hunt takes a YouTube link. Upload `promo/out/dispatch-promo-16x9.mp4` (42 s, captions in
-`site/src/assets/video/dispatch-promo.vtt`) to YouTube as Unlisted or Public, then paste the link. It shows the
-same app as 0.1.0, except the request title row from before #56.
+`site/src/assets/video/dispatch-promo.vtt`) to YouTube as Unlisted or Public, then paste the link. It was
+recorded before 0.1.0: the request title row is the one from before #56, and nothing from 0.2.0 is in it.
 
 ## Maker's first comment
 
@@ -59,11 +60,13 @@ Post it right after the launch goes live.
 > - **Your files, your sync.** A workspace can live in a folder of plain files. Put it in git, OneDrive, Dropbox or
 >   Syncthing and it follows you; if a file changed in two places, you choose, file by file. Secret values only
 >   travel if you turn that on, in one file encrypted with your passphrase.
+> - **No copying tokens around.** Pick a value in a response and save it as a variable; every send refreshes it. On
+>   desktop, each environment keeps its own cookies, so staging and production sign-ins stay apart.
 > - **The basics are all there, free:** scripts and tests, a collection runner with data files and JUnit reports,
 >   load tests, scheduled runs, docs, a local mock server, flows, gRPC, WebSocket, MQTT and MCP.
 > - **Open source (MIT)**, on Windows, macOS, Linux and in the browser.
 >
-> An honest note: this is 0.1.0 and the installers aren't code-signed yet, so Windows and macOS will show a warning
+> An honest note: this is 0.2.0, an early release, and the installers aren't code-signed yet, so Windows and macOS will show a warning
 > the first time. The site explains how to check a download, and the web app needs no install at all.
 >
 > I'd love to hear what gets in your way when you work with APIs, and what you'd want Dispatch to do next.
@@ -76,8 +79,10 @@ Post it right after the launch goes live.
 - **Can I bring my existing collections?** Yes: it imports OpenAPI 3, Swagger 2, HAR, cURL and the common collection
   file formats (Postman, Insomnia, Bruno), and exports to Postman's format. (Naming file formats is fine; never
   compare the products.)
-- **Why does Windows warn me?** The installers aren't signed yet; signing is on the way. Each download has a SHA-256
+- **Why does Windows warn me?** The installers aren't code-signed yet. Each download has a SHA-256
   on the download page and the builds come from public GitHub Actions runs.
+- **How do I use a login's token in other requests?** Select it in the response, right-click, Extract into variable…,
+  then write `{{token}}` where you need it. Each login refreshes it, in the runner, flows and `dispatch-run` too.
 - **Does it send anything?** Only if you tick it on first launch: anonymous usage counts and error reports, both
   off by default. Details on the privacy page.
 - **CI?** `dispatch-run` runs a workspace folder, collection or flow from the command line, with secrets from CI
@@ -87,7 +92,7 @@ Post it right after the launch goes live.
 
 Before the day:
 1. Owner: a Product Hunt account (personal, as the maker) and, in claude.ai, reconnect the Product Hunt connector
-   (it asked to sign in again on 2026-11-23). With it, Claude can create the draft, check the field limits and pick
+   (it asked to sign in again on 2026-11-23; its tools were listed again on 2026-11-24, not tried). With it, Claude can create the draft, check the field limits and pick
    a free date; the owner submits.
 2. Owner: upload the promo video to YouTube.
 3. Pick a day: launches go live at 00:01 Pacific (13:31 in India). Tuesday to Thursday get the most traffic and
