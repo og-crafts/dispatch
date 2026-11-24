@@ -101,6 +101,13 @@ fn describe(e: reqwest::Error) -> String {
     msg
 }
 
+/// Whether a configured proxy may carry this request: https only (a proxy sees plain http in the clear,
+/// headers and key included), and never a loopback host.
+fn proxy_allowed(u: &reqwest::Url) -> bool {
+    let (_, loopback) = host_kind(u).unwrap_or((false, false));
+    u.scheme() == "https" && !loopback
+}
+
 /// Sends the request and reports events through `emit` (which returns false once nobody listens any more).
 /// `Err` means the request was refused before anything was sent; failures after that arrive as `Error` events.
 /// A cancel (a value on `cancel`) ends it silently, dropping the connection.
@@ -108,14 +115,12 @@ pub async fn stream_core(req: &AiRequest, cancel: oneshot::Receiver<()>, mut emi
     use futures_util::StreamExt;
     let url = check_target(&req.url, &req.origin)?;
     let method = reqwest::Method::from_bytes(req.method.as_bytes()).map_err(|_| "Unknown request method.".to_string())?;
-    let (_, loopback) = host_kind(&url).unwrap_or((false, false));
-
     let mut cb = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_secs(15))
         .user_agent(concat!("Dispatch/", env!("CARGO_PKG_VERSION")));
     match req.proxy.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
-        Some(p) if !loopback => {
+        Some(p) if proxy_allowed(&url) => {
             let mut proxy = reqwest::Proxy::all(p).map_err(|_| "The proxy address isn’t valid.".to_string())?;
             if let Some(np) = req.no_proxy.as_deref().filter(|x| !x.trim().is_empty()) { proxy = proxy.no_proxy(reqwest::NoProxy::from_string(np)); }
             cb = cb.proxy(proxy);
@@ -130,6 +135,7 @@ pub async fn stream_core(req: &AiRequest, cancel: oneshot::Receiver<()>, mut emi
     let mut b = client.request(method, url);
     for (k, v) in &req.headers {
         let name = reqwest::header::HeaderName::from_bytes(k.as_bytes()).map_err(|_| "A header name isn’t valid.".to_string())?;
+        if name == reqwest::header::HOST { return Err("The Host header can’t be set.".into()); }
         let mut value = reqwest::header::HeaderValue::from_str(v).map_err(|_| "A header value has characters that can’t be sent.".to_string())?;
         value.set_sensitive(true);
         b = b.header(name, value);
@@ -250,6 +256,74 @@ mod tests {
         ] { assert!(check_target(u, o).is_err(), "{u}"); }
     }
 
+    #[test]
+    fn check_target_attack_urls() {
+        // userinfo that looks like the real origin
+        assert!(check_target("http://localhost:11434@evil.com/", "http://localhost:11434").is_err());
+        assert!(check_target("http://localhost.evil.com/", "http://localhost:11434").is_err());
+        assert!(check_target("http://localhost:11434.evil.com/", "http://localhost:11434").is_err());
+        // a backslash is a slash for http(s) URLs, so these name the host in front of it, as the HTTP client reads them
+        let u = check_target("http://localhost:11434\\@evil.com/", "http://localhost:11434").unwrap();
+        assert_eq!(u.host_str(), Some("localhost"));
+        assert!(check_target("http://evil.com\\@localhost:11434/", "http://localhost:11434").is_err());
+        assert!(check_target("https://api.example.com\\.evil.com/", "https://api.example.com").is_ok_and(|u| u.host_str() == Some("api.example.com")));
+        // numeric spellings are normalised before the checks (2130706433 is 127.0.0.1, 134744072 is 8.8.8.8)
+        let u = check_target("http://2130706433:1234/", "http://127.0.0.1:1234").unwrap();
+        assert_eq!(u.host_str(), Some("127.0.0.1"));
+        assert!(check_target("http://0x7f.1:1234/", "http://127.0.0.1:1234").is_ok());
+        assert!(check_target("http://134744072/", "http://8.8.8.8").is_err());
+        assert!(check_target("http://2130706433/", "http://localhost").is_err()); // not the connection's origin
+    }
+
+    #[test]
+    fn proxy_only_for_https_and_never_loopback() {
+        let p = |u: &str| proxy_allowed(&reqwest::Url::parse(u).unwrap());
+        assert!(p("https://api.anthropic.com/v1"));
+        assert!(!p("http://192.168.1.5:8000/v1"));
+        assert!(!p("http://10.0.0.2/v1"));
+        assert!(!p("http://localhost:11434/v1"));
+        assert!(!p("http://127.0.0.1:1/v1"));
+        assert!(!p("http://[::1]:1/v1"));
+        assert!(!p("https://localhost/v1"));
+        assert!(!p("https://127.0.0.1/v1"));
+    }
+
+    #[tokio::test]
+    async fn loopback_never_goes_through_the_proxy() {
+        let target = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let (tport, pport) = (target.local_addr().unwrap().port(), proxy.local_addr().unwrap().port());
+        tokio::spawn(async move {
+            let (mut s, _) = target.accept().await.unwrap();
+            read_head(&mut s).await;
+            let _ = s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok").await;
+        });
+        let proxy_hit = Arc::new(AtomicUsize::new(0));
+        let h = proxy_hit.clone();
+        tokio::spawn(async move { loop { let _ = proxy.accept().await; h.fetch_add(1, Ordering::SeqCst); } });
+        let mut r = req(tport, "/");
+        r.proxy = Some(format!("http://127.0.0.1:{pport}"));
+        let mut evs = vec![];
+        let (_k, rx) = oneshot::channel();
+        stream_core(&r, rx, |e| { evs.push(e); true }).await.unwrap();
+        assert_eq!(evs.last(), Some(&AiEvent::End));
+        assert_eq!(proxy_hit.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn host_header_is_refused() {
+        let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        for name in ["Host", "host", "hOsT"] {
+            let mut r = req(port, "/");
+            r.headers.push((name.into(), "evil.com".into()));
+            let (_k, rx) = oneshot::channel();
+            let e = tokio::time::timeout(Duration::from_secs(2), stream_core(&r, rx, |_| true)).await.expect("it sent the request").unwrap_err();
+            assert!(e.contains("Host") && !e.contains("evil.com"), "{e}");
+        }
+        assert!(tokio::time::timeout(Duration::from_millis(200), l.accept()).await.is_err(), "a connection was made");
+    }
+
     fn req(port: u16, path: &str) -> AiRequest {
         AiRequest { id: 1, method: "POST".into(), url: format!("http://127.0.0.1:{port}{path}"), origin: format!("http://127.0.0.1:{port}"),
             headers: vec![("x-api-key".into(), "sk-secret".into())], body: Some("{}".into()), proxy: None, no_proxy: None, ca_certs_pem: vec![] }
@@ -316,28 +390,54 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn cancel_closes_the_socket_within_a_second() {
+    /// A server that sends `n` chunks, a few ms apart, then keeps the connection open, and reports when the client closes it.
+    async fn spawn_flood(n: usize) -> (u16, tokio::sync::mpsc::UnboundedReceiver<Instant>) {
         let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = l.local_addr().unwrap().port();
-        let (closed_tx, closed_rx) = oneshot::channel::<Instant>();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         tokio::spawn(async move {
-            let (mut s, _) = l.accept().await.unwrap();
-            read_head(&mut s).await;
-            s.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n").await.unwrap();
-            let mut b = [0u8; 64];
-            loop { match s.read(&mut b).await { Ok(0) | Err(_) => break, _ => {} } }
-            let _ = closed_tx.send(Instant::now());
+            loop {
+                let (mut s, _) = l.accept().await.unwrap();
+                let tx = tx.clone();
+                tokio::spawn(async move {
+                    read_head(&mut s).await;
+                    s.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n").await.unwrap();
+                    let (mut rd, mut wr) = s.into_split();
+                    // keeps writing, a chunk every few ms, until the client is gone
+                    tokio::spawn(async move { for _ in 0..n { if wr.write_all(b"5\r\nhello\r\n").await.is_err() { break; } tokio::time::sleep(Duration::from_millis(3)).await; } });
+                    let mut b = [0u8; 64];
+                    loop { match rd.read(&mut b).await { Ok(0) | Err(_) => break, _ => {} } }
+                    let _ = tx.send(Instant::now());
+                });
+            }
         });
-        let (ctx, crx) = oneshot::channel();
-        let mut ctx = Some(ctx);
-        let mut cancelled_at = None;
-        stream_core(&req(port, "/"), crx, |e| {
-            if matches!(e, AiEvent::Chunk { .. }) { if let Some(c) = ctx.take() { cancelled_at = Some(Instant::now()); let _ = c.send(()); } }
-            true
-        }).await.unwrap();
-        let closed = tokio::time::timeout(Duration::from_secs(1), closed_rx).await.expect("socket not closed").unwrap();
-        assert!(closed.duration_since(cancelled_at.unwrap()) < Duration::from_secs(1));
+        (port, rx)
+    }
+
+    // Multi-threaded, so the server keeps writing while the callback below blocks.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cancel_closes_the_socket_within_a_second_and_nothing_follows() {
+        let (port, mut closed) = spawn_flood(400).await;
+        tokio::time::timeout(Duration::from_secs(20), async {
+            // Many rounds: without `biased` a ready chunk wins half the time, so one round alone could pass by luck.
+            for _ in 0..25 {
+                let (ctx, crx) = oneshot::channel();
+                let mut ctx = Some(ctx);
+                let mut cancelled_at = None;
+                let mut after = 0;
+                stream_core(&req(port, "/"), crx, |e| {
+                    if cancelled_at.is_some() { after += 1; }
+                    if matches!(e, AiEvent::Chunk { .. }) && ctx.is_some() { cancelled_at = Some(Instant::now()); let _ = ctx.take().unwrap().send(());
+                        // more chunks arrive while the cancel is pending
+                        std::thread::sleep(Duration::from_millis(25));
+                    }
+                    true
+                }).await.unwrap();
+                assert_eq!(after, 0, "events after the cancel");
+                let at = closed.recv().await.unwrap();
+                assert!(at.duration_since(cancelled_at.unwrap()) < Duration::from_secs(1));
+            }
+        }).await.expect("hung");
     }
 
     #[tokio::test]
@@ -366,30 +466,27 @@ mod tests {
 
     #[tokio::test]
     async fn the_frontend_going_away_stops_the_stream() {
-        let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = l.local_addr().unwrap().port();
-        let (closed_tx, closed_rx) = oneshot::channel::<()>();
-        tokio::spawn(async move {
-            let (mut s, _) = l.accept().await.unwrap();
-            read_head(&mut s).await;
-            s.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n").await.unwrap();
-            let mut b = [0u8; 64];
-            loop { match s.read(&mut b).await { Ok(0) | Err(_) => break, _ => {} } }
-            let _ = closed_tx.send(());
-        });
-        let (_keep, rx) = oneshot::channel();
-        stream_core(&req(port, "/"), rx, |e| !matches!(e, AiEvent::Chunk { .. })).await.unwrap();
-        tokio::time::timeout(Duration::from_secs(1), closed_rx).await.expect("socket not closed").unwrap();
+        let (port, mut closed) = spawn_flood(400).await;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let mut calls = 0;
+            let (_keep, rx) = oneshot::channel();
+            stream_core(&req(port, "/"), rx, |e| { calls += 1; !matches!(e, AiEvent::Chunk { .. }) }).await.unwrap();
+            assert_eq!(calls, 2); // head, then the chunk that found nobody listening
+            closed.recv().await.unwrap();
+        }).await.expect("hung or socket not closed");
     }
 
     #[tokio::test]
     async fn refused_target_never_connects_and_errors_hold_no_secrets() {
-        let mut r = req(1, "/");
-        r.url = "http://example.com/x?key=sk-secret".into();
-        r.origin = "http://example.com".into();
+        // A refused request aimed at a live local listener: nothing may connect.
+        let live = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let lport = live.local_addr().unwrap().port();
+        let mut r = req(lport, "/?key=sk-secret");
+        r.origin = format!("https://127.0.0.1:{lport}"); // scheme differs from the url
         let (_k, rx) = oneshot::channel();
         let e = stream_core(&r, rx, |_| true).await.unwrap_err();
         assert!(!e.contains("sk-secret"));
+        assert!(tokio::time::timeout(Duration::from_millis(300), live.accept()).await.is_err(), "a connection was made");
         // a refused connection: the message has no URL (the key can be in its query)
         let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = l.local_addr().unwrap().port();
