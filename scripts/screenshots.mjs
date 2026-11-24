@@ -5,7 +5,7 @@
 // environment, sends requests to examples/demo-server.mjs and runs the runner and a load test.
 //
 //   npm run build                      # the web app in dist/
-//   node scripts/screenshots.mjs site  # or: promo, ph
+//   node scripts/screenshots.mjs site  # or: promo, ph; "site docs" takes only that figure
 //
 // Needs Playwright with a Chromium. Point PLAYWRIGHT at a playwright or playwright-core package directory and,
 // if its own browser isn't installed, CHROMIUM at a chrome binary. Ports 4318 (demo API) and 5291 (preview) must be free.
@@ -61,7 +61,10 @@ try {
   await up('http://127.0.0.1:4318/login')
   await up('http://127.0.0.1:5291/')
   const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {})
-  for (const run of RUNS) {
+  const only = process.argv[3]
+  for (const all of RUNS) {
+    const run = only ? { ...all, which: all.which.filter((w) => w === only) } : all
+    if (!run.which.length) continue
     mkdirSync(dirname(run.name('x')), { recursive: true })
     await capture(browser, run)
   }
