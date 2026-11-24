@@ -13,7 +13,7 @@ import { collectItems, failed, runCollection, type RunItem, type RunSummary } fr
 import { type Flow, type FlowRun, runFlow } from './flows'
 import type { ScriptEngine } from './scriptPipeline'
 import { knownSecrets, LOG_TOOL_NAMES, logCall, logTools, type McpLogSource, Redactor } from './mcpLogs'
-import { ASSISTANT_PREFIX, type AssistantWorkspace, describeRequest, getRequestTool, hideInText, INBOX, WORKSPACE_TOOL_NAMES, workspaceCall, workspaceTools } from './mcpWorkspace'
+import { ASSISTANT_PREFIX, AUTH_SECRETS, type AssistantWorkspace, describeRequest, getRequestTool, hideInText, INBOX, WORKSPACE_TOOL_NAMES, workspaceCall, workspaceTools } from './mcpWorkspace'
 
 export interface McpServeOptions {
   ws: ImportResult
@@ -111,6 +111,14 @@ export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | nul
     if (!it) return { error: named.length > 1 ? `Several requests are named “${want}”: ${named.map(pathOf).join(', ')}. Use the full path.` : `No request named “${want}”. Use list_requests.` }
     return { it, path: pathOf(it) }
   }
+  /** Hides secrets in what goes back: every one Dispatch knows, plus any this send or run just made. */
+  const redactor = (fresh: { vars?: (KV[] | null | undefined)[]; auth?: object } = {}) => new Redactor([
+    ...knownSecrets({
+      environments: [...o.ws.environments, ...(o.environment ? [o.environment] : [])], globals: [...o.globals, ...(fresh.vars ?? []).flatMap((v) => v ?? [])],
+      collections: [...o.ws.collections, ...own], folders: o.ws.folders, requests: o.ws.requests, extra: [o.settings.mcpHostToken],
+    }),
+    ...Object.entries(fresh.auth ?? {}).flatMap(([k, v]) => (typeof v === 'string' && AUTH_SECRETS.has(k) ? [v] : [])),
+  ])
   const canFlow = !!(o.engine || o.hooks?.runFlow)
   const editable = multi ? o.workspace?.editable?.name : undefined
   let handedList: RunItem[] | null = null
@@ -148,11 +156,14 @@ export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | nul
         const ctx: RunContext = { collection: colOf(it), folders: o.ws.folders, environment: o.environment, globals: o.globals, locals }
         const x = await execute(it.request, ctx, o.transport, sendOptions(it.request, o.settings), o.pipeline)
         await o.hooks?.afterSend?.(x, ctx, it.request)
-        if (x.error && !x.response) return text(`Not sent: ${hideInText(x.error)}`, true)
+        const R = redactor({ vars: [x.changes.environment, x.changes.collection, x.changes.globals], auth: x.authUpdate?.patch })
+        if (x.error && !x.response) return text(`Not sent: ${R.text(x.error)}`, true)
         const r = x.response!
-        const body = r.binary ? `(binary, ${r.size} bytes)` : r.body.length > BODY_LIMIT ? `${r.body.slice(0, BODY_LIMIT)}\n… (cut at ${BODY_LIMIT} characters)` : r.body
-        const tests = x.tests.length ? `\n\nTests:\n${x.tests.map((t) => `${t.passed ? '✓' : '✗'} ${t.name}${t.error ? ` — ${t.error}` : ''}`).join('\n')}` : ''
-        return text(`${x.sent.method} ${hideInText(x.sent.url)}\n→ ${r.status} ${r.statusText} (${r.timeMs} ms)\n${r.headers.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\n${body}${tests}`, r.status >= 400 || x.tests.some((t) => !t.passed))
+        // Hidden before it is cut, so no secret is left half shown at the cut.
+        const full = r.binary ? `(binary, ${r.size} bytes)` : R.text(r.body)
+        const body = full.length > BODY_LIMIT ? `${full.slice(0, BODY_LIMIT)}\n… (cut at ${BODY_LIMIT} characters)` : full
+        const tests = x.tests.length ? `\n\nTests:\n${x.tests.map((t) => `${t.passed ? '✓' : '✗'} ${R.text(t.name)}${t.error ? ` — ${R.text(t.error)}` : ''}`).join('\n')}` : ''
+        return text(`${x.sent.method} ${R.text(x.sent.url)}\n→ ${r.status} ${r.statusText} (${r.timeMs} ms)\n${r.headers.map(([k, v]) => `${k}: ${R.header(k, v)}`).join('\n')}\n\n${body}${tests}`, r.status >= 400 || x.tests.some((t) => !t.passed))
       }
       if (name === 'run_collection') {
         let list = items()
@@ -169,9 +180,10 @@ export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | nul
         const s = await runCollection({ items: list, iterations: data ? 0 : 1, data, delayMs: 0, stopOnFailure: false, environment: o.environment, collections: o.ws.collections, folders: o.ws.folders, globals: o.globals, settings: o.settings }, o.transport, o.pipeline)
         await o.hooks?.afterRun?.(s)
         const bad = s.results.filter(failed)
+        const R = redactor({ vars: [s.finalEnvironment, s.finalGlobals, ...Object.values(s.finalCollections)] })
         return text([
           `${s.requests} requests in ${s.iterations} iteration(s): ${s.testsPassed} tests passed, ${s.testsFailed} failed, ${s.failedRequests} errors, avg ${s.avgTimeMs} ms.`,
-          ...bad.slice(0, 20).map((r) => `✗ ${r.name}: ${r.error ? hideInText(r.error) : r.tests.filter((t) => !t.passed).map((t) => `${t.name}: ${t.error ?? 'failed'}`).join('; ')}`),
+          ...bad.slice(0, 20).map((r) => `✗ ${r.name}: ${R.text(r.error || r.tests.filter((t) => !t.passed).map((t) => `${t.name}: ${t.error ?? 'failed'}`).join('; '))}`),
         ].join('\n'), bad.length > 0)
       }
       if (name === 'run_flow' && canFlow) {
@@ -184,9 +196,10 @@ export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | nul
         const r = o.hooks?.runFlow
           ? await o.hooks.runFlow(f)
           : await runFlow(f, { collections: o.ws.collections, folders: o.ws.folders, requests: o.ws.requests, environment: o.environment, globals: o.globals, settings: o.settings }, o.transport, o.pipeline, o.engine!)
+        const R = redactor({ vars: [r.environment, r.globals, ...Object.values(r.collections)] })
         return text([
-          `${r.ok ? 'Passed' : `Failed: ${hideInText(String(r.error))}`} (${r.steps.length} steps, ${r.durationMs} ms)`,
-          ...r.steps.filter((x) => x.status !== 'running').slice(0, 100).map((x) => `${x.status === 'ok' ? '✓' : x.status === 'failed' ? '✗' : '·'} ${x.label}${x.status_code !== undefined ? ` ${x.status_code}` : ''}${x.port ? ` → ${x.port}` : ''} ${hideInText(String(x.detail ?? ''))}`),
+          `${r.ok ? 'Passed' : `Failed: ${R.text(String(r.error))}`} (${r.steps.length} steps, ${r.durationMs} ms)`,
+          ...r.steps.filter((x) => x.status !== 'running').slice(0, 100).map((x) => `${x.status === 'ok' ? '✓' : x.status === 'failed' ? '✗' : '·'} ${x.label}${x.status_code !== undefined ? ` ${x.status_code}` : ''}${x.port ? ` → ${x.port}` : ''} ${R.text(String(x.detail ?? ''))}`),
         ].join('\n'), !r.ok)
       }
       if (LOG_TOOL_NAMES.includes(name) && o.logs) {
