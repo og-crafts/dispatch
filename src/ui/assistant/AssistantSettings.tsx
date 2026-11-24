@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { type Connection, reach, reachLabel } from '../../core/assistant/connections'
 import { useDialogs } from '../Dialogs'
 import type { WorkspaceApi } from '../useWorkspace'
+import { mergeEdit } from './mergeEdit'
 import { ConnectionDialog, KIND_NAMES } from './ConnectionDialog'
 import { testConnection, type TestResult } from './connectionTest'
 import { removeAllChats, updateConnections, useConnections } from './store'
@@ -42,7 +43,7 @@ export function AssistantSettings({ ws, notify }: { ws: WorkspaceApi; notify: (m
     try { await updateConnections((now) => now.filter((x) => x.id !== c.id)) } catch { notify('Couldn’t remove the connection.') }
   }
   const save = async (c: Connection) => {
-    await updateConnections((now) => (now.some((x) => x.id === c.id) ? now.map((x) => (x.id === c.id ? c : x)) : [...now, c]))
+    await updateConnections((now) => (editing === 'new' ? [...now, c] : mergeEdit(now, editing!, c)))
     forget(c.id)
   }
   const deleteAll = async () => {

@@ -4,11 +4,11 @@ import * as db from '../db'
 export const CHATS_PER_SPACE = 50
 
 /** `messages` are the provider's own messages, already redacted by the loop, stored and returned unchanged. */
-export interface Chat { id: string; spaceId: string; connectionId: string; model: string; title: string; messages: unknown[]; updatedAt: number }
+export interface Chat { id: string; spaceId: string; connectionId: string; model: string; /** Where it was held; without one it can only be read. */ origin?: string; title: string; messages: unknown[]; updatedAt: number }
 
 const isChat = (x: unknown): x is Chat => {
   const c = x as Chat
-  return !!c && typeof c.id === 'string' && typeof c.spaceId === 'string' && typeof c.connectionId === 'string' && typeof c.model === 'string'
+  return !!c && typeof c.id === 'string' && typeof c.spaceId === 'string' && typeof c.connectionId === 'string' && typeof c.model === 'string' && (c.origin === undefined || typeof c.origin === 'string')
     && typeof c.title === 'string' && Array.isArray(c.messages) && typeof c.updatedAt === 'number'
 }
 

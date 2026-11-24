@@ -5,6 +5,7 @@ import { AssistantError } from '../../core/assistant/providers/shared'
 import { useModal } from '../PrivacyDialogs'
 
 export const KIND_NAMES: Record<ConnectionKind, string> = { anthropic: 'Anthropic', openai: 'OpenAI', compatible: 'OpenAI-compatible address' }
+const MOST_MODELS = 500
 const MOVED = 'The address changed, so its key, context size and console access were taken off. Enter the key for the new address if it needs one.'
 
 /** Adds or edits a connection. The address changes only through withBaseUrl, when it is finished (not per keystroke). */
@@ -16,17 +17,20 @@ export function ConnectionDialog({ initial, net, onSave, onClose }: { initial: C
   const [address, setAddress] = useState(draft.baseUrl)
   const [context, setContext] = useState(draft.contextTokens ? String(draft.contextTokens) : '')
   const [named, setNamed] = useState(!!initial)
-  const [error, setError] = useState('')
+  const [error, setErrorText] = useState('')
+  const [badAddress, setBadAddress] = useState(false)
+  const setError = (text: string, address = false) => { setErrorText(text); setBadAddress(address) }
   const [note, setNote] = useState('')
   const [models, setModels] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   /** The list being loaded; a late one for another address or key is dropped. */
   const load = useRef(0)
+  const loadCtl = useRef<AbortController | null>(null)
   /** A key typed here was taken off with the address; saving stops once, so it's noticed (the click on Save also leaves the address field). */
   const keyDropped = useRef(false)
-  useEffect(() => () => { load.current++ }, [])
-  const dropList = () => { load.current++; setLoading(false); setModels([]) }
+  useEffect(() => () => { load.current++; loadCtl.current?.abort() }, [])
+  const dropList = () => { load.current++; loadCtl.current?.abort(); setLoading(false); setModels([]) }
   const set = (patch: Partial<Connection>) => setDraft((d) => ({ ...d, ...patch }))
   const compatible = draft.kind === 'compatible'
   const close = () => { ref.current?.close?.(); onClose() }
@@ -41,7 +45,7 @@ export function ConnectionDialog({ initial, net, onSave, onClose }: { initial: C
   const commit = (): { draft: Connection; key: string; context: string } | null => {
     if (!compatible || address.trim() === draft.baseUrl) return { draft, key, context }
     const bad = validateAddress(address)
-    if (bad) { setError(bad); return null }
+    if (bad) { setError(bad, true); return null }
     const next = withBaseUrl(draft, address)
     const moved = new URL(next.baseUrl).origin !== (() => { try { return new URL(draft.baseUrl).origin } catch { return '' } })()
     if (moved) {
@@ -68,11 +72,13 @@ export function ConnectionDialog({ initial, net, onSave, onClose }: { initial: C
   const loadModels = async () => {
     const done = commit()
     if (!done) return
+    loadCtl.current?.abort()
+    const ctl = loadCtl.current = new AbortController()
     const mine = ++load.current
     setLoading(true); setError(''); setModels([])
     try {
       const { createProvider } = await import('../../core/assistant/providers')
-      const list = await (await createProvider(built(done), net)).listModels()
+      const list = await (await createProvider(built(done), net)).listModels(ctl.signal)
       if (load.current !== mine) return
       setModels(list)
       if (!list.length) setError('The server listed no models. Type the model’s name.')
@@ -91,7 +97,7 @@ export function ConnectionDialog({ initial, net, onSave, onClose }: { initial: C
     const bad = compatible ? validateAddress(c.baseUrl) : null
     if (bad || !c.name || !c.model) { setError(bad ?? (!c.name ? 'Give it a name.' : 'Enter the model to use, or load the list.')); return }
     setBusy(true)
-    try { await onSave(c) } catch { setBusy(false); setError('Couldn’t save the connection. Try again.'); return }
+    try { await onSave(c) } catch (e) { setBusy(false); setError(e instanceof AssistantError ? e.message : 'Couldn’t save the connection. Try again.'); return }
     close()
   }
 
@@ -107,10 +113,9 @@ export function ConnectionDialog({ initial, net, onSave, onClose }: { initial: C
           <input aria-label="Name" value={draft.name} onChange={(e) => { setNamed(true); set({ name: e.target.value }) }} /></label>
         {compatible && <>
           <label className="field"><span>Address</span>
-            <input className="mono" aria-label="Address" value={address} spellCheck={false} autoComplete="off" onChange={(e) => setAddress(e.target.value)} onBlur={() => { commit() }} /></label>
+            <input className="mono" aria-label="Address" aria-invalid={badAddress || undefined} aria-describedby={badAddress ? 'connection-error' : undefined} value={address} spellCheck={false} autoComplete="off" onChange={(e) => setAddress(e.target.value)} onBlur={() => { commit() }} /></label>
           {reach(draft.baseUrl) === 'network' && draft.baseUrl.startsWith('http:') && <p className="warnLine small">Plain http on your network: other devices there could read the key and everything you send. Use https if the server offers it.</p>}
         </>}
-        {note && <p className="note warn small" role="status">{note}</p>}
         <label className="field"><span>Key{needsKey(draft) ? '' : ' (if the server needs one)'}</span>
           <input className="mono" type="password" aria-label="Key" value={key} autoComplete="off" spellCheck={false} placeholder={draft.key ? 'Type a new key to replace it' : ''} onChange={(e) => { setKey(e.target.value); keyDropped.current = false; dropList() }} /></label>
         {draft.keyLost && !key && <p className="warnLine small">Enter the key again</p>}
@@ -123,8 +128,9 @@ export function ConnectionDialog({ initial, net, onSave, onClose }: { initial: C
         {models.length > 0 && <label className="field"><span>Models offered</span>
           <select aria-label="Models offered" value={models.includes(draft.model) ? draft.model : ''} onChange={(e) => set({ model: e.target.value })}>
             <option value="" disabled>Pick a model</option>
-            {models.map((m) => <option key={m} value={m}>{m}</option>)}
+            {models.slice(0, MOST_MODELS).map((m) => <option key={m} value={m}>{m}</option>)}
           </select></label>}
+        {models.length > MOST_MODELS && <p className="muted small">Only the first {MOST_MODELS} are listed; type the name of another.</p>}
         <div className="row-h"><button type="button" className="btn small" disabled={loading} onClick={() => void loadModels()}>{loading ? 'Loading…' : 'Load models'}</button></div>
         {compatible && <>
           <label className="field"><span>Context size in tokens (empty if you don’t know)</span>
@@ -133,8 +139,11 @@ export function ConnectionDialog({ initial, net, onSave, onClose }: { initial: C
         </>}
         <label className="toggle"><input type="checkbox" aria-label="May read the console and send history (responses included)" checked={draft.readLogs} onChange={(e) => set({ readLogs: e.target.checked })} /> <span>May read the console and send history (responses included)</span></label>
         <p className="muted small">The console covers all your workspaces. History is only the open workspace’s.</p>
-        {error && <p className="warnLine small" role="alert">{error}</p>}
-        <div className="actions end">
+        <div className="connectionMessage">
+          {error ? <p id="connection-error" className="warnLine small" role="alert">{error}</p> : note && <p className="warnLine small" role="status">{note}</p>}
+        </div>
+        {/* a click on a button doesn't leave the field first: that could move the button from under the pointer */}
+        <div className="actions end" onMouseDown={(e) => e.preventDefault()}>
           <button type="button" className="btn ghost" onClick={close}>Cancel</button>
           <button type="submit" className="btn primary" disabled={busy}>Save</button>
         </div>

@@ -47,6 +47,14 @@ describe('chats and workspaces', () => {
     expect((await db.getSpaces()).some((x) => x.id === work)).toBe(false)
   })
 
+  it('every workspace’s tabs are known, the shown ones apart', async () => {
+    const h = await mount()
+    await waitFor(() => expect(h.result.current.tabs[0].space).toBe('default'))
+    await act(async () => { h.result.current.switchSpace((await h.result.current.addSpace('Work')).id) })
+    expect(h.result.current.tabs).toHaveLength(1)
+    expect(h.result.current.allTabs).toHaveLength(2)
+  })
+
   it('on load, chats of a workspace that is no longer listed are removed', async () => {
     await db.putSpaces([{ id: 'default', name: 'Default' }, { id: 'x', name: 'X' }] as never)
     await chats.saveChat(chat('orphan', 'x')); await chats.saveChat(chat('keep', 'default'))

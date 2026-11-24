@@ -51,7 +51,7 @@ function world(over: object = {}): WorkspaceApi {
   return {
     ready: true, spaces: [{ id: 'default', name: 'Orders' }, { id: 'two', name: 'Second' }], activeSpaceId: space, settings: { ...defaultSettings, activeSpaceId: space },
     collections: [shop], allCollections: [shop], folders: [], requests: [items], environments: [], allEnvironments: [], environment: null, globals: [], flows: [],
-    history: [] as HistoryEntry[], logs: [] as LogLine[], tabs: [], view: { kind: 'request' }, draft: { ...items, name: 'Open one' },
+    history: [] as HistoryEntry[], logs: [] as LogLine[], tabs: [], allTabs: [], view: { kind: 'request' }, draft: { ...items, name: 'Open one' },
     transport: { label: 't', unrestricted: true, send: async () => { throw new Error('must not send') } }, pipeline: { current: {} }, cookieJars: new CookieJars(), ...over,
   } as never
 }
@@ -141,11 +141,17 @@ describe('sending', () => {
     expect(a().chat!.messages).toHaveLength(4)
   })
 
-  it('keeping off stores nothing', async () => {
-    await db.putSettings({ ...defaultSettings, keepChats: false })
+  it('keeping off in the settings on screen stores nothing, even before it is written down', async () => {
     await mount([local()], world({ settings: { ...defaultSettings, keepChats: false } }))
     await ask('hi', says('yo'))
     expect(a().chat!.messages).toHaveLength(2)
+    expect(await listChats('default')).toEqual([])
+  })
+
+  it('keeping off as it is saved stores nothing, even before the screen knows', async () => {
+    await db.putSettings({ ...defaultSettings, keepChats: false })
+    await mount([local()])
+    await ask('hi', says('yo'))
     expect(await listChats('default')).toEqual([])
   })
 
@@ -204,7 +210,7 @@ describe('tools', () => {
     const otherEnv = { ...newEnvironment('o'), workspaceId: 'two', variables: [{ ...kv('s', P.env), secret: true }] }
     const draft = { ...newRequest(), headers: [kv('Authorization', P.draft)] }
     await mount([local({ readLogs: false }), cloud({ key: P.other })], world({
-      requests: [req], allEnvironments: [otherEnv], cookieJars: jars, history: [entry], tabs: [{ id: 't', draft }],
+      requests: [req], allEnvironments: [otherEnv], cookieJars: jars, history: [entry], allTabs: [{ id: 't', draft, space: 'two' }],
       settings: { ...defaultSettings, clientCerts: [{ id: '1', host: 'h', cert: '', key: P.cert, enabled: true }] },
     }))
     await ask('look', calls('get_request', { name: 'Shop/Items' }, 'Looking'), says('Done'))
@@ -406,17 +412,281 @@ describe('a nearly full chat', () => {
     await mount([local()])
     await ask('one', says('1'))
     rust.answers.push('hang')
-    let p!: Promise<void>
+    let p!: Promise<unknown>
     await act(async () => { p = a().summarise() })
     await waitFor(() => expect(a().status).toBe('summarising'))
     await waitFor(() => expect(sent()).toHaveLength(2))
     act(() => a().stop())
-    await act(() => p)
+    await act(async () => { await p })
     expect(a().summary).toBeNull()
     rust.answers.push(says('sum'))
     await act(() => a().summarise())
     expect(a().summary).toContain('sum')
     h.rerender({ ws: world({ activeSpaceId: 'two' }) })
     await waitFor(() => expect(a().summary).toBeNull())
+  })
+})
+
+/** Holds `prepare` (or a tool) at reading the sign-ins until released. */
+function hold() {
+  const real = db.getMcpSignIns
+  let release!: () => void
+  const gate = new Promise<void>((r) => { release = r })
+  vi.spyOn(db, 'getMcpSignIns').mockImplementation(async () => { await gate; return real() })
+  return release
+}
+const moveTo = (baseUrl: string) => act(() => updateConnections((l) => l.map((c) => ({ ...c, baseUrl }))))
+const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 60)) })
+
+describe('bound to connection, model and origin', () => {
+  it('the chat keeps its origin; after a move it can be read, not continued, also when reopened', async () => {
+    await mount([local()])
+    await ask('one', says('1'))
+    const id = a().chat!.id
+    expect((await listChats('default'))[0].origin).toBe('http://localhost:11434')
+    await moveTo('https://other.example.com/v1')
+    expect(a().chat).toBeNull()
+    await act(() => a().openChat(id))
+    expect(texts()).toEqual(['one', '1'])
+    expect(a().blocked).toMatch(/address/)
+    expect(await send('go on')).toBe('blocked')
+    await moveTo('http://localhost:11434/other/path')
+    await act(() => a().openChat(id))
+    expect(a().blocked).toBeNull()
+  })
+
+  it('a chat kept without an origin is only readable', async () => {
+    await mount([local()])
+    await saveChat({ id: 'old', spaceId: 'default', connectionId: 'l', model: 'qwen', title: 't', messages: [{ role: 'user', content: 'x' }], updatedAt: 1 })
+    await act(() => a().openChat('old'))
+    expect(texts()).toEqual(['x'])
+    expect(await send('go on')).toBe('blocked')
+    expect(sent()).toEqual([])
+  })
+
+  it.each([true, false])('a yes for one connection never sends to another (removed first: %s)', async (first) => {
+    await mount([cloud(), local()])
+    expect(await send('for the cloud')).toBe('consent')
+    const remove = () => updateConnections((l) => l.filter((c) => c.id !== 'c'))
+    let r = ''
+    await act(async () => {
+      const q = first && remove()
+      const p = a().allowConsent()
+      if (!first) void remove()
+      await q; r = await p
+    })
+    await settle()
+    if (first) expect(['blocked', 'stopped']).toContain(r)
+    expect(sent().filter((x) => !x.url.startsWith('https://models.example.com/'))).toEqual([])
+  })
+
+  it('a waiting question goes with its connection, and with its origin (https to http on one host)', async () => {
+    await mount([cloud({ baseUrl: 'https://192.168.1.5/v1' }), local()])
+    await send('hi')
+    await act(() => updateConnections((l) => l.map((c) => (c.id === 'c' ? { ...c, baseUrl: 'http://192.168.1.5/v1' } : c))))
+    expect(a().pendingConsent).toBeNull()
+    await send('hi')
+    expect(a().pendingConsent).not.toBeNull()
+    await act(() => updateConnections((l) => l.filter((c) => c.id !== 'c')))
+    expect(a().pendingConsent).toBeNull()
+  })
+
+  it('an unnoticed move to http on the same host is not covered by the yes', async () => {
+    await mount([cloud({ baseUrl: 'https://192.168.1.5/v1' })])
+    await send('hi')
+    await db.putConnections((await db.getConnections()).map((c) => ({ ...c, baseUrl: 'http://192.168.1.5/v1' })))
+    let r = ''
+    await act(async () => { r = await a().allowConsent() })
+    expect(r).not.toBe('sent')
+    expect((await db.getConnections())[0].consentHost).toBeUndefined()
+    expect(sent()).toEqual([])
+  })
+
+  it.each([
+    ['removed', (l: Connection[]) => l.filter((c) => c.id !== 'c')],
+    ['its key changed', (l: Connection[]) => l.map((c) => (c.id === 'c' ? { ...c, key: 'another-key-1' } : c))],
+    ['its model changed', (l: Connection[]) => l.map((c) => (c.id === 'c' ? { ...c, model: 'm2' } : c))],
+    ['its consent taken back', (l: Connection[]) => l.map((c) => (c.id === 'c' ? { ...c, consentHost: undefined } : c))],
+    ['its address changed', (l: Connection[]) => l.map((c) => (c.id === 'c' ? { ...c, baseUrl: 'https://b.example.com' } : c))],
+  ])('connection %s: stops an answer, and a message still being prepared', async (_n, change) => {
+    const list = [cloud({ consentHost: 'models.example.com' }), local()]
+    await mount(list)
+    rust.answers.push('hang')
+    await send('one')
+    await waitFor(() => expect(sent()).toHaveLength(1))
+    await act(() => updateConnections(change))
+    await waitFor(() => expect(rust.cancelled).toBe(1))
+    await idle()
+    // being prepared, with the change announced
+    await act(() => updateConnections(() => list)); act(() => a().newChat())
+    act(() => a().selectConnection('c'))
+    let release = hold()
+    let p!: Promise<string>
+    await act(async () => { p = a().send('two') })
+    await settle()
+    await act(() => updateConnections(change))
+    await act(() => updateConnections(() => list)) // put back: stopped all the same
+    release()
+    await act(async () => { expect(await p).toBe('stopped') })
+    // and with a change only saved
+    vi.restoreAllMocks(); act(() => a().newChat()); act(() => a().selectConnection('c'))
+    release = hold()
+    await act(async () => { p = a().send('three') })
+    await settle()
+    await db.putConnections(change(list))
+    release()
+    await act(async () => { expect(await p).toBe('blocked') })
+    expect(sent()).toHaveLength(1)
+  })
+
+  it.each([
+    ['removed', (l: Connection[]) => l.slice(1)], ['key', (l: Connection[]) => l.map((c) => ({ ...c, key: 'another-key-1' }))],
+    ['origin', (l: Connection[]) => l.map((c) => ({ ...c, baseUrl: 'https://b.example.com' }))], ['consent', (l: Connection[]) => l.map((c) => ({ ...c, consentHost: undefined }))],
+  ])('a look-up re-reads the connection (%s): nothing is read and the answer stops', async (_n, change) => {
+    const list = [cloud({ consentHost: 'models.example.com' })]
+    await mount(list)
+    rust.answers.push('hang', says('must not be asked'))
+    await send('look')
+    await waitFor(() => expect(sent()).toHaveLength(1))
+    await db.putConnections(change(list)) // nobody hears of it
+    await act(async () => { emit(0)({ kind: 'chunk', base64: b64(calls('list_requests', {})) }); emit(0)({ kind: 'end' }) })
+    await idle()
+    expect(a().ended).toBe('stopped')
+    expect(sent()).toHaveLength(1)
+    expect(JSON.stringify(a().chat!.messages)).not.toContain('Shop/')
+  })
+
+  it('nothing starts after unmounting', async () => {
+    await mount([cloud()])
+    await send('hi')
+    const { allowConsent, send: late } = a()
+    await act(async () => { const p = allowConsent(); h.unmount(); expect(await p).not.toBe('sent') })
+    expect(await late('again')).toBe('stopped')
+    await settle()
+    expect(sent()).toEqual([])
+  })
+
+  it('works under StrictMode', async () => {
+    await db.putConnections([local()])
+    const s = renderHook(() => useAssistant(world()), { reactStrictMode: true })
+    await waitFor(() => expect(s.result.current.ready).toBe(true))
+    rust.answers.push(says('ok'))
+    await act(async () => { expect(await s.result.current.send('hi')).toBe('sent') })
+    await waitFor(() => expect(s.result.current.chat?.messages).toHaveLength(2))
+  })
+})
+
+describe('names and chats', () => {
+  it('a secret in the open request’s or the workspace’s name is hidden', async () => {
+    const v = 'plant-name-8888'
+    await mount([local()], world({ allEnvironments: [{ ...newEnvironment('e'), workspaceId: 'two', variables: [{ ...kv('s', v), secret: true }] }], draft: { ...items, name: `Req ${v}` }, spaces: [{ id: 'default', name: `Space ${v}` }] }))
+    await ask('hi', says('ok'))
+    expect(bodyOf(0).messages[0].content).toContain('Req <hidden>')
+    expect(bodyOf(0).messages[0].content).toContain('Space <hidden>')
+  })
+
+  it('opening a chat waits for its own answer to be kept, also one left for a new chat', async () => {
+    await mount([local()])
+    await ask('one', says('1'))
+    const id = a().chat!.id
+    rust.answers.push('hang')
+    await send('two')
+    await waitFor(() => expect(sent()).toHaveLength(2))
+    await act(async () => { a().newChat(); await a().openChat(id) })
+    expect(texts()).toEqual(['one', '1', 'two'])
+  })
+})
+
+describe('what a summary sends', () => {
+  it('what was said, not what was looked up, without a key added since', async () => {
+    const NEW = 'added-later-KEY-55'
+    await mount([local()])
+    await ask(`my value is ${NEW}`, calls('get_request', { name: 'Shop/Items' }), says('It is Items.', 9))
+    expect(sent()[1].body).toContain('x.test')
+    await act(() => updateConnections((l) => [...l, cloud({ key: NEW })]))
+    rust.answers.push(says('sum', 50))
+    await act(() => a().summarise().then(() => {}))
+    const body = sent()[2].body!
+    expect(body).toContain('It is Items.')
+    expect(body).not.toContain('x.test')
+    expect(body).not.toContain('<<data')
+    expect(body).not.toContain(NEW)
+    expect(a().usage).toMatchObject({ input: 9, totalInput: 59, totalOutput: 10 })
+  })
+
+  it('is cut between characters', async () => {
+    await mount([local({ contextTokens: 10 })])
+    await ask('hi', says('😀'.repeat(40) + 'x'))
+    rust.answers.push(says('sum'))
+    await act(() => a().summarise().then(() => {}))
+    const content = bodyOf(1).messages[1].content as string
+    expect(/\p{Cs}/u.test(content)).toBe(false)
+  })
+
+  it('without consent nothing is sent: it asks, and a yes summarises', async () => {
+    await mount([cloud({ consentHost: 'models.example.com' })])
+    await ask('one', says('1'))
+    await act(() => updateConnections((l) => l.map((c) => ({ ...c, consentHost: undefined }))))
+    await act(async () => { expect(await a().summarise()).toBe('consent') })
+    expect(sent()).toHaveLength(1)
+    expect(a().pendingConsent).toMatchObject({ kind: 'summary', host: 'models.example.com' })
+    rust.answers.push(says('sum'))
+    await act(async () => { await a().allowConsent() })
+    expect(a().summary).toContain('sum')
+    expect(texts()).toEqual(['one', '1'])
+  })
+
+  it.each([
+    ['removed', (l: Connection[]) => l.filter((c) => c.id !== 'l')], ['another model', (l: Connection[]) => l.map((c) => (c.id === 'l' ? { ...c, model: 'm2' } : c))],
+    ['another origin', (l: Connection[]) => l.map((c) => (c.id === 'l' ? { ...c, baseUrl: 'http://localhost:9/v1' } : c))],
+  ])('a summary is dropped when its connection is %s, and is never sent elsewhere', async (_n, change) => {
+    const list = [local(), local({ id: 'l2', name: 'Two' })]
+    await mount(list)
+    await ask('one', says('1'))
+    rust.answers.push(says('sum'))
+    await act(() => a().summarise().then(() => {}))
+    await db.putConnections(change(list)) // unnoticed
+    await act(async () => { expect(await a().startFromSummary('sum')).toBe('blocked') })
+    expect(sent()).toHaveLength(2)
+    expect(a().summary).not.toBeNull()
+    await act(() => updateConnections((l) => l))
+    expect(a().summary).toBeNull()
+  })
+
+  it('a change or a workspace switch while it is made drops the result', async () => {
+    await mount([local()])
+    await ask('one', says('1'))
+    rust.answers.push('hang', 'hang')
+    let p!: Promise<unknown>
+    await act(async () => { p = a().summarise() })
+    await waitFor(() => expect(sent()).toHaveLength(2))
+    h.rerender({ ws: world({ activeSpaceId: 'two' }) })
+    await act(async () => { emit(1)({ kind: 'chunk', base64: b64(says('late')) }); await p })
+    expect(a().summary).toBeNull()
+    h.rerender({ ws: world() })
+    await act(async () => { p = a().summarise() })
+    await waitFor(() => expect(sent()).toHaveLength(3))
+    await moveTo('http://localhost:9/v1')
+    await act(async () => { emit(2)({ kind: 'chunk', base64: b64(says('late')) }); await p })
+    expect(a().summary).toBeNull()
+  })
+
+  it('the summary and the chat stay until the new chat is really sent', async () => {
+    await mount([cloud({ consentHost: 'models.example.com' })])
+    await ask('one', says('1'))
+    const old = a().chat!.id
+    rust.answers.push(says('sum'))
+    await act(() => a().summarise().then(() => {}))
+    await act(() => updateConnections((l) => l.map((c) => ({ ...c, consentHost: undefined }))))
+    await act(async () => { expect(await a().startFromSummary('mine')).toBe('consent') })
+    expect(a().summary).not.toBeNull()
+    expect(a().chat!.id).toBe(old)
+    act(() => a().declineConsent())
+    await act(async () => { await a().startFromSummary('mine') })
+    rust.answers.push(says('go'))
+    await act(async () => { expect(await a().allowConsent()).toBe('sent') })
+    await idle()
+    expect(a().summary).toBeNull()
+    expect(texts()).toEqual(['mine', 'go'])
   })
 })

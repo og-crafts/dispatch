@@ -26,5 +26,5 @@ export interface Provider {
   readonly connectionId: string
   turn(t: TurnRequest): Promise<Turn>
   toolResults(calls: { id: string; text: string; isError: boolean }[]): unknown[]
-  listModels(): Promise<string[]>
+  listModels(signal?: AbortSignal): Promise<string[]>
 }

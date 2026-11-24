@@ -161,9 +161,9 @@ export function chatProvider(conn: Connection, unlimited: typeof globalThis.fetc
       }
     }),
     toolResults: (calls) => calls.map((c) => ({ role: 'tool', tool_call_id: c.id, content: c.isError ? `Error: ${c.text}` : c.text })),
-    async listModels() {
+    async listModels(signal) {
       assertUsable(conn)
-      const res = await fetch(`${base}/models`, { headers })
+      const res = await fetch(`${base}/models`, { headers, signal })
       const body = await res.text()
       if (!res.ok) throw httpError(conn, res.status, body)
       try {

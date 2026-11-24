@@ -1015,4 +1015,5 @@ body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: 
 .connection { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .connectionText { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
 .connectionChecks { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; margin-right: 12px; }
+.connectionMessage { min-height: 64px; }
 .connectionDialog .toggle { padding-left: 0; margin-left: 0; justify-content: flex-start; }

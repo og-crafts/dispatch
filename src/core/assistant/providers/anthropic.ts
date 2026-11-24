@@ -122,11 +122,11 @@ export function anthropicProvider(conn: Connection, unlimited: typeof globalThis
       }
     }),
     toolResults: (calls) => (calls.length ? [{ role: 'user', content: calls.map((c) => ({ type: 'tool_result', tool_use_id: c.id, content: c.text, is_error: c.isError })) }] : []),
-    async listModels() {
+    async listModels(signal) {
       assertUsable(conn)
       try {
         const ids: string[] = []
-        for await (const m of client().models.list({ limit: 100 })) ids.push(m.id)
+        for await (const m of client().models.list({ limit: 100 }, { signal })) ids.push(m.id)
         return ids
       } catch (e) { throw plain(e, conn) }
     },

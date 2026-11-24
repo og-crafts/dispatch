@@ -993,6 +993,8 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     allCollections: collections, allEnvironments: environments,
     ready, transport, collections: visibleCollections, folders, requests, environments: visibleEnvironments, globals, history, settings, logs,
     recordHistory,
+    /** Every workspace's tabs; `tabs` are the ones shown. */
+    allTabs: tabs,
     tabs: shownTabs, activeId: active.id, active, draft, view, result: active.result, sending: active.sending, saved, dirty, isDirty,
     collection, environment, prepared, chain, runContext, pipeline: pipelineRef, variableNames,
     setDraft, setView, setSettings, setLogs, log, openRequest, startNew, closeTab, closeTabs, duplicateTab, selectTab, saveDraft, saveDraftAs, renameRequest,

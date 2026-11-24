@@ -5,6 +5,7 @@ import * as db from '../src/core/db'
 import { listChats, saveChat } from '../src/core/assistant/chats'
 import { newConnection, type Connection } from '../src/core/assistant/connections'
 import { defaultSettings } from '../src/core/types'
+import { updateConnections } from '../src/ui/assistant/store'
 import { SettingsView } from '../src/ui/SettingsView'
 import { ConsentDialog } from '../src/ui/assistant/ConsentDialog'
 
@@ -212,6 +213,69 @@ describe('connections', () => {
     type(field('Address'), 'https://two.example.com/v1')
     press('Save')
     expect((await saved())[0].contextTokens).toBeUndefined()
+  })
+
+  it('a save changes only what was edited, and never brings back a removed connection', async () => {
+    await open([cloud({ consentHost: undefined, tools: 'unknown' })])
+    edit()
+    await act(() => updateConnections((l) => l.map((c) => ({ ...c, tools: 'yes', consentHost: 'api.anthropic.com', key: 'newer-KEY-999' }))))
+    type(field('Name'), 'Renamed'); press('Save')
+    expect((await saved())[0]).toMatchObject({ name: 'Renamed', tools: 'yes', consentHost: 'api.anthropic.com', key: 'newer-KEY-999' })
+    await screen.findByText('Renamed')
+    edit('Renamed')
+    await act(() => updateConnections(() => []))
+    press('Save')
+    expect((await within(dialog()).findByRole('alert', { hidden: true })).textContent).toMatch(/removed/)
+    expect(await db.getConnections()).toEqual([])
+  })
+
+  it('a yes given meanwhile does not survive a new address or a new console tick', async () => {
+    await open([local({ baseUrl: 'https://one.example.com/v1', readLogs: false })])
+    edit('My computer')
+    await act(() => updateConnections((l) => l.map((c) => ({ ...c, consentHost: 'one.example.com' }))))
+    fireEvent.click(field(/May read the console/))
+    press('Save')
+    expect((await saved())[0].consentHost).toBeUndefined()
+  })
+
+  it('a bad address is marked on its field', async () => {
+    await open([local()])
+    edit('My computer')
+    expect(field('Address').getAttribute('aria-invalid')).not.toBe('true')
+    type(field('Address'), 'nope'); fireEvent.blur(field('Address'))
+    expect(field('Address').getAttribute('aria-invalid')).toBe('true')
+    const alert = within(dialog()).getByRole('alert', { hidden: true })
+    expect(field('Address').getAttribute('aria-describedby')).toBe(alert.id)
+    expect(alert.parentElement!.className).toBe('connectionMessage')
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    within(dialog()).getByRole('button', { name: 'Save', hidden: true }).dispatchEvent(down)
+    expect(down.defaultPrevented).toBe(true) // the field isn't left before the click lands
+  })
+
+  it('closing cancels a model list on its way; a long list is cut at 500', async () => {
+    await open([local()])
+    edit('My computer')
+    rust.answers.push('hang')
+    press('Load models')
+    await waitFor(() => expect(sent()).toHaveLength(1))
+    press('Cancel')
+    await waitFor(() => expect(rust.cancelled).toBe(1))
+    edit('My computer')
+    rust.answers.push({ body: JSON.stringify({ data: Array.from({ length: 700 }, (_, i) => ({ id: `m${i}` })) }) })
+    press('Load models')
+    const offered = await within(dialog()).findByLabelText('Models offered') as HTMLSelectElement
+    expect([...offered.options].filter((o) => o.value)).toHaveLength(500)
+    expect(dialog().textContent).toMatch(/first 500/)
+  })
+
+  it('closing cancels a list of Anthropic’s too', async () => {
+    await open([cloud()])
+    edit()
+    rust.answers.push('hang')
+    press('Load models')
+    await waitFor(() => expect(sent()).toHaveLength(1))
+    press('Cancel')
+    await waitFor(() => expect(rust.cancelled).toBe(1))
   })
 
   it('warns about plain http on a private network, not on this computer', async () => {
