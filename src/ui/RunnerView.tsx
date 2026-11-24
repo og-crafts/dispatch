@@ -89,12 +89,11 @@ export function RunnerView({ ws, notify, start }: { ws: WorkspaceApi; notify: (m
     abort.current = null
     setRunning(false); setSummary(s)
     if (saveVars) {
-      if (s.finalEnvironment && ws.environment) await ws.updateEnvironment({ ...ws.environment, variables: s.finalEnvironment })
-      for (const [id, vars] of Object.entries(s.finalCollections)) {
-        const c = ws.collections.find((x) => x.id === id)
-        if (c && JSON.stringify(c.variables) !== JSON.stringify(vars)) await ws.updateCollection({ ...c, variables: vars })
-      }
-      if (JSON.stringify(s.finalGlobals) !== JSON.stringify(ws.globals)) await ws.setGlobals(s.finalGlobals)
+      await ws.keepVars({
+        environment: s.finalEnvironment && ws.environment ? { id: ws.environment.id, before: ws.environment.variables, after: s.finalEnvironment } : undefined,
+        collections: Object.entries(s.finalCollections).map(([id, after]) => ({ id, before: ws.collections.find((c) => c.id === id)?.variables ?? [], after })),
+        globals: { before: ws.globals, after: s.finalGlobals },
+      })
     }
   }
 

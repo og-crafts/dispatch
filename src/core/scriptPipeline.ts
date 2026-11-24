@@ -47,6 +47,19 @@ export function applyVars(rows: KV[], next: Vars): KV[] {
   for (const [k, v] of Object.entries(next)) if (!seen.has(k)) out.push({ id: `v-${k}-${Math.random().toString(36).slice(2, 8)}`, key: k, value: v, enabled: true })
   return out
 }
+/** Puts what a run changed (from `before` to `after`) onto the rows as they are now, which may have been edited meanwhile. */
+export function mergeVars(before: KV[], after: KV[], now: KV[]): KV[] {
+  let out = now
+  for (const a of after) {
+    const b = before.find((x) => x.id === a.id)
+    if (b && b.value === a.value) continue
+    const same = out.find((x) => x.id === a.id) ?? (b ? undefined : out.filter((x) => x.enabled && x.key.trim() === a.key.trim()).pop())
+    if (same) out = out.map((x) => (x === same ? { ...x, value: a.value, ...(a.secret && !b ? { secret: true } : {}) } : x))
+    else if (!b) out = [...out, a]
+  }
+  const gone = before.filter((b) => !after.some((a) => a.id === b.id))
+  return gone.length ? out.filter((x) => !gone.some((b) => b.id === x.id)) : out
+}
 const sameVars = (a: Vars, b: Vars) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort())
 
 function pmRequestOf(req: RequestDef): PmRequestData {

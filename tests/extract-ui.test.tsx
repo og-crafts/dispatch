@@ -6,7 +6,7 @@ import { InlineEngine } from '../src/core/scriptPipeline'
 import * as db from '../src/core/db'
 import { kv, newCollection, newEnvironment, newRequest } from '../src/core/types'
 
-const LINE = "{ const v = dx.response.json('data.token'); if (v != null) dx.env.set('token', v) } // extracted"
+const LINE = "{ const v = dx.response.json('data.token'); if (v != null && v !== '') dx.env.set('token', v) } // extracted"
 let body = ''
 const transport = { label: 'Fake', unrestricted: true, send: async () => ({ status: 200, statusText: 'OK', headers: [['X-Request-Id', 'r-1'], ['Set-Cookie', 'a=b']] as [string, string][], body, binary: false, size: 2, timeMs: 1 }) }
 beforeEach(async () => { await db.resetForTests(); localStorage.clear(); body = '{"data":{"token":"abc"},"id":7}' })
@@ -100,7 +100,7 @@ describe('the dialog', () => {
     expect((d.getByLabelText('Secret') as HTMLInputElement).checked).toBe(false)
     expect(screen.getByRole('dialog').textContent).not.toContain('Replaces')
   })
-  it.each(['', '  ', 'a{{b'])('won’t take %j as a name', async (n) => {
+  it.each(['', '  ', 'a{{b', 'my token'])('won’t take %j as a name', async (n) => {
     await start(); const d = open('abc'); fireEvent.change(nameOf(d), { target: { value: n } })
     expect((d.getByRole('button', { name: 'Extract' }) as HTMLButtonElement).disabled).toBe(true)
   })

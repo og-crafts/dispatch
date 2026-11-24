@@ -66,6 +66,8 @@ export interface Transport {
   /** Whether it can reach any server (desktop) or only ones that allow this page (browser CORS). */
   readonly unrestricted: boolean
   send(p: PreparedRequest, opts: SendOptions): Promise<HttpResponse>
+  /** The cookie jar in use on screen, if it keeps cookies. */
+  currentJar?(): string
 }
 
 /** Raised with a friendly message the UI shows as-is. */
@@ -182,7 +184,8 @@ export const defaultTransport = (): Transport => (isDesktop() ? new DesktopTrans
  * Used on desktop and in runs/CLI. (In the browser, the browser itself owns cookies, so this isn't used there.)
  */
 export class CookieTransport implements Transport {
-  constructor(private readonly inner: Transport, private readonly jars: CookieJar | ((key?: string) => CookieJar), private readonly enabled: () => boolean = () => true) {}
+  constructor(private readonly inner: Transport, private readonly jars: CookieJar | ((key?: string) => CookieJar), private readonly enabled: () => boolean = () => true, private readonly current?: () => string) {}
+  currentJar(): string { return this.current?.() ?? '' }
   /** The jar with this key; a single jar serves every key (the CLI). */
   jar(key?: string): CookieJar { return typeof this.jars === 'function' ? this.jars(key) : this.jars }
   get label() { return this.inner.label }

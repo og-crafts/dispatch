@@ -26,6 +26,8 @@ export interface RunContext {
   data?: Record<string, string> | null
   /** Shared across the requests of one run (runner); scripts write here with dx.vars.set. */
   locals?: Map<string, string>
+  /** The cookie jar for a request with neither environment nor collection: the one in use when the run started. */
+  jar?: string
 }
 
 export interface Execution {
@@ -34,6 +36,8 @@ export interface Execution {
   error: string | null
   tests: TestResult[]
   logs: LogLine[]
+  /** The variables when the request started, to tell what its scripts changed. */
+  base: { environment: KV[]; collection: KV[]; globals: KV[] }
   /** Variables changed by scripts, to be saved: environment/collection/globals. */
   changes: VariableChanges
   /** dx.next() / dx.stop() (runner): undefined = not called, null = stop. */
@@ -93,8 +97,10 @@ export interface Pipeline {
 
 /** Runs one request: hooks, variables, auth, send, tests. Never throws; failures land in `error`. */
 export async function execute(req: RequestDef, ctx: RunContext, transport: Transport, sendOpts: SendOptions, pipeline: Pipeline = {}): Promise<Execution> {
+  // The jar is settled now: switching environment while this is on its way mustn't move its cookies.
+  ctx.jar ??= transport.currentJar?.()
   const opts = { ...sendOpts, jar: sendOpts.jar ?? cookieKey(ctx) }
-  const out: Execution = { sent: prepare(req, prepareContext(ctx, req)), response: null, error: null, tests: [], logs: [], changes: noChanges() }
+  const out: Execution = { sent: prepare(req, prepareContext(ctx, req)), response: null, error: null, tests: [], logs: [], changes: noChanges(), base: { environment: ctx.environment?.variables ?? [], collection: ctx.collection?.variables ?? [], globals: ctx.globals } }
   if (req.protocol === 'browser') {
     if (!pipeline.browser) { out.error = 'Browser login needs the desktop app or dispatch-run (a web page can’t start a browser).'; return out }
     try { await pipeline.browser(req, ctx, out, opts.signal) } catch (e) { out.error = e instanceof Error ? e.message : String(e) }

@@ -1,3 +1,4 @@
+import type { RunSummary } from '../core/runner'
 import { useEffect, useRef, useState } from 'react'
 import { handleMcp } from '../core/mcpHandler'
 import { ASSISTANT_SPACE, spaceOf } from '../core/types'
@@ -124,10 +125,12 @@ export function mcpOptions(ws: WorkspaceApi) {
         // Shows in History and Home, and gives Share a sample response.
         if (request) await ws.recordHistory(request, x)
       },
-      afterRun: async (s: { finalEnvironment?: unknown; finalGlobals?: unknown; finalCollections?: unknown }) => {
-        if (s.finalEnvironment && ws.environment) await ws.updateEnvironment({ ...ws.environment, variables: s.finalEnvironment as never })
-        if (s.finalGlobals && JSON.stringify(s.finalGlobals) !== JSON.stringify(ws.globals)) await ws.setGlobals(s.finalGlobals as never)
-        if (s.finalCollections) await ws.saveCollectionVars(s.finalCollections as never)
+      afterRun: async (s: RunSummary) => {
+        await ws.keepVars({
+          environment: s.finalEnvironment && ws.environment ? { id: ws.environment.id, before: ws.environment.variables, after: s.finalEnvironment } : undefined,
+          collections: Object.entries(s.finalCollections).map(([id, after]) => ({ id, before: ws.collections.find((c) => c.id === id)?.variables ?? [], after })),
+          globals: { before: ws.globals, after: s.finalGlobals },
+        })
       },
       runFlow: (f: Parameters<WorkspaceApi['runFlowNow']>[0]) => ws.runFlowNow(f, () => {}),
     },

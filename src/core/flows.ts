@@ -105,6 +105,7 @@ export async function runFlow(f: Flow, w: FlowWorld, transport: Transport, pipel
   const problems = checkFlow(f, w.requests)
   if (problems.length) return { ...run, ok: false, error: problems.join(' ') }
   const locals = new Map<string, string>()
+  const jar = transport.currentJar?.()
   /** A collection with the variables this run has given it so far. */
   const collection = (id: string): Collection | null => {
     const c = w.collections.find((x) => x.id === id)
@@ -112,7 +113,7 @@ export async function runFlow(f: Flow, w: FlowWorld, transport: Transport, pipel
   }
   const ctx = (req: RequestDef | null): RunContext => ({
     collection: req?.collectionId ? collection(req.collectionId) : null,
-    folders: w.folders, environment, globals: run.globals, locals,
+    folders: w.folders, environment, globals: run.globals, locals, jar,
   })
   let environment = w.environment ? structuredClone(w.environment) : null
   let last: HttpResponse | null = null

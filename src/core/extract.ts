@@ -73,19 +73,51 @@ export function jsonSource(text: string, start: number, end: number): Source {
   let expr: string
   if (!path.length) expr = 'dx.response.json()'
   else if (plain) expr = `dx.response.json(${quote(path.map((s, i) => (typeof s === 'number' ? `[${s}]` : `${i ? '.' : ''}${s}`)).join(''))})`
-  else expr = `dx.response.json()${path.map((s, i) => `${i ? '?.' : ''}[${typeof s === 'number' ? s : quote(s)}]`).join('')}`
+  else expr = `dx.response.json()${path.map((s) => `?.[${typeof s === 'number' ? s : quote(s)}]`).join('')}`
   const key = [...path].reverse().find((s) => typeof s === 'string' && nameFrom(s) !== 'value') as string | undefined
   return { ok: true, expr, value: fmt(data), name: key ? nameFrom(key) : 'value', unique: true }
 }
 
-export function headerSource(name: string, value: string): Source {
+/** `earlier`: the headers above it; only the first of a name can be read by a script. */
+export function headerSource(name: string, value: string, earlier: [string, string][] = []): Source {
   if (!value) return EMPTY
+  if (earlier.some(([k]) => k.toLowerCase() === name.toLowerCase())) return { ok: false, reason: `The response has several “${name}” headers, and only the first can be taken.` }
   return { ok: true, expr: `dx.response.headers.get(${quote(name)})`, value, name: nameFrom(name), unique: true }
 }
 
-const AROUND = 20
-const lit = (s: string) => s.replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&').replace(/\s*\n\s*/g, '\\s*').replace(/\t/g, '\\t').replace(/\r/g, '\\r').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
+const AROUND = 40
+const NOT_HERE: Source = { ok: false, reason: 'This isn’t in the response as it came. Turn on Raw and select it there.' }
+const esc = (s: string) => s.replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
+/** Text around a value as a pattern: line breaks match loosely, and ids, dates and tokens match any other. */
+const around = (s: string) => s.split(/([\w-]+|\s*\n\s*|\t)/).map((p) =>
+  /\n/.test(p) ? '\\s*' : p === '\t' ? '\\t' : /^[\w-]+$/.test(p) && (/\d/.test(p) || p.length > 16) ? '[\\w-]{1,64}' : esc(p)).join('')
 const noHalves = (s: string) => s.replace(/^[\uDC00-\uDFFF]/, '').replace(/[\uD800-\uDBFF]$/, '')
+
+/** Ways to say where the value starts, shortest first. */
+function heads(text: string, from: number): string[] {
+  const near = text.slice(Math.max(0, from - 200), from)
+  const out: string[] = []
+  const tag = /<([\w:-]{1,60})(?:\s[^<>]*)?>\s*$/.exec(near)
+  const key = /([\w.-]{1,60})(["']?\s*[=:]\s*["']?)$/.exec(near)
+  if (tag) out.push(`<${esc(tag[1])}(?:\\s[^<>]*)?>\\s*`)
+  if (key) out.push(`${/^\w/.test(key[1]) ? '\\b' : ''}${esc(key[1])}${around(key[2])}`)
+  const line = /[^\n&<>]{1,20}$/.exec(near)?.[0]
+  if (line) out.push(around(noHalves(line)))
+  if (near) for (const n of [20, AROUND]) out.push(around(noHalves(near.slice(-n))))
+  else out.push('^\\s*')
+  return [...new Set(out)]
+}
+
+/** Ways to say where it ends, shortest first. */
+function tails(text: string, to: number): string[] {
+  const rest = text.slice(to, to + AROUND)
+  if (!rest.trim()) return ['', '\\s*$']
+  const out = ['']
+  if (/^[^\S\n]*\n/.test(rest)) out.push('\\s*[\\r\\n]')
+  else out.push(/^<\/[\w:-]+>/.exec(rest) ? esc(/^<\/[\w:-]+>/.exec(rest)![0]) : esc(noHalves(rest[0])))
+  out.push(around(noHalves(rest.slice(0, 20))))
+  return out
+}
 
 /** `real` is the body as it came, when `body` is a tidied view of it (the rule runs on the real one). */
 export function textSource(body: string, start: number, end: number, real = body): Source {
@@ -93,23 +125,42 @@ export function textSource(body: string, start: number, end: number, real = body
   while (to > from && /\s/.test(body[to - 1])) to--
   while (from < to && /\s/.test(body[from])) from++
   if (from >= to) return ONE
+  // Part of a word means the word; its other half must not end up in the script as "text around it".
+  const word = /[\w-]/
+  if (word.test(body[from])) while (from > 0 && word.test(body[from - 1])) from--
+  if (word.test(body[to - 1])) while (to < body.length && word.test(body[to])) to++
   const value = body.slice(from, to)
-  const before = noHalves(body.slice(Math.max(0, from - AROUND), from))
-  const after = noHalves(body.slice(to, to + AROUND))
-  const head = (from <= AROUND ? '^' : '') + lit(before)
-  const tail = lit(after) + (to + AROUND >= body.length ? '$' : '')
+  // The same place in the body as it came: the same occurrence of the value, counted from the top.
+  const text = real.replace(/\r\n?/g, '\n')
+  if (text !== body) {
+    let nth = 0
+    for (let i = body.indexOf(value); i >= 0 && i < from; i = body.indexOf(value, i + 1)) nth++
+    let at = text.indexOf(value)
+    while (nth-- > 0 && at >= 0) at = text.indexOf(value, at + 1)
+    if (at < 0) return NOT_HERE
+    from = at; to = at + value.length
+  }
   // What the value may hold: anything but the usual delimiters it doesn't contain itself.
-  const not = [['"', '"'], ['<', '<'], ['\\s', /\s/], ['&', '&'], [',', ',']].filter(([, c]) => (typeof c === 'string' ? !value.includes(c) : !c.test(value))).map(([x]) => x as string).join('')
-  const shape = not.includes('\\s') ? `[^${not}]+` : '[\\s\\S]+?'
-  // The start and end of the body would pin today's reply only, so they are used just where there is no text to go by.
-  const open = before ? lit(before) : head
-  const shut = after ? lit(after) : tail
-  const source = `${open}(${shape})${shut}`
-  const re = new RegExp(source, 'g')
-  const found: string[] = [] // two are enough to know; places may overlap
-  for (let m = re.exec(real); m && found.length < 2; m = re.exec(real)) { found.push(m[1]); re.lastIndex = m.index + 1 }
-  const tag = /<([\w:-]+)[^<>]*>\s*$/.exec(body.slice(0, from))?.[1] ?? /([\w-]+)["']?\s*[=:]\s*["']?$/.exec(body.slice(0, from))?.[1]
-  return { ok: true, expr: `(dx.response.text().match(/${source}/) || [])[1]`, value, name: tag ? nameFrom(tag) : 'value', unique: found.length === 1 && found[0].replace(/\r\n/g, '\n') === value }
+  const not = ['"', "'", '<', '&', ',', ';'].filter((c) => !value.includes(c)).join('')
+  const room = Math.max(200, value.length * 4) // a bound, so a big body stays quick to search
+  const shape = value.includes('\n') ? `[\\s\\S]{1,${room}}?` : /\s/.test(value) ? `[^${not}\\r\\n]{1,${room}}?` : `[^${not}\\s]{1,8192}`
+  const name = /<([\w:-]{1,60})(?:\s[^<>]*)?>\s*$/.exec(text.slice(Math.max(0, from - 200), from))?.[1]
+    ?? /([\w-]{1,60})["']?\s*[=:]\s*["']?$/.exec(text.slice(Math.max(0, from - 200), from))?.[1]
+  let repeated: string | null = null
+  const lazy = shape.endsWith('?')
+  const ends = tails(text, to).filter((t) => !lazy || t)
+  for (const h of heads(text, from)) for (const t of ends) {
+    const source = `${h}(${shape})${t}`
+    const re = new RegExp(source, 'g')
+    const first = re.exec(text)
+    if (!first || first[1] !== value) { repeated ??= source; continue }
+    re.lastIndex = first.index + 1
+    const again = re.exec(text)
+    if (!again) return { ok: true, expr: `(dx.response.text().match(/${source}/) || [])[1]`, value, name: name ? nameFrom(name) : 'value', unique: true }
+    if (repeated === null || !new RegExp(repeated).exec(text) || new RegExp(repeated).exec(text)![1] !== value) repeated = source
+  }
+  if (!repeated || !new RegExp(repeated).test(text)) return NOT_HERE
+  return { ok: true, expr: `(dx.response.text().match(/${repeated}/) || [])[1]`, value, name: name ? nameFrom(name) : 'value', unique: false }
 }
 
 /** By content, as the viewer does: JSON when it parses, whatever the Content-Type. */
@@ -118,10 +169,15 @@ export function bodySource(text: string, from: number, to: number, real = text):
   return jsonSource(text, from, to)
 }
 
-/** Sets a variable in a table: the row requests use (the last one that's on), or a new one. */
-export function setVar(rows: KV[], name: string, value: string, secret: boolean): { rows: KV[]; undo: (rows: KV[]) => KV[] } {
+/** The row of a table that requests use for a name: the last one that's on, or else the last. */
+export function rowFor(rows: KV[], name: string): KV | undefined {
   const same = rows.filter((r) => r.key.trim() === name)
-  const old = same.filter((r) => r.enabled).pop() ?? same.pop()
+  return same.filter((r) => r.enabled).pop() ?? same.pop()
+}
+
+/** Sets a variable in a table: the row requests use, or a new one. */
+export function setVar(rows: KV[], name: string, value: string, secret: boolean): { rows: KV[]; undo: (rows: KV[]) => KV[] } {
+  const old = rowFor(rows, name)
   if (!old) {
     const added: KV = { ...kv(name, value), secret }
     return { rows: [...rows, added], undo: (now) => now.filter((r) => r.id !== added.id) }
@@ -133,7 +189,7 @@ export function setVar(rows: KV[], name: string, value: string, secret: boolean)
 
 const MARK = '// extracted'
 export const ruleLine = (scope: Scope, name: string, expr: string) =>
-  `{ const v = ${expr}; if (v != null) dx.${scope}.set(${quote(name)}, v) } ${MARK}`
+  `{ const v = ${expr}; if (v != null && v !== '') dx.${scope}.set(${quote(name)}, v) } ${MARK}`
 
 const TARGET = /^.*\bdx\.(env|collection|globals)\.set\((['"])((?:(?!\2)[^\\]|\\.)*)\2\s*,.*\/\/ extracted\s*$/
 function target(line: string): { scope: Scope; name: string } | null {

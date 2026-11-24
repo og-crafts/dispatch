@@ -97,9 +97,9 @@ export class CookieJar {
 /** Each environment has its own cookies; without one, they belong to the workspace. */
 export const jarKey = (environmentId: string | null, workspaceId: string) => environmentId ?? `none:${workspaceId}`
 
-/** The jar a request belongs to, or undefined when nothing says (then it's the one in use on screen). */
-export const cookieKey = (ctx: { environment: Environment | null; collection: Collection | null }): string | undefined =>
-  ctx.environment ? ctx.environment.id : ctx.collection ? jarKey(null, spaceOf(ctx.collection)) : undefined
+/** The jar a request belongs to, or the one in use when its run started. */
+export const cookieKey = (ctx: { environment: Environment | null; collection: Collection | null; jar?: string }): string | undefined =>
+  ctx.environment ? ctx.environment.id : ctx.collection ? jarKey(null, spaceOf(ctx.collection)) : ctx.jar
 
 /** All the cookie jars, by key. */
 export class CookieJars {

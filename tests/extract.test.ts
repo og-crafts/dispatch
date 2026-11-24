@@ -1,7 +1,8 @@
 /** Working out the script line that takes a selected response value. */
 import { describe, expect, it } from 'vitest'
-import { bodySource, extractedTargets, headerSource, jsonSource, ruleLine, setVar, textSource, withRule, withoutRule, type Source } from '../src/core/extract'
+import { bodySource, extractedTargets, headerSource, jsonSource, rowFor, ruleLine, setVar, textSource, withRule, withoutRule, type Source } from '../src/core/extract'
 import { compileWithFunction, runScript } from '../src/core/scripts'
+import { mergeVars } from '../src/core/scriptPipeline'
 import { isSecretName } from '../src/core/share'
 
 /** Runs a rule against a body, the way a send would. */
@@ -30,12 +31,12 @@ describe('from JSON', () => {
     ['a root array', '["first"]', 'first', "dx.response.json('[0]')", 'first', 'value'],
     ['a list item', '{"ids":[1,22]}', '22', "dx.response.json('ids[1]')", '22', 'ids'],
     ['a boolean', '{"on":true}', 'true', "dx.response.json('on')", 'true', 'on'],
-    ['a key with a space', '{"user name":[{"id":"u1"}]}', 'u1', "dx.response.json()['user name']?.[0]?.['id']", 'u1', 'id'],
-    ['a key with a dot', '{"a.b":"v"}', 'v', "dx.response.json()['a.b']", 'v', 'aB'],
-    ['a key of digits', '{"x":{"0":"v"}}', 'v', "dx.response.json()['x']?.['0']", 'v', 'x'],
-    ['a key with quotes', `{"it's \\"q\\"":"v"}`, '"v"', `dx.response.json()['it\\'s "q"']`, 'v', 'itSQ'],
-    ['a key with a backslash', '{"a\\\\b":"v"}', '"v"', "dx.response.json()['a\\\\b']", 'v', 'aB'],
-    ['an escaped key', '{"\\u00e9":"v"}', '"v"', "dx.response.json()['é']", 'v', 'value'],
+    ['a key with a space', '{"user name":[{"id":"u1"}]}', 'u1', "dx.response.json()?.['user name']?.[0]?.['id']", 'u1', 'id'],
+    ['a key with a dot', '{"a.b":"v"}', 'v', "dx.response.json()?.['a.b']", 'v', 'aB'],
+    ['a key of digits', '{"x":{"0":"v"}}', 'v', "dx.response.json()?.['x']?.['0']", 'v', 'x'],
+    ['a key with quotes', `{"it's \\"q\\"":"v"}`, '"v"', `dx.response.json()?.['it\\'s "q"']`, 'v', 'itSQ'],
+    ['a key with a backslash', '{"a\\\\b":"v"}', '"v"', "dx.response.json()?.['a\\\\b']", 'v', 'aB'],
+    ['an escaped key', '{"\\u00e9":"v"}', '"v"', "dx.response.json()?.['é']", 'v', 'value'],
     ['an escaped string', '{"t":"a\\"b\\u0041\\n"}', 'u0041', "dx.response.json('t')", 'a"bA\n', 't'],
     ['an object selected whole', '{"o":{"a":1}}', '{"a":1}', "dx.response.json('o')", '{\n  "a": 1\n}', 'o'],
     ['the last of duplicate keys', '{"a":"1st","a":"2nd"}', '1st', "dx.response.json('a')", '2nd', 'a'],
@@ -92,7 +93,7 @@ describe('from other text', () => {
 
 describe('the rule in the script', () => {
   const E = "dx.response.json('data.token')"
-  const LINE = "{ const v = dx.response.json('data.token'); if (v != null) dx.env.set('token', v) } // extracted"
+  const LINE = "{ const v = dx.response.json('data.token'); if (v != null && v !== '') dx.env.set('token', v) } // extracted"
   it('is one marked line', () => {
     expect(ruleLine('env', 'token', E)).toBe(LINE)
     expect(ruleLine('globals', "it's", 'x')).toContain("dx.globals.set('it\\'s', v)")
@@ -159,5 +160,71 @@ describe('setting the variable now', () => {
   it('sets the row requests use when there are several', () => {
     const r = setVar([row, { ...row, id: '2' }, { ...row, id: '3', enabled: false }], 'token', 'new', true)
     expect(r.rows.map((x) => x.value)).toEqual(['old', 'new', 'old'])
+  })
+})
+
+describe('text rules hold for the next reply', () => {
+  it.each([
+    ['a form reply', 'access_token=AAA111&expires=1712345678', 'AAA111', 'access_token=BBB222&expires=99'],
+    ['what comes before', 'expires=1712345678&access_token=AAA', 'AAA', 'expires=5&access_token=BBB222'],
+    ['another token after it', 'access_token=AAA&refresh_token=xyz12', 'AAA', 'access_token=BBB222&refresh_token=q'],
+    ['XML beside another value', '<r><a>AAA</a><b>SECRET99</b></r>', 'AAA', '<r><a>BBB222</a><b>zz</b></r>'],
+    ['a tag with attributes', '<t exp="17">AAA</t>', 'AAA', '<t exp="99">BBB222</t>'],
+    ['several words and a blank end', 'Your code: abc def\n', 'abc def', 'Your code: BBB222\n'],
+    ['several words and a CRLF end', 'Your code: abc def\r\n', 'abc def', 'Your code: BBB222\r\n'],
+    ['a list that grew', 'id: 1\ntoken: AAA', 'AAA', 'id: 2\ntoken: BBB222\nmore: 1'],
+  ])('%s', async (_n, body, pick, next) => {
+    const s = ok(at(textSource, body, pick))
+    expect(s.unique).toBe(true); expect(s.expr).not.toMatch(/SECRET99|17123|xyz12/)
+    expect(await runRule(s.expr, body)).toBe(pick)
+    expect(await runRule(s.expr, next)).toBe('BBB222')
+  })
+  it('part of a word takes the whole word, so the rest isn’t written into the script', () => {
+    const s = ok(at(textSource, 'key = abc123def456 end', 'c123'))
+    expect(s.value).toBe('abc123def456'); expect(s.expr).not.toContain('abc')
+  })
+  it('keeps token-like text near the value out of the script', () => {
+    expect(ok(at(textSource, 'see eyJhbGciOiJIUzI1NiJ9.abc for it', 'abc')).expr).not.toContain('HUzI1')
+  })
+  it('works from a deep pretty-printed view of one-line XML', async () => {
+    const raw = `${'<d>'.repeat(7)}<token>abc</token>${'</d>'.repeat(7)}`
+    const shown = `${' '.repeat(40)}\n${' '.repeat(40)}<token>abc</token>\n`
+    const i = shown.indexOf('abc'); const s = ok(textSource(shown, i, i + 3, raw))
+    expect(s.unique).toBe(true); expect(await runRule(s.expr, raw)).toBe('abc')
+  })
+  it('refuses what isn’t in the body as it came', () => {
+    expect(textSource('x: zed', 3, 6, 'nothing here')).toEqual({ ok: false, reason: 'This isn’t in the response as it came. Turn on Raw and select it there.' })
+  })
+  it('stays quick on big bodies', () => {
+    const t0 = performance.now()
+    for (const b of ['a1'.repeat(100_000), 'a '.repeat(100_000), '<i>a b</i>'.repeat(20_000)]) { textSource(b, b.length - 4, b.length); textSource(`${b} x`, b.length + 1, b.length + 2) }
+    expect(performance.now() - t0).toBeLessThan(3000)
+  })
+})
+
+it('an empty value keeps the old one', async () => { expect(await runRule("dx.response.json('token')", '{"token":""}', { out: 'old' })).toBe('old') })
+it('a reply of null keeps the old one', async () => {
+  const s = ok(at(jsonSource, '{"a b":"v"}', '"v"'))
+  expect(await runRule(s.expr, 'null', { out: 'old' })).toBe('old')
+})
+it('a later header of the same name is refused, since only the first can be read', () => {
+  const all: [string, string][] = [['Set-Cookie', 'a=1'], ['set-cookie', 'b=2']]
+  expect(headerSource('Set-Cookie', 'a=1', all.slice(0, 0)).ok).toBe(true)
+  expect(headerSource('set-cookie', 'b=2', all.slice(0, 1))).toEqual({ ok: false, reason: 'The response has several “set-cookie” headers, and only the first can be taken.' })
+})
+it('the row that is shown is the row that is set', () => {
+  const rows = [{ id: '1', key: 'token', value: 'a', enabled: true, secret: true }, { id: '2', key: 'token', value: 'b', enabled: false }]
+  expect(rowFor(rows, 'token')!.id).toBe('1'); expect(rowFor(rows, 'x')).toBeUndefined()
+})
+describe('keeping a run’s variable changes', () => {
+  const r = (id: string, key: string, value: string) => ({ id, key, value, enabled: true })
+  it('touches only what the run changed', () => {
+    const before = [r('1', 'a', '1'), r('2', 'b', '1'), r('3', 'c', '1')]
+    const after = [r('1', 'a', 'run'), r('2', 'b', '1'), r('9', 'new', 'n')]
+    const now = [r('1', 'a', '1'), { ...r('2', 'b', 'edited'), secret: true }, r('3', 'c', '1'), r('4', 'mine', 'm')]
+    expect(mergeVars(before, after, now).map((x) => [x.key, x.value])).toEqual([['a', 'run'], ['b', 'edited'], ['mine', 'm'], ['new', 'n']])
+  })
+  it('gives one row when both added the same name', () => {
+    expect(mergeVars([], [r('9', 't', 'run')], [r('4', 't', 'mine')])).toEqual([r('4', 't', 'run')])
   })
 })

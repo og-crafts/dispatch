@@ -44,16 +44,19 @@ describe('storage', () => {
   it('round-trips, sealed', async () => {
     await db.putCookieJars({ e1: [cookie('sid')] })
     expect(await db.getCookieJars('x')).toEqual({ e1: [cookie('sid')] })
-    expect(JSON.stringify(await db.getMeta('cookies'))).not.toContain('sid')
+    expect(JSON.stringify(await db.getMeta('cookieJars'))).not.toContain('sid')
   })
   it('takes the old single list as one jar', async () => {
-    await db.putCookieJars([cookie('old')] as never)
+    await db.putLegacyCookiesForTests([cookie('old')])
     expect(await db.getCookieJars('e1')).toEqual({ e1: [cookie('old')] })
+    // Once kept as jars, the old list is empty (still a list, so an older version can start).
+    await db.putCookieJars({ e1: [cookie('old')] }); await db.putCookieJars({})
+    expect(await db.getCookieJars('e2')).toEqual({})
   })
   it('gives nothing for data it can’t read, and leaves it there', async () => {
-    await db.putMeta('cookies', 'garbage')
+    await db.putMeta('cookieJars', 'garbage')
     expect(await db.getCookieJars('e1')).toEqual({})
-    expect(await db.getMeta('cookies')).toBe('garbage')
+    expect(await db.getMeta('cookieJars')).toBe('garbage')
   })
 })
 
@@ -67,7 +70,7 @@ describe('sends', () => {
       return { status: 200, statusText: 'OK', headers: [['Set-Cookie', `c${sent.length}=1; Path=/`]] as [string, string][], body: '{"access_token":"t"}', binary: false, size: 1, timeMs: 1 }
     } }
     const jars = new CookieJars()
-    const t = new CookieTransport(inner, (k) => jars.get(k ?? active), () => on)
+    const t = new CookieTransport(inner, (k) => jars.get(k ?? active), () => on, () => active)
     const names = (k: string) => jars.get(k).entries().map((c) => c.name)
     const cookies = (i: number) => sent[i].headers.find(([k]) => k === 'Cookie')?.[1]
     return { t, jars, sent, during, names, cookies, setActive: (k: string) => { active = k }, setOn: (v: boolean) => { on = v } }
@@ -91,6 +94,19 @@ describe('sends', () => {
     const s = setup(); s.setActive(A.id); s.during.push(() => s.setActive(B.id))
     await s.t.send({ method: 'GET', url: 'https://a.test', headers: [], body: null, unresolved: [] }, opts)
     expect([s.names(A.id), s.names(B.id)]).toEqual([['c1'], []])
+  })
+  it('of a request with neither keep to the jar in use when it started, scripts included', async () => {
+    const s = setup(); s.during.push(() => s.setActive(B.id))
+    await execute({ ...req, scripts: { pre: "await dx.send('https://a.test/login')", post: "await dx.send('https://a.test/after')" } }, ctx(null, null), s.t, opts, script(s.t))
+    expect(s.names(B.id)).toEqual([]); expect(s.names('none:w9')).toHaveLength(3)
+  })
+  it('of a flow of such requests too', async () => {
+    const s = setup(); s.during.push(() => s.setActive(B.id))
+    const loose = { ...req, collectionId: null }, f = newFlow('F')
+    const n = { ...newNode('request', 0, 0), config: { requestId: loose.id } }, m = { ...newNode('request', 0, 0), config: { requestId: loose.id } }
+    f.nodes.push(n, m); f.edges.push({ id: 'e', from: f.nodes[0].id, port: 'next', to: n.id }, { id: 'e2', from: n.id, port: 'ok', to: m.id })
+    await runFlow(f, { collections: [], folders: [], requests: [loose], environment: null, globals: [], settings: defaultSettings }, s.t, {}, new InlineEngine())
+    expect(s.names(B.id)).toEqual([]); expect(s.sent).toHaveLength(2)
   })
   it('in a run or flow, use the run’s environment', async () => {
     const s = setup(); s.setActive(B.id)

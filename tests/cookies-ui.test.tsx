@@ -68,11 +68,11 @@ async function hook() {
 
 describe('storage', () => {
   it.each([['the active environment', true], ['"No environment"', false]] as const)('moves the old shared list to %s, at once', async (_n, env) => {
-    await db.putCookieJars([c('old')] as never); await activate(env ? A.id : null); await hook()
+    await db.putLegacyCookiesForTests([c('old')]); await activate(env ? A.id : null); await hook()
     await waitFor(async () => expect(await db.getCookieJars('unused')).toEqual({ [env ? A.id : NONE]: [c('old')] }))
   })
   it('an active environment that no longer exists counts as none', async () => {
-    await db.putCookieJars([c('old')] as never); await activate('gone'); await hook()
+    await db.putLegacyCookiesForTests([c('old')]); await activate('gone'); await hook()
     await waitFor(async () => expect(await db.getCookieJars('unused')).toEqual({ [NONE]: [c('old')] }))
   })
   it('deleting an environment deletes its cookies, and the app goes on without one', async () => {
@@ -81,6 +81,17 @@ describe('storage', () => {
     await act(async () => { await h.result.current.removeEnvironment(A.id) })
     expect(h.result.current.cookieJar()!.entries()).toEqual([c('n')])
     await waitFor(async () => expect(await db.getCookieJars('x')).toEqual({ [NONE]: [c('n')] }))
+  })
+  it('Undo brings an environment back with its cookies', async () => {
+    await db.putCookieJars({ [A.id]: [c('a')] }); await activate(A.id); const h = await hook()
+    await act(async () => { await h.result.current.removeEnvironment(A.id) })
+    await act(async () => { await h.result.current.undoDelete() })
+    act(() => h.result.current.setSettings({ activeEnvId: A.id }))
+    expect(h.result.current.cookieJar()!.entries()).toEqual([c('a')])
+  })
+  it('cookies of environments that no longer exist are dropped', async () => {
+    await db.putCookieJars({ gone: [c('x')], [A.id]: [c('a')] }); await hook()
+    await waitFor(async () => expect(await db.getCookieJars('x')).toEqual({ [A.id]: [c('a')] }))
   })
   it('each workspace has its own "No environment" cookies', async () => {
     await db.putCookieJars({ [NONE]: [c('n')] }); const h = await hook()

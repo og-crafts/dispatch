@@ -145,6 +145,7 @@ export async function runLoad(cfg: LoadConfig, transport: Transport, pipeline: P
     if (ctrl.signal.aborted) return
     active++; activity.push([now() - start, 1])
     let environment = cfg.environment ? structuredClone(cfg.environment) : null
+    const jar = transport.currentJar?.()
     const collections = new Map(cfg.collections.map((c) => [c.id, structuredClone(c)]))
     let globals = cfg.globals
     let iteration = 0
@@ -158,7 +159,7 @@ export async function runLoad(cfg: LoadConfig, transport: Transport, pipeline: P
           if (ctrl.signal.aborted || (cfg.mode === 'duration' && now() >= deadline)) break
           const ctx: RunContext = {
             collection: item.request.collectionId ? collections.get(item.request.collectionId) ?? null : null,
-            folders: cfg.folders, environment, globals, data, locals,
+            folders: cfg.folders, environment, globals, data, locals, jar,
           }
           const t0 = now()
           const x = await execute(item.request, ctx, transport, sendOptions(item.request, cfg.settings, ctrl.signal), pl)
