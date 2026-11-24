@@ -9,6 +9,7 @@ import type { BrowserLauncher } from '../core/browser'
 import { desktopLauncher } from './desktopBrowser'
 import { CookieJars, type StoredCookie, cookieKey, jarKey } from '../core/cookies'
 import type { Workspace } from '../core/backup'
+import { deleteChats } from '../core/assistant/chats'
 import { type Execution, type Pipeline, type RunContext, execute, folderChain, prepareContext, sendOptions } from '../core/runtime'
 import { type ScriptEngine, scriptPipeline, mergeVars } from '../core/scriptPipeline'
 import { WorkerEngine } from '../core/workerEngine'
@@ -676,6 +677,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   const removeSpace = useCallback(async (id: string) => {
     if (id === DEFAULT_SPACE.id || collections.some((c) => spaceOf(c) === id) || environments.some((e) => spaceOf(e) === id)) return false
     await saveSpaces(spaces.filter((x) => x.id !== id))
+    await deleteChats(id) // Chats go for good with their workspace (workspaces have no undo).
     jars.delete(jarKey(null, id))
     if (settingsRef.current.activeSpaceId === id) switchSpace(DEFAULT_SPACE.id)
     return true

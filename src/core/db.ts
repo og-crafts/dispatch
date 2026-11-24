@@ -349,3 +349,49 @@ export async function putConnections(list: Connection[]) {
     key: keyLost && !c.key ? (old.get(c.id) ?? '') : await f(c.key),
   }))), CONNECTIONS)
 }
+
+// ---------- assistant chats (one sealed record per chat; this device only, never exported or backed up) ----------
+const CHAT_INDEX = 'assistantChatIndex'
+const chatKey = (id: string) => `assistantChat:${id}`
+/** What can be listed without opening any chat: ids, workspace and time are not secret; the title and messages are sealed. */
+export interface ChatIndexEntry { id: string; spaceId: string; updatedAt: number }
+export const sealText = async (s: string) => (await sealer())(s)
+export const unsealText = async (s: string) => (await unsealer())(s)
+async function readIndex(store: IDBObjectStore): Promise<ChatIndexEntry[]> {
+  const v = await wrap<unknown>(store.get(CHAT_INDEX))
+  return Array.isArray(v) ? v.filter((e): e is ChatIndexEntry => !!e && typeof (e as ChatIndexEntry).id === 'string' && typeof (e as ChatIndexEntry).spaceId === 'string') : []
+}
+export const getChatIndex = async (): Promise<ChatIndexEntry[]> => { const db = await open(); return readIndex(db.transaction('meta').objectStore('meta')) }
+export const getChatRecord = (id: string) => getMeta<string>(chatKey(id))
+/**
+ * Stores one sealed chat and trims the workspace to `keep` newest, in one transaction (the text is sealed before,
+ * since sealing is async). Refuses (false) when the workspace no longer exists, so a late save can't bring chats back.
+ */
+export async function putChatRecord(entry: ChatIndexEntry, sealed: string, keep: number): Promise<boolean> {
+  const db = await open()
+  const t = db.transaction('meta', 'readwrite')
+  const store = t.objectStore('meta')
+  try {
+    const spaces = await wrap<Space[] | undefined>(store.get('spaces'))
+    if (!(spaces?.length ? spaces : [DEFAULT_SPACE]).some((x) => x.id === entry.spaceId)) { t.abort(); await done(t).catch(() => {}); return false }
+    const index = (await readIndex(store)).filter((e) => e.id !== entry.id)
+    index.push(entry)
+    store.put(sealed, chatKey(entry.id))
+    const mine = index.filter((e) => e.spaceId === entry.spaceId).sort((a, b) => b.updatedAt - a.updatedAt)
+    const drop = new Set(mine.slice(keep).map((e) => e.id))
+    drop.forEach((id) => store.delete(chatKey(id)))
+    store.put(index.filter((e) => !drop.has(e.id)), CHAT_INDEX)
+    await done(t)
+    return true
+  } catch (e) { try { t.abort() } catch { /* already finished */ } throw e }
+}
+/** Removes chats by id (or every chat of a workspace, or all), whether or not their records can be read. */
+export async function removeChatRecords(test: (e: ChatIndexEntry) => boolean) {
+  const db = await open()
+  const t = db.transaction('meta', 'readwrite')
+  const store = t.objectStore('meta')
+  const index = await readIndex(store)
+  for (const e of index) if (test(e)) store.delete(chatKey(e.id))
+  store.put(index.filter((e) => !test(e)), CHAT_INDEX)
+  await done(t)
+}
