@@ -2,6 +2,8 @@ import { useRef, useState } from 'react'
 import type { FileData, KV } from '../core/types'
 import { kv } from '../core/types'
 import { formatBytes } from '../core/format'
+import { useContextMenu } from './ContextMenu'
+import { Icon } from './Icons'
 import { ValueField } from './ValueField'
 
 interface Props {
@@ -12,8 +14,12 @@ interface Props {
   valuePlaceholder?: string
   /** Form-data: each row can be text or a file. */
   allowFiles?: boolean
-  /** Variables: each row can be marked secret (hidden on screen, left out of backups). */
-  allowSecrets?: boolean
+  /** Every row here is a secret: new rows get the flag, and values are masked until shown. */
+  secret?: boolean
+  /** A ⋯ menu on each row. */
+  rowMenu?: (row: KV, i: number) => [string, () => void][]
+  /** A line under a row's value. */
+  rowHint?: (row: KV, i: number) => React.ReactNode
   /** Path variables: keys come from the URL and can't be edited, added or removed. */
   fixedKeys?: boolean
 }
@@ -59,8 +65,12 @@ function savedKey(label: string) {
 
 /** An editable key/value table that always ends with an empty row to type into.
  * Rows are keyed by position so typing into the empty row keeps focus when it becomes a real row. */
-export function KVTable({ rows, onChange, label, keyPlaceholder = 'Key', valuePlaceholder = 'Value', allowFiles, allowSecrets, fixedKeys }: Props) {
-  const ghost = kv('', '', true, allowFiles ? { type: 'text' } : {})
+export function KVTable({ rows, onChange, label, keyPlaceholder = 'Key', valuePlaceholder = 'Value', allowFiles, secret, rowMenu, rowHint, fixedKeys }: Props) {
+  const ghost = kv('', '', true, { ...(allowFiles ? { type: 'text' as const } : {}), ...(secret ? { secret: true } : {}) })
+  const ctx = useContextMenu()
+  /** Secrets shown on purpose, until the screen is left. */
+  const [shown, setShown] = useState<ReadonlySet<string>>(new Set())
+  const flip = (id: string) => setShown((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
   const all = fixedKeys ? rows : [...rows, ghost]
   const update = (i: number, patch: Partial<KV>) => {
     if (i === rows.length) { onChange([...rows, { ...ghost, ...patch }]); return }
@@ -91,7 +101,8 @@ export function KVTable({ rows, onChange, label, keyPlaceholder = 'Key', valuePl
           </th>
           {allowFiles && <th className="kv-type">Type</th>}
           <th>{valuePlaceholder}</th>
-          {allowSecrets && <th className="kv-type">Secret</th>}
+          {secret && <th className="kv-more"><span className="sr">Show</span></th>}
+          {rowMenu && <th className="kv-more"><span className="sr">More</span></th>}
           {!fixedKeys && <th className="kv-x"><span className="sr">Remove</span></th>}
         </tr>
       </thead>
@@ -118,18 +129,21 @@ export function KVTable({ rows, onChange, label, keyPlaceholder = 'Key', valuePl
               <td>
                 {isFile
                   ? <FilePick file={r.file} label={`${label} file ${i + 1}`} onPick={(file) => update(i, { file })} />
-                  : <ValueField value={r.value} secret={r.secret} placeholder={valuePlaceholder} label={`${label} ${valuePlaceholder} ${i + 1}`} onChange={(value) => update(i, { value })} />}
+                  : <ValueField value={r.value} secret={r.secret && !shown.has(r.id)} placeholder={valuePlaceholder} label={`${label} ${valuePlaceholder} ${i + 1}`} onChange={(value) => update(i, { value })} />}
+                {!isGhost && rowHint?.(r, i)}
               </td>
-              {allowSecrets && (
-                <td className="kv-type">
-                  {!isGhost && <input type="checkbox" checked={!!r.secret} aria-label={`${r.key || 'row'} is secret`} onChange={(e) => update(i, { secret: e.target.checked })} />}
-                </td>
+              {secret && (
+                <td className="kv-more">{!isGhost && <button type="button" className="icon" aria-label={`${shown.has(r.id) ? 'Hide' : 'Show'} ${r.key || 'row'}`} title={shown.has(r.id) ? 'Hide the value' : 'Show the value'} onClick={() => flip(r.id)}><Icon name={shown.has(r.id) ? 'eyeOff' : 'eye'} size={15} /></button>}</td>
+              )}
+              {rowMenu && (
+                <td className="kv-more">{!isGhost && <button type="button" className="icon" aria-label={`More for ${r.key || 'row'}`} aria-haspopup="menu"
+                  onClick={(e) => ctx.open(e, rowMenu(r, i).map(([text, run]) => ({ label: text, run: () => { if (shown.has(r.id)) flip(r.id); run() } })), `More for ${r.key || 'row'}`)}>⋯</button>}</td>
               )}
               {!fixedKeys && <td className="kv-x">{!isGhost && <button type="button" className="icon" aria-label={`Remove ${r.key || 'row'}`} onClick={() => remove(i)}>×</button>}</td>}
             </tr>
           )
         })}
       </tbody>
-    </table></div>
+    </table>{ctx.node}</div>
   )
 }
