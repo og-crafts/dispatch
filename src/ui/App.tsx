@@ -6,7 +6,9 @@ import { useContextMenu } from './ContextMenu'
 import { HomeView } from './HomeView'
 import { ShareDialog } from './ShareDialog'
 import { SplitPane } from './SplitPane'
-import { runUpdateCheck, updatesAvailable } from './updates'
+import { updatesAvailable } from './updates'
+import { useUpdates } from './useUpdates'
+import { UpdateButton, UpdateNotice } from './UpdateNotice'
 import { applyTelemetry, telemetryOffered, track } from './telemetry'
 import { ConsentDialog, FeedbackDialog } from './PrivacyDialogs'
 import { AboutDialog } from './AboutDialog'
@@ -159,13 +161,8 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
     setToast({ text: msg, action }); clearTimeout(toastTimer.current)
     toastTimer.current = setTimeout(() => setToast(null), action ? 9000 : msg.length > 80 ? 8000 : 3500)
   }, [])
-  // The quiet check on start, once, when the person turned it on (Settings → General).
-  const updateChecked = useRef(false)
-  useEffect(() => {
-    if (!ws.ready || updateChecked.current || !updatesAvailable() || !ws.settings.updateCheckOnStart) return
-    updateChecked.current = true
-    void runUpdateCheck(notify, confirm, true)
-  }, [ws.ready, ws.settings.updateCheckOnStart, notify, confirm])
+  const updates = useUpdates(ws, notify, confirm)
+  const menuRef = useRef<HTMLElement>(null)
   useFolderSync(ws, notify)
   useMenuDismiss()
   const sched = useScheduler(ws)
@@ -341,6 +338,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
         </label>
         <button type="button" className="btn small" onClick={() => ws.startNew(ws.draft.collectionId, ws.draft.folderId)}>+ New request</button>
         <span className="grow" />
+        <UpdateButton updates={updates} onDismissed={() => menuRef.current?.focus()} />
         <label className="envPick">
           <span className="sr">Environment</span>
           <select aria-label="Environment" value={ws.settings.activeEnvId ?? ''} onChange={(e) => ws.setSettings({ activeEnvId: e.target.value || null })}>
@@ -357,7 +355,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
           </label>
         ))}
         <details className="menu">
-          <summary className="btn small ghost" aria-label="Menu">☰</summary>
+          <summary ref={menuRef} className="btn small ghost" aria-label="Menu">☰</summary>
           <div className="menuList right" role="menu">
             <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); fileInput.current?.click() }}>Import (backup, Postman, OpenAPI, HAR)…</button>
             <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); brunoInput.current?.click() }}>Import a Bruno collection folder…</button>
@@ -377,7 +375,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
             <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); ws.setView({ kind: 'backups' }) }}>Local backups…</button>
             <hr />
             <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); ws.setView({ kind: 'settings' }) }}>Settings…</button>
-            {updatesAvailable() && <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); track('update_check'); void runUpdateCheck(notify, confirm) }}>Check for updates…</button>}
+            {updatesAvailable() && <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); track('update_check'); void updates.checkNow() }}>Check for updates…</button>}
             <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setFeedback(true) }}>Send feedback…</button>
             <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); setAbout(true) }}>About Dispatch…</button>
             {ws.transport.unrestricted && <button type="button" role="menuitem" onClick={(e) => { closeMenu(e); ws.setView({ kind: 'cookies' }) }}>Cookies…</button>}
@@ -397,6 +395,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
       </header>
       <Sidebar ws={ws} dialogs={dialogs} onExportCollection={(c) => void onExportCollection(c)} onExportPostman={(c) => void onExportPostman(c)} onShare={setSharing} />
       <main className="work">
+        <UpdateNotice updates={updates} />
         <TabBar ws={ws} onClose={(id) => void closeTab(id)} onMenu={tabMenu} page={page} />
         <div className="workBody">
         {viewed.kind === 'home' ? <HomeView ws={ws} onImport={() => fileInput.current?.click()} onNewFlow={() => void newFlow()} />

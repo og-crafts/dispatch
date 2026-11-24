@@ -6,6 +6,7 @@
 
 use serde::Serialize;
 use std::sync::Mutex;
+use std::time::Duration;
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
@@ -34,14 +35,29 @@ pub fn configured<R: Runtime>(app: &AppHandle<R>) -> bool {
         .is_some_and(|k| !k.trim().is_empty())
 }
 
+/// Whether this build can look for updates at all (asks nobody).
+#[tauri::command]
+pub fn update_configured(app: AppHandle) -> bool {
+    configured(&app)
+}
+
 #[tauri::command]
 pub async fn update_check(app: AppHandle) -> Result<UpdateInfo, String> {
     let current = app.package_info().version.to_string();
     if !configured(&app) {
         return Err("This build can’t update itself. Download the newest version from dispatch.ogcrafts.cloud.".into());
     }
-    let updater = app.updater().map_err(|e| e.to_string())?;
-    let found = updater.check().await.map_err(|e| check_error_text(&e, &current))?;
+    // Shared out over a host's addresses, so one that doesn't answer costs seconds, not the system's 20 or more.
+    let updater = app
+        .updater_builder()
+        .configure_client(|c| c.connect_timeout(Duration::from_secs(20)))
+        .build()
+        .map_err(|e| e.to_string())?;
+    // A connection that stalls mustn't leave the window waiting for good.
+    let found = tokio::time::timeout(Duration::from_secs(60), updater.check())
+        .await
+        .map_err(|_| "Couldn’t check for updates: GitHub didn’t answer within 60 seconds.".to_string())?
+        .map_err(|e| check_error_text(&e, &current))?;
     let info = match &found {
         Some(u) => UpdateInfo { current, version: Some(u.version.clone()), notes: u.body.clone(), date: u.date.map(|d| d.to_string()) },
         None => UpdateInfo { current, version: None, notes: None, date: None },
@@ -62,10 +78,14 @@ pub fn check_error_text(e: &tauri_plugin_updater::Error, current: &str) -> Strin
     }
 }
 
-/// Downloads and installs the update found by `update_check`, then restarts Dispatch.
+/// Downloads and installs the update found by `update_check`, then restarts Dispatch. Only the version the person
+/// agreed to: a later check may have found another.
 #[tauri::command]
-pub async fn update_install(app: AppHandle) -> Result<(), String> {
+pub async fn update_install(app: AppHandle, version: String) -> Result<(), String> {
     let update = app.state::<PendingUpdate>().0.lock().unwrap().take().ok_or("Check for updates first.")?;
+    if update.version != version {
+        return Err(format!("The newest version is now {}. Check for updates again.", update.version));
+    }
     update
         .download_and_install(|_, _| {}, || {})
         .await

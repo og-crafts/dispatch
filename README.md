@@ -9,7 +9,8 @@ runner, load tests, mocks and docs all in the same free app, and collections as 
 
 No account, no sync. Collections, environments and history stay in this device's storage. Besides the requests you
 send, Dispatch sends nothing unless you opt in to anonymous usage and error reports (asked on first launch; see
-docs/TELEMETRY.md) or check for updates.
+docs/TELEMETRY.md). The desktop app also asks GitHub for new versions on start and once a day; it tells you first, no
+workspace data is sent, and Settings turns it off.
 
 ## Features
 
@@ -118,9 +119,9 @@ See [CLAUDE.md](CLAUDE.md).
 Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org)
 (starting with the first release after the project is accepted; earlier Windows installers are unsigned).
 Committers and reviewers: [og-crafts members](https://github.com/orgs/og-crafts/people). Approvers:
-[og-crafts owners](https://github.com/orgs/og-crafts/people?query=role%3Aowner). Privacy: this program will not transfer
-any information to other networked systems unless specifically requested by the user or the person installing or
-operating it. Full policy: https://dispatch.ogcrafts.cloud/code-signing/
+[og-crafts owners](https://github.com/orgs/og-crafts/people?query=role%3Aowner). Privacy: apart from
+looking for new versions on GitHub (can be turned off), this program will not transfer any information to other
+networked systems unless specifically requested by the user or the person installing or operating it. Full policy: https://dispatch.ogcrafts.cloud/code-signing/
 
 ## Licence
 

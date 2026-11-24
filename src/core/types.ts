@@ -280,8 +280,8 @@ export interface Settings {
   mcpHostWorkspace: boolean
   /** Assistants may read the console, send history (with responses) and environments, secrets hidden. */
   mcpHostLogs: boolean
-  /** Desktop: look for a newer release when Dispatch starts (it contacts GitHub, so it's off until turned on). */
-  updateCheckOnStart: boolean
+  /** Desktop: look for a newer release on start and once a day (asks GitHub; the person is told first). */
+  autoUpdateCheck: boolean
   /** The first-launch privacy question was answered (shown only in builds that can send usage or errors). */
   telemetryAsked: boolean
   /** Opt-in: anonymous usage events (Aptabase). */
@@ -304,7 +304,7 @@ export const defaultSettings: Settings = {
   activeEnvId: null, theme: 'system', look: 'dispatch', timeoutMs: 30_000, followRedirects: true, insecureTls: false, cookieJar: true,
   proxyUrl: '', proxyBypass: 'localhost, 127.0.0.1', clientCerts: [], caCerts: [], activeSpaceId: 'default', spaceEnv: {},
   mcpHostEnabled: false, mcpHostPort: 4320, mcpHostToken: '', mcpHostMethods: 'GET,HEAD', mcpHostWorkspace: false, mcpHostLogs: false,
-  updateCheckOnStart: false,
+  autoUpdateCheck: true,
   telemetryAsked: false, shareUsage: false, shareErrors: false,
 }
 
