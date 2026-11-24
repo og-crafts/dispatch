@@ -5,7 +5,7 @@ import { FAKE } from '../src/core/fake'
 import { paramsFromUrl, parseQuery, splitUrl, urlWithParams, withScheme } from '../src/core/url'
 import { effectiveAuth, jsonProblem, pathVarNames, pathVarsFromUrl, prepare } from '../src/core/prepare'
 import { folderChain, prepareContext } from '../src/core/runtime'
-import { fromCurl, shellWords, toCurl } from '../src/core/curl'
+import { fromCurl, nameAfterPaste, shellWords, toCurl } from '../src/core/curl'
 import { exportWorkspace, importFile } from '../src/core/backup'
 import { decodeBody, FetchTransport, SendError } from '../src/core/transport'
 import { formatBytes, prettyJson, statusTone } from '../src/core/format'
@@ -151,6 +151,12 @@ describe('prepare', () => {
 })
 
 describe('curl', () => {
+  it('a pasted command renames the request unless the person named it', () => {
+    expect(nameAfterPaste('New request', '', 'a.test/x')).toBe('a.test/x')
+    expect(nameAfterPaste('a.test/x', 'https://a.test/x?q=1', 'b.test/y')).toBe('b.test/y')
+    expect(nameAfterPaste('a.test/x', 'a.test/x', 'b.test/y')).toBe('b.test/y') // typed without https://
+    expect(nameAfterPaste('Log in', 'https://a.test/x', 'b.test/y')).toBe('Log in')
+  })
   it('splits shell words', () => {
     expect(shellWords(`curl 'a b' "c \\"d\\"" e\\ f \\\n -H $'x\\ny'`)).toEqual(['curl', 'a b', 'c "d"', 'e f', '-H', 'x\ny'])
     // Windows paths keep their backslashes (MCP stdio commands, pasted Windows commands).

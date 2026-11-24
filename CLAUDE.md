@@ -152,7 +152,7 @@ unpack it from `apt-get download libasound2t64` with `dpkg-deb -x` and set `LD_L
 
 ## Where we left off
 
-Updated 2026-11-23. **Pending work is tracked on the Kan board "Dispatch"**
+Updated 2026-11-23 (evening). **Pending work is tracked on the Kan board "Dispatch"**
 (https://kanban.gautamlabs.io/boards/mb7hut0k7z77; CLI: `KAN_BOARD=mb7hut0k7z77 ~/bin/kan show|card|move|note|desc`).
 Lists: Waiting on you (owner actions), To do, In progress, Testing, Done; labels Release, Feature, Bug, Testing,
 Infra. Keep the cards current at the end of each session (as with the Native Android Apps board).
@@ -208,7 +208,17 @@ focus on the URL at all, both fixed in #50. gRPC over the internet couldn't be c
 9000/9001 time out from the homelab and the Predator) and grpc.postman-echo.com fails the TLS handshake
 ("InvalidContentType") with the old crates on `main` exactly as with #53, so TLS behaves as before; the local
 end-to-end and grpc-js tests cover plaintext.
-**Resume here (2026-11-23, read first): Dispatch 0.1.0 is OUT.** #76 merged, tag `v0.1.0` on `main` 10fd7d8, CI green
+**Resume here (2026-11-23 evening, read first): next feature round is designed, waiting on the owner's approval.**
+The owner asked for six changes; the design is `docs/superpowers/specs/2026-11-23-extract-variables-and-polish-design.md`
+(branch `feature/extract-and-polish`): Extract into variable (right-click a selected response value or a header value;
+the rule is a `// extracted` line in the request's after-response script, owner picked this "approach A"), long values
+readable in key/value tables, curl paste renames the request unless the person named it, cookies per environment
+(desktop + runs), a Secrets section instead of the checkbox column, and rename in place (double-click or F2 in the
+sidebar). Builder's calls are marked in the doc for the owner to overrule. Nothing is built yet. On approval: write
+the plan (superpowers:writing-plans), then four PRs in order: 1 polish (rename, curl naming, long values), 2 extract,
+3 secrets, 4 cookies. Owner paused for the day 2026-11-23.
+
+**Earlier on 2026-11-23: Dispatch 0.1.0 is OUT.** #76 merged, tag `v0.1.0` on `main` 10fd7d8, CI green
 on every job incl. updater; the owner published it as **Latest** 2026-11-23 (notes from the changelog). `latest.json`
 lists 0.1.0 for all five platforms, so in-app updates work from now on. The v0.5.0/v0.5.1 releases and tags were
 deleted (owner's OK), and so were the old preview tags v0.2.0–v0.4.4: only `v0.1.0` and `v0.1.0-SNAPSHOT` are left. Site published from the tag

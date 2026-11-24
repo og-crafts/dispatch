@@ -102,6 +102,7 @@ button.icon:hover { color: var(--ink); background: var(--primary-soft); }
 .row.on { background: var(--primary-soft); }
 .row.label { padding: 8px 6px 4px; }
 .rowMain { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; border: 0; background: none; color: inherit; text-align: left; padding: 6px 6px; cursor: pointer; font: inherit; }
+.inlineName { flex: 1; min-width: 0; margin: 1px 0; padding: 4px 5px; font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--primary); border-radius: 6px; }
 .rowName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .folderName { font-weight: 650; }
 .caret { border: 0; background: none; color: var(--muted); cursor: pointer; width: 24px; padding: 4px 0; }
@@ -146,7 +147,18 @@ button.icon:hover { color: var(--ink); background: var(--primary-soft); }
 
 .kv { width: 100%; border-collapse: collapse; }
 .kv th { text-align: left; font: 600 11.5px var(--sans); color: var(--muted); padding: 4px 4px; }
-.kv td { padding: 2px 2px; }
+.kvWrap { container-type: inline-size; }
+.kv { table-layout: fixed; }
+.kv.readonly { table-layout: auto; }
+.kv td { padding: 2px 2px; vertical-align: top; }
+.kv .kv-key { position: relative; }
+.kvResizer { position: absolute; top: 0; bottom: 0; right: -5px; width: 10px; cursor: col-resize; touch-action: none; }
+.kvResizer::after { content: ""; position: absolute; top: 4px; bottom: 4px; left: 4px; width: 2px; border-radius: 2px; background: var(--divider, var(--outline)); }
+.kvResizer:hover::after, .kvResizer:focus-visible::after { background: var(--primary); }
+.kvResizer:focus-visible { outline: none; }
+.kv td .valueField { display: block; width: 100%; min-height: 0; padding: 6px 8px; resize: none; overflow: hidden; line-height: 1.45; overflow-wrap: anywhere; }
+.kv tr.off .valueField { opacity: .5; text-decoration: line-through; }
+.kv .kv-on input { margin-top: 9px; }
 .kv td input:not([type="checkbox"]) { width: 100%; padding: 6px 8px; }
 .kv .kv-on { width: 28px; text-align: center; } .kv .kv-x { width: 32px; }
 .kv tr.off input:not([type="checkbox"]) { opacity: .5; text-decoration: line-through; }
@@ -844,7 +856,7 @@ body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: 
 [data-look^="grove"] .btn.ghost, [data-look^="grove"] .btn.danger { background: transparent; }
 [data-look^="grove"] :is(input, select, textarea) { border-radius: 14px; }
 [data-look^="grove"] .top select, [data-look^="grove"] .search { border-radius: 999px; }
-[data-look^="grove"] .kv :is(input, select) { border-radius: 8px; }
+[data-look^="grove"] .kv :is(input, select, textarea) { border-radius: 8px; }
 [data-look^="grove"] .dot { background: var(--accent2); }
 [data-look^="grove"] .cm-var { color: var(--chip-ink); background: var(--chip); border-radius: 999px; padding: 0 4px; }
 [data-look^="grove"] .toastAction { color: var(--on-primary); }

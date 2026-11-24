@@ -50,6 +50,8 @@ export function FlowView({ ws, flowId, notify, confirm }: { ws: WorkspaceApi; fl
   const latest = useRef(flow); latest.current = flow
 
   useEffect(() => { if (stored && stored.id !== flow?.id) setFlow(stored) }, [stored, flow?.id])
+  // Renamed in the sidebar: the next edit here must not bring the old name back.
+  useEffect(() => { if (stored && !dirty.current) setFlow((f) => (f && f.name !== stored.name ? { ...f, name: stored.name } : f)) }, [stored?.name]) // eslint-disable-line react-hooks/exhaustive-deps
   // Save shortly after edits (dragging changes positions many times a second).
   const change = useCallback((fn: (f: Flow) => Flow) => {
     setFlow((f) => {
