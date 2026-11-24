@@ -39,6 +39,7 @@ import { MockView } from './MockView'
 import { DND_TAB } from './dnd'
 import { useMcpHost } from './mcpHost'
 import { Markdown } from './Markdown'
+import { AssistantGate } from './assistant/AssistantGate'
 import { ProtocolPicker, RealtimePane } from './RealtimePane'
 import { GrpcPane } from './GrpcPane'
 import { BackupsView } from './BackupsView'
@@ -135,6 +136,9 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
   const toastTimer = useRef<ReturnType<typeof setTimeout>>()
   const fileInput = useRef<HTMLInputElement>(null)
   const brunoInput = useRef<HTMLInputElement>(null)
+  const [assistantOpen, setAssistantOpen] = useState(false)
+  /** Where the assistant's icon goes in the top bar. */
+  const [assistantSlot, setAssistantSlot] = useState<HTMLElement | null>(null)
   const [consoleOpen, setConsoleOpen] = useState(false)
   const [sharing, setSharing] = useState<ShareTarget | null>(null)
   const [feedback, setFeedback] = useState(false)
@@ -326,7 +330,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
   const dialogs = { ask, confirm, askNote, notify, pickPlace: (title: string, cur: { collectionId: string | null; folderId: string | null }) => askPlace(title, ws.collections, ws.folders, cur) }
 
   return (
-    <div className="app">
+    <div className={`app ${assistantOpen ? 'withAssistant' : ''}`}>
       <header className="top">
         <button type="button" className="brand" title="Home" onClick={() => ws.setView({ kind: 'home' })}><img src="./icon.svg" alt="" width="26" height="26" />Dispatch</button>
         <label className="spacePick">
@@ -354,6 +358,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
             </select>
           </label>
         ))}
+        <span ref={setAssistantSlot} className="aiSlot" />
         <details className="menu">
           <summary ref={menuRef} className="btn small ghost" aria-label="Menu">☰</summary>
           <div className="menuList right" role="menu">
@@ -440,6 +445,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
             </>}
         </div>
       </main>
+      {ws.transport.unrestricted && <AssistantGate ws={ws} slot={assistantSlot} open={assistantOpen} onOpen={setAssistantOpen} />}
       {consoleOpen && <Console ws={ws} onClose={() => setConsoleOpen(false)} />}
       <footer className="statusBar small">
         <button type="button" className="linkBtn" aria-expanded={consoleOpen} onClick={() => setConsoleOpen(!consoleOpen)}>
