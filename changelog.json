@@ -2,6 +2,20 @@
   "_comment": "Newest release first. Add an entry for every release before tagging (tests/about.test.tsx checks the top one matches package.json). Items use `code` and **bold** only.",
   "releases": [
     {
+      "version": "0.2.0",
+      "date": "2026-11-24",
+      "title": "Extract values into variables, a Secrets section, and cookies for each environment.",
+      "changes": [
+        "**Extract into variable:** select a value in a response and right-click it, or right-click a response header, and save it as a variable. The rule is added to the request's after-response script, so a login refreshes its token on every send, in the runner, in flows and in `dispatch-run` too. If a response doesn't have the value, or it's empty, the variable keeps the one it had.",
+        "**Secrets section:** environments, globals and collections list secret variables in a table of their own, instead of a checkbox on each row. A variable with a name like `token` or `password` offers to move there.",
+        "**Cookies per environment** (desktop): each environment keeps its own cookies, so a sign-in on staging no longer reaches production. After the update, the cookies you have stay with the environment that was selected; sign in again in the others.",
+        "**Rename in place:** double-click a request, folder, collection, flow or environment in the sidebar, or press F2. Enter saves and Esc cancels.",
+        "Pasting a curl command names the request after its URL, unless you gave it a name of your own.",
+        "Long header, parameter and variable values wrap while you edit them, and you can drag the name column to resize it.",
+        "Edits you make while a request, a run or an assistant is still working are kept: a run changes only the variables it set."
+      ]
+    },
+    {
       "version": "0.1.0",
       "date": "2026-11-22",
       "title": "The first release of Dispatch by OGCrafts.",

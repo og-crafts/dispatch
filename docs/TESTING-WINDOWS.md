@@ -1,11 +1,10 @@
-# Testing Dispatch 0.1.0 on Windows
+# Testing Dispatch 0.2.0 on Windows
 
 Instructions for a tester (a person or an AI agent) on a Windows 10/11 machine. Work through each section, record
 **PASS / FAIL / BLOCKED** for every numbered check, and write the results into a report (template at the end).
 
 Dispatch is OGCrafts' local-first API client: a desktop app (Tauri 2, WebView2), a web build and a command-line
-tool, `dispatch-run`. You are testing **`v0.1.0`**, the first release of Dispatch by OGCrafts (the
-`v0.1.0-SNAPSHOT` pre-release came before it). It passes automated tests on Linux, Windows and macOS in CI, and parts of it were
+tool, `dispatch-run`. You are testing **`v0.2.0`** (0.1.0 was the first release of Dispatch by OGCrafts). It passes automated tests on Linux, Windows and macOS in CI, and parts of it were
 clicked through on one Windows 11 PC, but most of it has never been tried by hand on Windows. Expect to find real
 bugs; that's the point.
 
@@ -49,7 +48,7 @@ cd dispatch           # stay on main: it has the demo login page and example fil
 npm ci
 npm run build:cli          # builds dist-cli\dispatch-run.mjs
 mkdir ..\installers
-gh release download v0.1.0 --repo og-crafts/dispatch -p "*x64-setup.exe" -p "*x64_en-US.msi" -D ..\installers
+gh release download v0.2.0 --repo og-crafts/dispatch -p "*x64-setup.exe" -p "*x64_en-US.msi" -D ..\installers
 ```
 
 The release starts as a **draft**, visible only to accounts with write access to the repo, and is then published
@@ -78,7 +77,7 @@ What the demo API offers:
 
 ## 1. Install, first launch, uninstall
 
-1.1. Double-click `Dispatch_0.1.0_x64-setup.exe`. SmartScreen will warn because the installer isn't code-signed
+1.1. Double-click `Dispatch_0.2.0_x64-setup.exe`. SmartScreen will warn because the installer isn't code-signed
      yet: click "More info" → "Run anyway". Record the exact warning text. Then expect:
    - no administrator (UAC) prompt;
    - a small borderless dark card (no title bar, no buttons) with the logo, "Installing Dispatch" and a thin amber
@@ -110,7 +109,7 @@ What the demo API offers:
    3. Reopen it. History, open tabs and settings must still be there.
 
 1.6. *(Do this at the very end.)* Uninstall from Settings → Apps and confirm it's gone from the Start menu. Run the
-     setup once more with `/WIZARD` (`.\Dispatch_0.1.0_x64-setup.exe /WIZARD`): the classic installer pages must
+     setup once more with `/WIZARD` (`.\Dispatch_0.2.0_x64-setup.exe /WIZARD`): the classic installer pages must
      appear instead of the small card. Uninstall again. Then
      install the `.msi` instead, launch it once, and uninstall it too. The msi installs for all users, so it needs
      administrator rights (a UAC prompt; a non-elevated `msiexec /qn` fails with Error 1925). Record whether your
@@ -428,16 +427,36 @@ Run these from the repo folder in PowerShell.
 8.5. **Send feedback:** ☰ → Send feedback… opens a form. Don't send anything real; check that it says what will be
      sent, then cancel.
 
-8.6. **Updates:** ☰ → Check for updates… must answer within a few seconds. On 0.1.0 (the Latest release) it says
+8.6. **Updates:** ☰ → Check for updates… must answer within a few seconds. On the Latest release it says
      you have the newest version; record what it says.
 
 8.7. **AI assistants** (optional; needs Claude Desktop, Claude Code or another MCP client): Settings → AI
      assistants → turn the local endpoint on and follow the on-screen steps. The assistant lists your requests and
      can send one. Right-click a request → **Hand to AI assistant…** puts a copy in the assistant's inbox.
 
-8.8. **Coming from a 0.5.x preview** (only if one was installed before): the preview can't update to 0.1.0. Export a
-     backup from the preview (☰ → Export backup), uninstall it, install 0.1.0 and import the backup. Record whether
+8.8. **Coming from a 0.5.x preview** (only if one was installed before): the preview can't update to this version. Export a
+     backup from the preview (☰ → Export backup), uninstall it, install 0.2.0 and import the backup. Record whether
      everything came back.
+
+## 9. New in 0.2.0
+
+9.1. **Extract:** send `POST /login` (section 2), select the token's value in the response, right-click it and choose
+     **Extract into variable…**. Save it as `token` in the environment (Secret is already ticked). Send again: the variable has the new value, and the request's
+     after-response script has one line ending in `// extracted`.
+
+9.2. **Secrets:** open the environment: `token` is in the Secrets table, masked. Its row menu moves it to Variables (**Make
+     plain**) and back (**Make secret**).
+
+9.3. **Cookies per environment:** log in with one environment selected, switch to another and GET `/orders` without a
+     token: expect **401**. Switch back: expect **200**. The Cookies page names the environment it shows.
+
+9.4. **Rename:** double-click a request, a folder and a collection in the sidebar, then try F2. Enter saves, Esc cancels.
+
+9.5. **Restart:** close Dispatch and open it again. The extracted variable, the secret, both environments' cookies and
+     the new names are all still there.
+
+9.6. **Update from 0.1.0:** with 0.1.0 installed and a cookie in the jar, install 0.2.0 over it. Everything is still
+     there, and the cookie is in the environment that was selected.
 
 ## Report template
 
@@ -447,7 +466,7 @@ comment (drag them into the comment box, or `gh issue comment <number> --repo og
 failure, titled `[Windows] <problem>`, and link it from the report.
 
 ```markdown
-# Dispatch 0.1.0 — Windows test report
+# Dispatch 0.2.0 — Windows test report
 
 - Date / tester:
 - Windows version (winver) and build:
