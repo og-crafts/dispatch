@@ -208,12 +208,15 @@ focus on the URL at all, both fixed in #50. gRPC over the internet couldn't be c
 9000/9001 time out from the homelab and the Predator) and grpc.postman-echo.com fails the TLS handshake
 ("InvalidContentType") with the old crates on `main` exactly as with #53, so TLS behaves as before; the local
 end-to-end and grpc-js tests cover plaintext.
-**Resume here (2026-11-24, read first): the six-feature round is MERGED.** The owner tested the setup
+**Resume here (2026-11-24, read first): Dispatch 0.2.0 is OUT.** #86 merged, tag `v0.2.0` on `main` ec241ec, CI green
+on every job incl. updater; the owner published it as **Latest**. Site published from the tag (`VITE_DISPATCH_CHANNEL=release`),
+`site/release.json` on `main` matches, ogcrafts.cloud `apps.json` 0.2.0. Not yet recorded: the first in-app update
+(0.1.0 -> 0.2.0) on a real machine. The Product Hunt kit still says 0.1.0.
+
+**Earlier on 2026-11-24: the six-feature round was merged.** The owner tested the setup
 (`Dispatch_0.1.0_x64-setup-extract-cookies.exe`) and said merge: #81 polish (rename in place, curl naming, wrapping values),
 #82 extract into variable, #83 Secrets section, #84 cookies per environment + all review fixes, with merge commits
-(`main` 9ad8cd6, same tree as 8b7114e, which was green on #84; 574 tests). Merged branches are kept on origin. Not released
-yet: the 0.2.0 version bump and changelog entry are on `release/0.2.0-prep`; after it merges, tag `v0.2.0` on `main` with
-the owner's OK (`docs/RELEASING.md`). Going back to 0.1.0 from this build
+(`main` 9ad8cd6, same tree as 8b7114e, which was green on #84; 574 tests). Merged branches are kept on origin. Going back to 0.1.0 from this build
 starts fine but without the cookies.
 Design + plan: `docs/superpowers/specs/2026-11-23-extract-variables-and-polish-design.md`,
 `docs/superpowers/plans/2026-11-24-extract-variables-and-polish.md`. The rule line differs from the design on purpose:
