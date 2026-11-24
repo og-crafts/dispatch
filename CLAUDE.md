@@ -65,6 +65,9 @@ about each, without naming or disparaging anyone.
 - About and changelog: `changelog.json` (repo root, newest release first) is the one changelog: Menu → About Dispatch
   (`src/ui/AboutDialog.tsx`, via `src/core/changelog.ts`) shows the version, channel and every release, and
   `site/build.py` builds /changelog/ from it. Add an entry with every version bump (`tests/about.test.tsx` checks it).
+- Updates (desktop): `src/core/updateSchedule.ts` (when), `src/ui/useUpdates.ts` (state, safe install),
+  `src/ui/UpdateNotice.tsx`; on by default after a one-time notice, device state in meta `updateState`. Rust installs only
+  the version agreed to. The owner's network can't reach 185.199.109.133 (one of GitHub's four download addresses).
 - Opt-in usage (Aptabase) and error reports (Sentry), feedback: `src/ui/telemetry.ts` (consent-gated `track()`,
   `redact()`/`scrubEvent()`), `src/ui/PrivacyDialogs.tsx` (first-launch question, Send feedback). Keys come from
   `VITE_APTABASE_APP_KEY` / `VITE_SENTRY_DSN` at build time; without them nothing is offered. Rules and set-up:

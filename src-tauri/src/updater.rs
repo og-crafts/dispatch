@@ -6,6 +6,7 @@
 
 use serde::Serialize;
 use std::sync::Mutex;
+use std::time::Duration;
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
@@ -46,11 +47,16 @@ pub async fn update_check(app: AppHandle) -> Result<UpdateInfo, String> {
     if !configured(&app) {
         return Err("This build can’t update itself. Download the newest version from dispatch.ogcrafts.cloud.".into());
     }
-    let updater = app.updater().map_err(|e| e.to_string())?;
+    // Shared out over a host's addresses, so one that doesn't answer costs seconds, not the system's 20 or more.
+    let updater = app
+        .updater_builder()
+        .configure_client(|c| c.connect_timeout(Duration::from_secs(20)))
+        .build()
+        .map_err(|e| e.to_string())?;
     // A connection that stalls mustn't leave the window waiting for good.
-    let found = tokio::time::timeout(std::time::Duration::from_secs(30), updater.check())
+    let found = tokio::time::timeout(Duration::from_secs(60), updater.check())
         .await
-        .map_err(|_| "Couldn’t check for updates: GitHub didn’t answer within 30 seconds.".to_string())?
+        .map_err(|_| "Couldn’t check for updates: GitHub didn’t answer within 60 seconds.".to_string())?
         .map_err(|e| check_error_text(&e, &current))?;
     let info = match &found {
         Some(u) => UpdateInfo { current, version: Some(u.version.clone()), notes: u.body.clone(), date: u.date.map(|d| d.to_string()) },
