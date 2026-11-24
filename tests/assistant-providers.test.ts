@@ -296,6 +296,34 @@ describe('Anthropic', () => {
     play(text(sse([start(), ...done('pause_turn')])))
     await failure(turn(await make()))
   })
+  it('CRLF lines and comments are fine, split at every byte', async () => {
+    play(text(`: hi\r\n\r\n${aText.replaceAll('\n', '\r\n').replaceAll('\r\n\r\n', '\r\n\r\n: ping\r\n\r\n')}`))
+    expect(await turn(await make())).toMatchObject({ text: 'Héllo 🌍 wörld', stop: 'end' })
+  })
+  it('stop and error names that name an object member aren’t accepted', async () => {
+    for (const f of ['constructor', 'toString']) {
+      play(text(sse([start(), ...done(f)])))
+      expect((await failure(turn(await make()))).message, f).toContain('couldn’t read')
+      play(text(`event: error\ndata: {"type":"error","error":{"type":"${f}","message":"m"}}\n\n`))
+      expect(await failure(turn(await make())), f).toMatchObject({ status: undefined, message: 'Work couldn’t use this request: m' })
+    }
+  })
+  it('the stop follows the calls', async () => {
+    play(text(aTools('{"a": 2}', 'end_turn')), text(aText.replace('end_turn', 'tool_use')))
+    expect((await turn(await make())).stop).toBe('tools')
+    expect((await turn(await make())).stop).toBe('end')
+  })
+  it('empty text blocks aren’t sent back', async () => {
+    play(text(sse([start(), open(0, { type: 'thinking', thinking: 't', signature: 's' }), close(0), open(1, { type: 'text', text: '' }), close(1), open(2, { type: 'tool_use', id: 'x', name: 'get', input: {} }), close(2), ...done('tool_use')])))
+    expect(((await turn(await make())).message as { content: { type: string }[] }).content.map((b) => b.type)).toEqual(['thinking', 'tool_use'])
+  })
+  it('asks for prompt caching, only on the Anthropic host', async () => {
+    play(text(aText), text(aText))
+    await turn(await make())
+    expect(bodyOf().cache_control).toEqual({ type: 'ephemeral' })
+    await turn(await make({ baseUrl: 'https://gateway.example.com' }))
+    expect(bodyOf(1)).not.toHaveProperty('cache_control')
+  })
   it('lists models, following pages', async () => {
     const page = (ids: string[], more: boolean) => text(JSON.stringify({ data: ids.map((id) => ({ id, type: 'model' })), has_more: more, first_id: ids[0], last_id: ids.at(-1) }))
     const json: [string, string][] = [['content-type', 'application/json']]
@@ -403,16 +431,66 @@ describe('chat completions', () => {
   })
   it('rejects when the stream ends early, isn’t readable or reports an error', async () => {
     const p = await make()
-    for (const s of [chat([chunk({ content: 'x' }), chunk({}, 'stop')], ''), chat([chunk({ content: 'x' })]), 'data: {oops\n\n', '{"choices":[]}', '']) {
+    for (const s of [chat([chunk({ content: 'x' }), chunk({}, 'stop')], 'data: {"ch'), chat([chunk({ content: 'x' })], ''), chat([chunk({ content: 'x' })]), 'data: {oops\n\n', '{"choices":[]}', '']) {
       play(text(s))
       expect((await failure(turn(p))).message.length, s).toBeGreaterThan(10)
     }
     play(text(`data: ${JSON.stringify({ choices: [{ delta: { content: 'x' } }] })}\n\ndata: ${JSON.stringify({ error: { message: `boom ${KEY}` } })}\n\n`))
     expect(dump(await failure(turn(await make({ key: KEY }))))).not.toContain(KEY)
   })
+  it('a finish reason and a clean end is complete without [DONE]; a lost connection after it is not', async () => {
+    const s = chat([chunk({ content: 'x' }), chunk({}, 'stop')], '')
+    play(text(s), { ...text(s), then: { error: 'reset' } })
+    expect(await turn(await make())).toMatchObject({ text: 'x', stop: 'end' })
+    expect((await failure(turn(await make()))).message).toContain('reset')
+  })
   it('a terminator without its last line break counts', async () => {
     play(text(chat([chunk({ content: 'x' }), chunk({}, 'stop')], 'data: [DONE]')))
     expect((await turn(await make())).text).toBe('x')
+  })
+  const calls = async (...pieces: object[]) => {
+    play(text(chat([...pieces.map((p) => chunk({ tool_calls: [p] })), chunk({}, 'tool_calls')])))
+    return (await turn(await make())).calls.map((c) => [c.name, c.invalid ? 'invalid' : c.input])
+  }
+  const fn = (name: string, args: string, more: object = {}) => ({ ...more, function: { name, arguments: args } })
+  it('whole calls with different names never merge, in either order, with or without an index or a shared id', async () => {
+    for (const more of [{ index: 0 }, {}, { index: 0, id: 'x' }, { id: 'x' }]) {
+      const label = JSON.stringify(more)
+      expect(await calls(fn('list', '', more), fn('send', '{"x":1}', more)), label).toEqual([['list', {}], ['send', { x: 1 }]])
+      expect(await calls(fn('send', '{"x":1}', more), fn('list', '', more)), label).toEqual([['send', { x: 1 }], ['list', {}]])
+    }
+  })
+  it('the same name again: a new call after complete arguments, and nothing uncertain runs', async () => {
+    for (const more of [{ index: 0 }, {}]) {
+      expect(await calls(fn('get', '{"a":1}', more), fn('get', '{"a":2}', more))).toEqual([['get', { a: 1 }], ['get', { a: 2 }]])
+      expect(await calls(fn('get', '', more), fn('get', '{"a":2}', more))).toEqual([['get', 'invalid'], ['get', { a: 2 }]])
+      expect(await calls(fn('get', '{"a":1}', more), fn('get', '', more))).toEqual([['get', { a: 1 }], ['get', 'invalid']])
+      expect(await calls(fn('get', '{"a"', more), fn('get', ':{"b"', more), fn('get', ':1}}', more))).toEqual([['get', { a: { b: 1 } }]])
+      expect(await calls(fn('get', '{"a":', more), fn('get', '{"b":1}', more), fn('get', '}', more))).toEqual([['get', { a: { b: 1 } }]])
+    }
+  })
+  it('arguments that could belong to two open calls make both invalid', async () => {
+    for (const more of [{ index: 0 }, {}]) expect(await calls(fn('list', '', more), fn('send', '', more), { ...more, function: { arguments: '{"x":1}' } })).toEqual([['list', 'invalid'], ['send', 'invalid']])
+    expect(await calls(fn('list', '', { index: 0 }), fn('send', '', { index: 1 }), { index: 1, function: { arguments: '{"x":1}' } })).toEqual([['list', {}], ['send', { x: 1 }]])
+  })
+  it('one id at two indexes is two calls', async () => {
+    expect(await calls(fn('get', '', { index: 0, id: 'x' }), fn('get', '{"a":2}', { index: 1, id: 'x' }), { index: 0, function: { arguments: '{"a":1}' } })).toEqual([['get', { a: 1 }], ['get', { a: 2 }]])
+  })
+  it('a call without a name goes back under a placeholder', async () => {
+    play(text(chat([chunk({ tool_calls: [{ index: 0, id: 'c', function: { arguments: '{}' } }] }), chunk({}, 'tool_calls')])))
+    const t = await turn(await make())
+    expect(t.calls[0]).toMatchObject({ name: 'unknown_tool', input: undefined })
+    expect((t.message as { tool_calls: { function: object }[] }).tool_calls[0].function).toEqual({ name: 'unknown_tool', arguments: '{}' })
+  })
+  it('an unknown finish reason that names an object member isn’t accepted', async () => {
+    for (const f of ['constructor', 'toString', '__proto__']) {
+      play(text(chat([chunk({ content: 'x' }), chunk({}, f)])))
+      expect((await failure(turn(await make()))).message, f).toContain('couldn’t read')
+    }
+  })
+  it('skips comment lines between events', async () => {
+    play(text(`: ping\n\n${cText.replaceAll('\n\n', '\n\n: ping\n\n')}`))
+    expect((await turn(await make())).text).toBe('Héllo 🌍 wörld')
   })
   it('lists models', async () => {
     play({ ...text(JSON.stringify({ data: [{ id: 'a' }, { id: 'b' }, { id: 'a' }, {}] })) })
@@ -513,6 +591,27 @@ describe('failures, for each kind', () => {
       rust.sent.length = 0
       expect((await failure(turn(await make(), { signal: AbortSignal.abort() }))).name).toBe('AbortError')
       expect(rust.sent).toEqual([])
+    })
+    it(`${kind}: a huge error body or line is cut short, not waited for`, async () => {
+      play({ status: 400, chunks: [enc('x'.repeat(70_000))], then: 'hang' }, { chunks: [enc(`data: ${'x'.repeat(2_500_000)}`), enc('x'.repeat(2_500_000))], then: 'hang' })
+      expect(await failure(turn(await make()))).toMatchObject({ status: 400 })
+      expect((await failure(turn(await make()))).message).toBe('Work sent an answer that’s too large to read.')
+      expect(rust.cancelled).toEqual(reqs().map((r) => r.id))
+    })
+    it(`${kind}: no abort listener is left after a turn`, async () => {
+      for (const s of [text(good[kind]), err(401)]) {
+        play(s)
+        const { signal } = new AbortController()
+        let n = 0
+        const add = signal.addEventListener.bind(signal), remove = signal.removeEventListener.bind(signal)
+        const live = new Set<unknown>()
+        signal.addEventListener = ((e: string, f: EventListener, o?: object) => { n++; live.add(f); add(e, f, o) }) as typeof signal.addEventListener
+        signal.removeEventListener = ((e: string, f: EventListener) => { live.delete(f); remove(e, f) }) as typeof signal.removeEventListener
+        await turn(await make(), { signal }).catch(() => {})
+        await new Promise((r) => setTimeout(r, 5))
+        expect(n).toBeGreaterThan(0)
+        expect(live.size).toBe(0)
+      }
     })
     it(`${kind}: abort during the wait before a retry`, async () => {
       play(err(503))

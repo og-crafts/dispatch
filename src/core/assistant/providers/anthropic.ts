@@ -4,7 +4,7 @@
  */
 import Anthropic, { APIConnectionTimeoutError, APIError } from '@anthropic-ai/sdk'
 import type { Connection } from '../connections'
-import { abortError, AssistantError, assertUsable, blockCall, cutShort, httpError, parseCall, runTurn, scrub, unreadable } from './shared'
+import { abortError, AssistantError, assertUsable, blockCall, cutShort, httpError, limited, matchCalls, parseCall, runTurn, scrub, unreadable } from './shared'
 import type { Call, Provider, Turn, TurnRequest } from './types'
 
 type Event = Anthropic.Beta.Messages.BetaRawMessageStreamEvent
@@ -12,14 +12,14 @@ type Block = Anthropic.Beta.Messages.BetaRawContentBlockStartEvent['content_bloc
 
 const MAX_TOKENS = 32_000
 
-const STOPS: Record<string, Turn['stop']> = {
+const STOPS = new Map<string, Turn['stop']>(Object.entries({
   end_turn: 'end', stop_sequence: 'end', tool_use: 'tools', max_tokens: 'length', model_context_window_exceeded: 'length', refusal: 'refused',
-}
+}))
 /** Errors reported inside a stream name a type, not a status. */
-const STATUS: Record<string, number> = {
+const STATUS = new Map(Object.entries({
   authentication_error: 401, billing_error: 402, permission_error: 403, not_found_error: 404, request_too_large: 413,
   rate_limit_error: 429, api_error: 500, timeout_error: 504, overloaded_error: 529,
-}
+}))
 
 const isOfficial = (url: string) => { try { return new URL(url).host === 'api.anthropic.com' } catch { return false } }
 
@@ -29,7 +29,7 @@ function plain(e: unknown, conn: Connection): AssistantError {
   if (e instanceof APIConnectionTimeoutError) return new AssistantError(scrub(`${conn.name} took too long to answer. Try again.`, conn))
   if (e instanceof APIError) {
     if (e.cause instanceof AssistantError) return e.cause
-    const status = e.status ?? STATUS[e.type ?? '']
+    const status = e.status ?? STATUS.get(e.type ?? '')
     if (status || e.error) return httpError(conn, status, e.error, e.headers?.get('retry-after'))
   }
   return unreadable(conn)
@@ -38,7 +38,8 @@ function plain(e: unknown, conn: Connection): AssistantError {
 /** One content block as it comes in; `json` is the tool input's text so far. */
 interface Part { block: Block; json: string; closed: boolean }
 
-export function anthropicProvider(conn: Connection, fetch: typeof globalThis.fetch): Provider {
+export function anthropicProvider(conn: Connection, unlimited: typeof globalThis.fetch): Provider {
+  const fetch = limited(conn, unlimited)
   // Made per use: assertUsable comes first, because the SDK's own complaints about a key would quote it.
   // The credentials, address and log level are given so that nothing comes from the environment.
   const client = () => new Anthropic({ apiKey: conn.key.trim(), authToken: null, webhookKey: null, baseURL: conn.baseUrl.trim(), fetch, dangerouslyAllowBrowser: true, maxRetries: 0, logLevel: 'off' })
@@ -50,7 +51,7 @@ export function anthropicProvider(conn: Connection, fetch: typeof globalThis.fet
       ...(t.tools.length ? { tools: t.tools.map((x) => ({ name: x.name, description: x.description, input_schema: x.inputSchema as Anthropic.Messages.Tool.InputSchema })), tool_choice: { type: 'auto' as const } } : {}),
     }
     const stream = isOfficial(conn.baseUrl)
-      ? await client().beta.messages.create({ ...params, fallbacks: 'default', betas: ['server-side-fallback-2026-07-01'] }, { signal: t.signal })
+      ? await client().beta.messages.create({ ...params, cache_control: { type: 'ephemeral' }, fallbacks: 'default', betas: ['server-side-fallback-2026-07-01'] }, { signal: t.signal })
       : await client().messages.create(params, { signal: t.signal })
 
     const parts: Part[] = []
@@ -86,14 +87,15 @@ export function anthropicProvider(conn: Connection, fetch: typeof globalThis.fet
       else if (ev.type === 'message_stop') { done = true; break }
     }
     if (!done || !reason) throw cutShort(conn)
-    const stop = STOPS[reason]
+    const stop = STOPS.get(reason)
     if (!stop) throw unreadable(conn)
 
     // Before the last fallback block only text may be sent back: the rest belongs to the model that declined.
     const lastFallback = parts.map((p) => p?.block.type).lastIndexOf('fallback')
     const kept = parts.filter((p, i) => p && (i > lastFallback || p.block.type === 'text' || p.block.type === 'fallback'))
     const calls: Call[] = []
-    const content = kept.map(({ block, json, closed }) => {
+    // the API refuses empty text
+    const content = kept.filter((p) => p.block.type !== 'text' || p.block.text !== '').map(({ block, json, closed }) => {
       if (block.type !== 'tool_use') return block
       let call = parseCall(block.id, block.name, json || JSON.stringify(block.input ?? {}))
       if (!closed) call = { id: call.id, name: call.name, input: undefined, invalid: 'The arguments weren’t finished. Nothing was run.' }
@@ -104,7 +106,7 @@ export function anthropicProvider(conn: Connection, fetch: typeof globalThis.fet
     return {
       message: { role: 'assistant', content },
       text: kept.map((p) => (p.block.type === 'text' ? p.block.text : '')).join(''),
-      calls, stop,
+      calls, stop: matchCalls(stop, calls.length),
       usage: { input: used.input + used.cacheRead + used.cacheWrite, output: used.output },
       ...(fellBack && stop !== 'refused' && model ? { fallbackModel: model } : {}),
     }

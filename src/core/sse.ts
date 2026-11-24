@@ -3,6 +3,7 @@ export interface SseEvent { event: string; data: string; id: string | null; retr
 
 export class SseParser {
   private buf = ''
+  private skipLf = false
   private data: string[] = []
   private event = ''
   private id: string | null = null
@@ -11,12 +12,17 @@ export class SseParser {
 
   /** Feeds a chunk; returns the events it completed. */
   push(chunk: string): SseEvent[] {
-    this.buf += chunk
+    // A CR ends its line at once; an LF that opens the next chunk is the rest of that CRLF.
+    const text = this.skipLf && chunk.startsWith('\n') ? chunk.slice(1) : chunk
+    if (chunk) this.skipLf = false
+    let at = 0
     const out: SseEvent[] = []
-    let nl: number
-    while ((nl = this.buf.search(/\r\n|\r|\n/)) >= 0) {
-      const line = this.buf.slice(0, nl)
-      this.buf = this.buf.slice(nl + (this.buf.startsWith('\r\n', nl) ? 2 : 1))
+    // Only the new text is searched: what's kept has no line end.
+    for (const m of text.matchAll(/\r\n|\r|\n/g)) {
+      const line = this.buf + text.slice(at, m.index)
+      this.buf = ''
+      at = m.index + m[0].length
+      if (m[0] === '\r' && at === text.length) this.skipLf = true
       if (line === '') {
         if (this.data.length) {
           out.push({ event: this.event || 'message', data: this.data.join('\n'), id: this.id, retry: this.retry })
@@ -35,6 +41,7 @@ export class SseParser {
       else if (field === 'id' && !value.includes('\0')) this.id = value
       else if (field === 'retry' && /^\d+$/.test(value)) this.retry = Number(value)
     }
+    this.buf += text.slice(at)
     return out
   }
 }

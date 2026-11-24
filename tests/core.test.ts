@@ -351,6 +351,16 @@ describe('network settings', () => {
 
 import { SseParser } from '../src/core/sse'
 describe('server-sent events', () => {
+  it('counts a CRLF split between chunks as one line end, and gives a CR-ended event at once', () => {
+    const all = 'event: a\r\ndata: 1\r\ndata: 2\r\n\r\nevent: b\r\ndata: 3\r\n\r\n'
+    for (let i = 1; i < all.length; i++) {
+      const p = new SseParser()
+      expect([...p.push(all.slice(0, i)), ...p.push(''), ...p.push(all.slice(i))].map((e) => [e.event, e.data]), String(i)).toEqual([['a', '1\n2'], ['b', '3']])
+    }
+    const p = new SseParser()
+    expect(p.push('data: x\r\r').map((e) => e.data)).toEqual(['x'])
+    expect(p.push('data: y\r\r').map((e) => e.data)).toEqual(['y'])
+  })
   it('parses events across chunk boundaries, with ids, types, comments and multi-line data', () => {
     const p = new SseParser()
     expect(p.push(': keep-alive\nda')).toEqual([])

@@ -1,6 +1,6 @@
 /** What the providers and nativeFetch share: plain failures that can't hold the key, retries before output, stopping. */
 import { needsKey, type Connection } from '../connections'
-import type { Call } from './types'
+import type { Call, Turn } from './types'
 
 /** A failure with a message for the person. Holds no request, response, headers or cause. */
 export class AssistantError extends Error {
@@ -94,9 +94,51 @@ export function runTurn<T>(signal: AbortSignal, attempt: (began: () => void) => 
   })
 }
 
+/** Servers disagree on the stop reason: what matters is whether there are calls. */
+export const matchCalls = (stop: Turn['stop'], calls: number): Turn['stop'] =>
+  (stop === 'end' && calls ? 'tools' : stop === 'tools' && !calls ? 'end' : stop)
+
+const ERROR_BYTES = 64 * 1024
+const LINE_BYTES = 4 * 1024 * 1024
+
+/** `fetch` with limits on what a server may make us hold: an error body is cut, an endless line is an error. */
+export function limited(conn: Connection, fetch: typeof globalThis.fetch): typeof globalThis.fetch {
+  return async (input, init) => {
+    const res = await fetch(input, init)
+    if (!res.body) return res
+    const reader = res.body.getReader()
+    let size = 0 // of the error body, or of the line so far
+    const body = new ReadableStream<Uint8Array>({
+      async pull(c) {
+        const { done, value } = await reader.read() // a failure fails this stream too
+        if (done) { c.close(); return }
+        if (!res.ok) {
+          const part = value.subarray(0, ERROR_BYTES - size)
+          size += part.length
+          c.enqueue(part)
+          if (size >= ERROR_BYTES) { c.close(); reader.cancel().catch(() => {}) }
+          return
+        }
+        const isEnd = (b: number) => b === 10 || b === 13
+        const first = value.findIndex(isEnd)
+        const longest = size + (first < 0 ? value.length : first)
+        size = first < 0 ? longest : value.length - 1 - Math.max(value.lastIndexOf(10), value.lastIndexOf(13))
+        if (Math.max(longest, size) > LINE_BYTES) {
+          c.error(new AssistantError(scrub(`${conn.name} sent an answer that’s too large to read.`, conn)))
+          reader.cancel().catch(() => {})
+          return
+        }
+        c.enqueue(value)
+      },
+      cancel: (why) => reader.cancel(why),
+    })
+    return new Response(body, { status: res.status, headers: res.headers })
+  }
+}
+
 /** A call from the model's argument text: one complete JSON object, or `invalid`. Never a partial object. */
 export function parseCall(id: string, name: string, json: string): Call {
-  if (!name) return { id, name, input: undefined, invalid: 'The call didn’t name a tool.' }
+  if (!name.trim()) return { id, name: 'unknown_tool', input: undefined, invalid: 'The call didn’t name a tool.' }
   let input: unknown
   try { input = json.trim() ? JSON.parse(json) : {} } catch { return { id, name, input: undefined, invalid: 'The arguments weren’t valid JSON. Nothing was run.' } }
   if (!input || typeof input !== 'object' || Array.isArray(input)) return { id, name, input: undefined, invalid: 'The arguments weren’t a JSON object. Nothing was run.' }

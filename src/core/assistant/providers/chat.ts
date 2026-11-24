@@ -1,7 +1,7 @@
 /** OpenAI and OpenAI-compatible servers: a small client over {baseUrl}/chat/completions. */
 import type { Connection } from '../connections'
 import { SseParser } from '../../sse'
-import { abortError, AssistantError, assertUsable, blockCall, cutShort, httpError, parseCall, runTurn, unreadable } from './shared'
+import { abortError, AssistantError, assertUsable, blockCall, cutShort, httpError, limited, matchCalls, parseCall, runTurn, unreadable } from './shared'
 import type { Provider, Turn, TurnRequest } from './types'
 
 interface Piece { index?: number; id?: string; function?: { name?: string; arguments?: unknown } }
@@ -10,30 +10,46 @@ interface Chunk {
   usage?: { prompt_tokens?: number; completion_tokens?: number } | null
   error?: unknown
 }
-interface Building { index?: number; id: string; name: string; args: string }
+interface Building { index?: number; id: string; name: string; args: string; unsure: boolean; unsureIfEmpty: boolean }
 
 const isComplete = (json: string) => { try { JSON.parse(json); return true } catch { return false } }
+const str = (v: unknown) => (typeof v === 'string' ? v : '')
 
-/** Adds one piece of a call. Servers differ: whole calls or pieces, ids or not, right indexes, none, or all 0. */
+/**
+ * Adds one piece of a call. Servers differ: whole calls or pieces, ids or not, right indexes, none, or all 0. Two calls must
+ * never become one, so a piece that could belong to either of two makes them unsure, and an unsure call doesn't run.
+ */
 function addPiece(calls: Building[], p: Piece): void {
-  const id = p.id ?? '', name = p.function?.name ?? '', raw = p.function?.arguments
+  const id = str(p.id), name = str(p.function?.name), raw = p.function?.arguments
   const args = raw == null ? '' : typeof raw === 'string' ? raw : JSON.stringify(raw)
-  let cur: Building | undefined
-  if (id) cur = calls.find((c) => c.id === id)
-  if (!cur && typeof p.index === 'number') cur = calls.filter((c) => c.index === p.index).at(-1)
-  else if (!cur && !id) cur = calls.at(-1)
-  const another = cur && ((id && cur.id && id !== cur.id) || (!id && name && args.trimStart().startsWith('{') && isComplete(cur.args)))
-  if (!cur || another) { calls.push({ index: p.index, id, name, args }); return }
+  const index = typeof p.index === 'number' ? p.index : undefined
+  const sameIndex = (c: Building) => index === undefined || c.index === undefined || c.index === index
+  const add = (unsureIfEmpty = false) => { calls.push({ index, id, name, args, unsureIfEmpty, unsure: false }) }
+
+  const byId = id ? calls.filter((c) => c.id === id && sameIndex(c)) : []
+  // no call has this id yet: it can only finish one that came without an id, at the same index
+  const at = byId.length ? byId : index !== undefined ? calls.filter((c) => c.index === index && !(id && c.id)) : id ? [] : calls
+  const cur = at.at(-1)
+  if (!cur || (name && cur.name && name !== cur.name)) { add(); return }
+  if (name && cur.name && !byId.length) { // the name again: another call, or the same one's next piece?
+    if (!cur.args) { cur.unsureIfEmpty = true; add(); return }
+    if (isComplete(cur.args) && (!args.trim() || args.trimStart().startsWith('{'))) { add(true); return }
+  }
+  if (args.trim() || (name && !cur.name)) {
+    const open = at.filter((c) => !c.unsureIfEmpty && !isComplete(c.args))
+    if (open.length > 1) for (const c of open) c.unsure = true
+  }
   cur.id ||= id
   cur.name ||= name
   cur.args += args
 }
 
-const STOPS: Record<string, Turn['stop']> = {
+const STOPS = new Map<string, Turn['stop']>(Object.entries({
   stop: 'end', eos_token: 'end', stop_sequence: 'end', tool_calls: 'tools', function_call: 'tools', length: 'length', content_filter: 'refused',
-}
+}))
 
-export function chatProvider(conn: Connection, fetch: typeof globalThis.fetch): Provider {
+export function chatProvider(conn: Connection, unlimited: typeof globalThis.fetch): Provider {
+  const fetch = limited(conn, unlimited)
   const base = conn.baseUrl.trim().replace(/\/+$/, '')
   const key = conn.key.trim()
   const headers = { accept: 'application/json, text/event-stream', 'content-type': 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) }
@@ -71,7 +87,7 @@ export function chatProvider(conn: Connection, fetch: typeof globalThis.fetch): 
       if (d.content) { began(); say(d.content) }
       if (d.refusal) { began(); refusal += d.refusal; say(d.refusal) }
       for (const p of d.tool_calls ?? []) { began(); addPiece(building, p) }
-      if (choice.finish_reason) finish = choice.finish_reason
+      if (typeof choice.finish_reason === 'string' && choice.finish_reason) finish = choice.finish_reason
     }
     try {
       while (!done) {
@@ -82,19 +98,20 @@ export function chatProvider(conn: Connection, fetch: typeof globalThis.fetch): 
       }
     } finally { reader.cancel().catch(() => {}) }
 
-    let stop = finish ? STOPS[finish] : undefined
-    if (!done || !finish) throw cutShort(conn)
+    let stop = STOPS.get(finish)
+    // a finish reason and a clean end is a whole answer: some servers leave [DONE] out
+    if (!finish) throw cutShort(conn)
     if (!stop) throw unreadable(conn)
     if (refusal) stop = 'refused'
-    else if (stop === 'end' && building.length) stop = 'tools'
-    else if (stop === 'tools' && !building.length) stop = 'end'
+    stop = matchCalls(stop, building.length)
 
     const prefix = globalThis.crypto.randomUUID().slice(0, 8) // only for servers that send no ids, or the same one twice
     const seen = new Set<string>()
     const calls = building.map((b, i) => {
       const id = b.id && !seen.has(b.id) ? b.id : `call_${prefix}_${i}`
       seen.add(id)
-      const c = parseCall(id, b.name, b.args)
+      let c = parseCall(id, b.name, b.args)
+      if (!c.invalid && (b.unsure || (b.unsureIfEmpty && !b.args.trim()))) c = { id, name: c.name, input: undefined, invalid: 'The server mixed up its calls. Nothing was run.' }
       return stop === 'length' || stop === 'refused' ? blockCall(c, stop) : c
     })
     const message = {

@@ -7,7 +7,7 @@ export interface Call { id: string; name: string; input: unknown; invalid?: stri
 export interface Turn {
   /**
    * The assistant's message as the provider wants it back: append it and never change it. After `refused` it may be
-   * empty or partial, so don't send it back.
+   * empty or partial, so don't send it back. After `length` it can be empty or end in thinking: check before sending it.
    */
   message: unknown
   text: string
