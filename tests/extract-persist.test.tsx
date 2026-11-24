@@ -118,7 +118,49 @@ it('an open collection editor doesn’t bring back variables a run changed meanw
   const useEngine = new InlineEngine()
   render(<Host />)
   await screen.findByLabelText('Collection name')
-  await act(async () => { await ws.saveCollectionVars({ [c.id]: [{ ...kv('token', 'new'), secret: true }] }) })
+  await act(async () => { await ws.keepVars({ collections: [{ id: c.id, before: c.variables, after: [{ ...c.variables[0], value: 'new' }] }] }) })
   await act(async () => { fireEvent.change(screen.getByLabelText('Collection name'), { target: { value: 'Shop 2' } }) })
   expect(await stored('collection')).toEqual(['new', true])
+})
+
+/** Runs something with its sends held back, lets `meanwhile` happen, then lets them through. */
+async function heldBack(start: () => Promise<unknown>, meanwhile: () => Promise<unknown>) {
+  let release!: () => void
+  const gate = new Promise<void>((r) => { release = r })
+  const send = transport.send
+  transport.send = async (p) => { await gate; return send(p) }
+  try {
+    let run!: Promise<unknown>
+    act(() => { run = start() })
+    await act(async () => { await meanwhile() })
+    await act(async () => { release(); await run })
+  } finally { transport.send = send }
+}
+
+describe('edits made while requests are on their way are kept', () => {
+  const edit = (h: { current: ReturnType<typeof useWorkspace> }) => async () => {
+    const e = h.current.environments[0], c = h.current.collections[0]
+    await h.current.updateEnvironment({ ...e, name: 'New env', variables: [...e.variables, kv('mine', 'm')] })
+    await h.current.updateCollection({ ...c, name: 'New col', variables: [...c.variables, kv('mine', 'm')] })
+    await h.current.setGlobals([...h.current.globals, kv('mine', 'm')])
+  }
+  const check = async (scope: Scope) => {
+    const e = (await db.listEnvironments())[0], c = (await db.listCollections())[0], g = await db.getGlobals()
+    expect([e.name, c.name]).toEqual(['New env', 'New col'])
+    for (const v of [e.variables, c.variables, g]) expect(v.find((x) => x.key === 'mine')?.value).toBe('m')
+    expect(await stored(scope)).toEqual(['new', true])
+  }
+  it.each(SCOPES)('Send (%s)', async (scope) => {
+    const { login } = await seed(scope); const h = await hook(); act(() => h.current.openRequest(login))
+    await heldBack(() => h.current.send(), edit(h)); await check(scope)
+  })
+  it.each(SCOPES)('a flow (%s)', async (scope) => {
+    const { login } = await seed(scope); const h = await hook()
+    await heldBack(() => h.current.runFlowNow(flowOf([login.id]), () => {}), edit(h)); await check(scope)
+  })
+  it.each(SCOPES)('an assistant’s run (%s)', async (scope) => {
+    await seed(scope); const h = await hook()
+    await heldBack(() => handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'run_collection', arguments: { folder: 'Shop' } } }, { ...mcpOptions(h.current), allowMethods: [] } as never), edit(h))
+    await check(scope)
+  })
 })

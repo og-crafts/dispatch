@@ -38,6 +38,8 @@ export interface SendOptions {
   proxyBypass?: string
   clientCerts?: ClientCert[]
   caCerts?: string[]
+  /** The cookie jar to use (see cookieKey); the one in use on screen when not given. */
+  jar?: string
 }
 
 /** The client certificate for a URL: exact host (and port) first, then the most specific *.domain match. */
@@ -64,6 +66,8 @@ export interface Transport {
   /** Whether it can reach any server (desktop) or only ones that allow this page (browser CORS). */
   readonly unrestricted: boolean
   send(p: PreparedRequest, opts: SendOptions): Promise<HttpResponse>
+  /** The cookie jar in use on screen, if it keeps cookies. */
+  currentJar?(): string
 }
 
 /** Raised with a friendly message the UI shows as-is. */
@@ -180,18 +184,23 @@ export const defaultTransport = (): Transport => (isDesktop() ? new DesktopTrans
  * Used on desktop and in runs/CLI. (In the browser, the browser itself owns cookies, so this isn't used there.)
  */
 export class CookieTransport implements Transport {
-  constructor(private readonly inner: Transport, readonly jar: CookieJar, private readonly enabled: () => boolean = () => true) {}
+  constructor(private readonly inner: Transport, private readonly jars: CookieJar | ((key?: string) => CookieJar), private readonly enabled: () => boolean = () => true, private readonly current?: () => string) {}
+  currentJar(): string { return this.current?.() ?? '' }
+  /** The jar with this key; a single jar serves every key (the CLI). */
+  jar(key?: string): CookieJar { return typeof this.jars === 'function' ? this.jars(key) : this.jars }
   get label() { return this.inner.label }
   get unrestricted() { return this.inner.unrestricted }
   async send(p: PreparedRequest, opts: SendOptions): Promise<HttpResponse> {
     const on = this.enabled()
+    // Picked once: switching environment while this is on its way mustn't move its cookies.
+    const jar = this.jar(opts.jar)
     let req = p
     if (on && !p.headers.some(([k]) => k.toLowerCase() === 'cookie')) {
-      const c = this.jar.header(p.url)
+      const c = jar.header(p.url)
       if (c) req = { ...p, headers: [...p.headers, ['Cookie', c]] }
     }
     const res = await this.inner.send(req, opts)
-    if (on) this.jar.store(p.url, res.headers)
+    if (on) jar.store(p.url, res.headers)
     return res
   }
 }

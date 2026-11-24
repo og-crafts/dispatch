@@ -1,3 +1,6 @@
+import type { Collection, Environment } from './types'
+import { spaceOf } from './types'
+
 export interface Cookie {
   name: string
   value: string
@@ -89,4 +92,37 @@ export class CookieJar {
   /** Called after every change (the app saves the jar). */
   onChange?: () => void
   private changed() { this.onChange?.() }
+}
+
+/** Each environment has its own cookies; without one, they belong to the workspace. */
+export const jarKey = (environmentId: string | null, workspaceId: string) => environmentId ?? `none:${workspaceId}`
+
+/** The jar a request belongs to, or the one in use when its run started. */
+export const cookieKey = (ctx: { environment: Environment | null; collection: Collection | null; jar?: string }): string | undefined =>
+  ctx.environment ? ctx.environment.id : ctx.collection ? jarKey(null, spaceOf(ctx.collection)) : ctx.jar
+
+/** All the cookie jars, by key. */
+export class CookieJars {
+  private jars = new Map<string, CookieJar>()
+
+  get(key: string): CookieJar {
+    let j = this.jars.get(key)
+    if (!j) {
+      j = new CookieJar()
+      const made = j
+      // A response can still land in a jar that was deleted meanwhile; that changes nothing any more.
+      j.onChange = () => { if (this.jars.get(key) === made) this.onChange?.() }
+      this.jars.set(key, j)
+    }
+    return j
+  }
+  delete(key: string) { if (this.jars.delete(key)) this.onChange?.() }
+  load(saved: Record<string, StoredCookie[]>) {
+    for (const [k, list] of Object.entries(saved)) if (Array.isArray(list)) this.get(k).load(list)
+  }
+  entries(): Record<string, StoredCookie[]> {
+    return Object.fromEntries([...this.jars].map(([k, j]) => [k, j.entries()] as const).filter(([, l]) => l.length))
+  }
+  /** Called after every change in any jar. */
+  onChange?: () => void
 }

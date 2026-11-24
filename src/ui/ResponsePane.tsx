@@ -193,7 +193,7 @@ export function ResponsePane({ ws, notify, saveFile, onShare, onShowScript }: { 
         </>}
         {res && current === 'headers' && (
           <table className="kv readonly" aria-label="Response headers">
-            <tbody>{res.headers.map(([k, v], i) => <tr key={i} tabIndex={0} onContextMenu={(e) => extractMenu(e, v, v ? () => headerSource(k, v) : null, 'This header is empty')}><th className="mono">{k}</th><td className="mono">{v}</td></tr>)}</tbody>
+            <tbody>{res.headers.map(([k, v], i) => <tr key={i} tabIndex={0} onContextMenu={(e) => extractMenu(e, v, v ? () => headerSource(k, v, res.headers.slice(0, i)) : null, 'This header is empty')}><th className="mono">{k}</th><td className="mono">{v}</td></tr>)}</tbody>
           </table>
         )}
         {res && current === 'cookies' && (

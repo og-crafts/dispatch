@@ -1,7 +1,6 @@
 import { useEffect, useReducer, useState } from 'react'
 import type { ClientCert, Look } from '../core/types'
 import { ASSISTANT_SPACE, uid } from '../core/types'
-import { CookieTransport } from '../core/transport'
 import type { StoredCookie } from '../core/cookies'
 import type { WorkspaceApi } from './useWorkspace'
 import { type McpHostStatus, mcpMethods, newMcpToken } from './mcpHost'
@@ -222,29 +221,31 @@ function McpHostSettings({ ws, notify, status }: { ws: WorkspaceApi; notify: (m:
 export function CookiesView({ ws, notify }: { ws: WorkspaceApi; notify: (m: string) => void }) {
   const [, tick] = useReducer((x: number) => x + 1, 0)
   const [q, setQ] = useState('')
-  const jar = ws.transport instanceof CookieTransport ? ws.transport.jar : null
+  const jar = ws.cookieJar()
+  const jars = ws.cookieJars
   useEffect(() => {
-    if (!jar) return
-    const prev = jar.onChange
-    jar.onChange = () => { prev?.(); tick() }
-    return () => { jar.onChange = prev }
-  }, [jar])
+    const prev = jars.onChange
+    const mine = () => { prev?.(); tick() }
+    jars.onChange = mine
+    return () => { if (jars.onChange === mine) jars.onChange = prev }
+  }, [jars])
   if (!jar) return <section className="editor" aria-label="Cookies"><p className="eyebrow">Cookies</p><p className="muted">In the browser, cookies belong to the browser. The desktop app keeps its own cookie jar you can manage here.</p></section>
   const list = jar.entries().filter((c) => !q || `${c.host} ${c.name} ${c.value}`.toLowerCase().includes(q.toLowerCase())).sort((a, b) => a.host.localeCompare(b.host) || a.name.localeCompare(b.name))
+  const owner = ws.environment?.name ?? 'No environment'
   const add = () => jar.set({ host: 'example.com', name: 'name', value: 'value', path: '/', expiresAt: null })
   return (
     <section className="editor wide" aria-label="Cookies">
       <p className="eyebrow">Cookies</p>
-      <h1 className="titleInput">Cookie jar</h1>
-      <p className="muted small">Cookies the servers you call have set. They’re sent back on later requests to the same site, kept encrypted on this device.</p>
+      <h1 className="titleInput">Cookies for {owner}</h1>
+      <p className="muted small">Cookies the servers you call have set. They’re sent back on later requests to the same site, kept encrypted on this device. Each environment keeps its own cookies; switch environment at the top to see another’s.</p>
       <div className="actions">
         <input type="search" placeholder="Filter" aria-label="Filter cookies" value={q} onChange={(e) => setQ(e.target.value)} />
         <button type="button" className="btn small" onClick={add}>+ Add cookie</button>
-        <button type="button" className="btn small danger" disabled={!jar.entries().length} onClick={() => { jar.clear(); notify('All cookies cleared.') }}>Clear all</button>
+        <button type="button" className="btn small danger" disabled={!jar.entries().length} onClick={() => { jar.clear(); notify(`All cookies for ${owner} cleared.`) }}>Clear all</button>
       </div>
       <table className="resultTable" aria-label="Cookies">
         <thead><tr><th>Domain</th><th>Name</th><th>Value</th><th>Path</th><th>Expires</th><th /></tr></thead>
-        <tbody>
+        <tbody key={ws.environment?.id ?? ws.activeSpaceId}>
           {list.map((c: StoredCookie) => {
             const upd = (patch: Partial<StoredCookie>) => { jar.remove(c.host, c.name, c.path); jar.set({ ...c, ...patch }) }
             return (

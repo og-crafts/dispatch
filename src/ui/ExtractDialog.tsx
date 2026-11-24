@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Scope, Source } from '../core/extract'
+import { type Scope, type Source, rowFor } from '../core/extract'
 import { isSecretName } from '../core/share'
 import type { KV } from '../core/types'
 import { useModal } from './PrivacyDialogs'
@@ -22,9 +22,9 @@ export function ExtractDialog({ source, targets, onExtract, onClose }: {
   const [ticked, setTicked] = useState<boolean | null>(null)
   const [busy, setBusy] = useState(false)
   const key = name.trim()
-  const row = key ? targets.find((t) => t.scope === scope)!.rows.filter((r) => r.key.trim() === key).pop() : undefined
+  const row = key ? rowFor(targets.find((t) => t.scope === scope)!.rows, key) : undefined
   const secret = ticked ?? (row ? !!row.secret : isSecretName(key) || isSecretName(source.expr))
-  const ok = !!key && !/[{}]/.test(key)
+  const ok = !!key && !/[{}\s]/.test(key)
   const close = () => { ref.current?.close?.(); onClose() }
   const submit = async () => {
     if (!ok || busy) return
@@ -42,7 +42,7 @@ export function ExtractDialog({ source, targets, onExtract, onClose }: {
         <label className="field"><span>Name</span>
           <input className="mono" value={name} aria-label="Name" autoFocus spellCheck={false} autoComplete="off" onChange={(e) => setName(e.target.value)} /></label>
         {row && <p className="small muted">Replaces the current value{row.secret || secret ? '' : <>: <code>{short(row.value) || '(empty)'}</code></>}.</p>}
-        {!!key && !ok && <p className="small warnLine">A name can’t contain braces.</p>}
+        {!!key && !ok && <p className="small warnLine">A name can’t contain spaces or braces.</p>}
         <label className="field"><span>Save to</span>
           <select aria-label="Save to" value={scope} onChange={(e) => setScope(e.target.value as Scope)}>
             {targets.map((t) => <option key={t.scope} value={t.scope} disabled={t.disabled}>{t.label}</option>)}

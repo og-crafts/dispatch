@@ -106,6 +106,8 @@ export async function runCollection(cfg: RunConfig, transport: Transport, pipeli
   const sleep = hooks.sleep ?? defaultSleep
   const iterations = cfg.data?.length && !cfg.iterations ? cfg.data.length : Math.max(1, cfg.iterations)
   let environment = cfg.environment ? structuredClone(cfg.environment) : null
+  const jar = transport.currentJar?.()
+  const changed = new Set<string>()
   const collections = new Map(cfg.collections.map((c) => [c.id, structuredClone(c)]))
   let globals = structuredClone(cfg.globals)
   const results: RunResult[] = []
@@ -124,13 +126,14 @@ export async function runCollection(cfg: RunConfig, transport: Transport, pipeli
       const item = cfg.items[i]
       const ctx: RunContext = {
         collection: item.request.collectionId ? collections.get(item.request.collectionId) ?? null : null,
-        folders: cfg.folders, environment, globals, data, locals,
+        folders: cfg.folders, environment, globals, data, locals, jar,
       }
       const it0 = it
       const pl: Pipeline = { ...pipeline }
       const x = await execute(item.request, ctx, transport, sendOptions(item.request, cfg.settings, hooks.signal), pl)
       // Carry script changes forward.
       if (x.changes.environment && environment) environment = { ...environment, variables: x.changes.environment }
+      if (x.changes.collection && ctx.collection) changed.add(ctx.collection.id)
       if (x.changes.collection && ctx.collection) collections.set(ctx.collection.id, { ...ctx.collection, variables: x.changes.collection })
       if (x.changes.globals) globals = x.changes.globals
       const r: RunResult = {
@@ -162,7 +165,7 @@ export async function runCollection(cfg: RunConfig, transport: Transport, pipeli
     avgTimeMs: sent.length ? Math.round(sent.reduce((n, r) => n + r.timeMs, 0) / sent.length) : 0,
     stopped, results,
     finalEnvironment: environment?.variables ?? null,
-    finalCollections: Object.fromEntries([...collections].map(([id, c]) => [id, c.variables])),
+    finalCollections: Object.fromEntries([...collections].filter(([id]) => changed.has(id)).map(([id, c]) => [id, c.variables])),
     finalGlobals: globals,
   }
 }

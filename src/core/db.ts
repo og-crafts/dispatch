@@ -1,3 +1,4 @@
+import type { StoredCookie } from './cookies'
 import type { Collection, Environment, Folder, HistoryEntry, KV, RequestDef, Settings } from './types'
 import { defaultSettings, normalizeCollection, normalizeFolder, normalizeRequest } from './types'
 import { resetVaultForTests, secretsOf, seal, unseal, vaultKey } from './vault'
@@ -143,13 +144,28 @@ export async function putSettings(s: Settings) {
   await put('meta', { ...s, mcpHostToken: s.mcpHostToken ? await f(s.mcpHostToken) : '', clientCerts: await Promise.all(s.clientCerts.map(async (c) => ({ ...c, key: await f(c.key) }))) }, 'settings')
 }
 
-/** The cookie jar (desktop), sealed as a whole: cookies are often session secrets. */
-export async function getCookies(): Promise<unknown[]> {
-  const sealedJar = await getMeta<string>('cookies')
-  if (!sealedJar) return []
-  try { return JSON.parse(await (await unsealer())(sealedJar)) } catch { return [] }
+/**
+ * The cookie jars (desktop), by environment, sealed as a whole: cookies are often session secrets. Versions up to 0.1
+ * kept one list for the whole app; it becomes the jar named by `legacyKey`.
+ */
+export async function getCookieJars(legacyKey: string): Promise<Record<string, StoredCookie[]>> {
+  const read = async (key: string): Promise<unknown> => {
+    const sealed = await getMeta<string>(key)
+    if (!sealed) return undefined
+    try { return JSON.parse(await (await unsealer())(sealed)) } catch { return null }
+  }
+  const jars = await read('cookieJars')
+  if (jars !== undefined) return jars && typeof jars === 'object' ? jars as Record<string, StoredCookie[]> : {}
+  const old = await read('cookies')
+  return Array.isArray(old) && old.length ? { [legacyKey]: old as StoredCookie[] } : {}
 }
-export async function putCookies(list: unknown[]) { await put('meta', await (await sealer())(JSON.stringify(list)), 'cookies') }
+/** The old list stays a list (an empty one), so going back to an older version still starts. */
+export async function putCookieJars(jars: Record<string, StoredCookie[]>) {
+  const f = await sealer()
+  await put('meta', await f(JSON.stringify(jars)), 'cookieJars')
+  if (await getMeta('cookies')) await put('meta', await f('[]'), 'cookies')
+}
+export async function putLegacyCookiesForTests(list: StoredCookie[]) { await put('meta', await (await sealer())(JSON.stringify(list)), 'cookies') }
 
 /** Writes a whole workspace (imports) in one transaction. */
 export async function putMany(plain: { collections?: Collection[]; folders?: Folder[]; requests?: RequestDef[]; environments?: Environment[]; flows?: Flow[] }) {

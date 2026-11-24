@@ -3,6 +3,7 @@ import { METHODS } from './types'
 import type { Compile, PmRequestData, PmResponseData, ScriptHost, ScriptInput, ScriptOutput, Vars } from './scripts'
 import { SendError, type SendOptions, type Transport } from './transport'
 import { type Execution, type Pipeline, type RunContext, folderChain } from './runtime'
+import { cookieKey } from './cookies'
 import { paramsFromUrl, withScheme } from './url'
 
 export interface ScriptEngine { run(input: ScriptInput, host: ScriptHost): Promise<ScriptOutput> }
@@ -46,6 +47,19 @@ export function applyVars(rows: KV[], next: Vars): KV[] {
   for (const [k, v] of Object.entries(next)) if (!seen.has(k)) out.push({ id: `v-${k}-${Math.random().toString(36).slice(2, 8)}`, key: k, value: v, enabled: true })
   return out
 }
+/** Puts what a run changed (from `before` to `after`) onto the rows as they are now, which may have been edited meanwhile. */
+export function mergeVars(before: KV[], after: KV[], now: KV[]): KV[] {
+  let out = now
+  for (const a of after) {
+    const b = before.find((x) => x.id === a.id)
+    if (b && b.value === a.value) continue
+    const same = out.find((x) => x.id === a.id) ?? (b ? undefined : out.filter((x) => x.enabled && x.key.trim() === a.key.trim()).pop())
+    if (same) out = out.map((x) => (x === same ? { ...x, value: a.value, ...(a.secret && !b ? { secret: true } : {}) } : x))
+    else if (!b) out = [...out, a]
+  }
+  const gone = before.filter((b) => !after.some((a) => a.id === b.id))
+  return gone.length ? out.filter((x) => !gone.some((b) => b.id === x.id)) : out
+}
 const sameVars = (a: Vars, b: Vars) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort())
 
 function pmRequestOf(req: RequestDef): PmRequestData {
@@ -86,17 +100,17 @@ export interface ScriptPipelineOptions {
 
 /** Pipeline hooks that run collection → folders → request scripts before sending and after the response. */
 export function scriptPipeline(o: ScriptPipelineOptions): Pipeline {
-  const host: ScriptHost = {
+  const hostFor = (ctx: RunContext): ScriptHost => ({
     async sendRequest(r: PmRequestData): Promise<PmResponseData> {
       const method = (METHODS.includes(r.method.toUpperCase() as Method) ? r.method.toUpperCase() : 'GET') as Method
       const p: PreparedRequest = {
         method, url: withScheme(r.url), headers: r.headers.filter((h) => !h.disabled).map((h) => [h.key, h.value]),
         body: r.body.mode === 'none' ? null : r.body.raw, unresolved: [],
       }
-      const res = await o.transport.send(p, o.sendOptions())
+      const res = await o.transport.send(p, { ...o.sendOptions(), jar: cookieKey(ctx) })
       return { code: res.status, status: res.statusText, headers: res.headers, body: res.body, responseTime: res.timeMs, responseSize: res.size }
     },
-  }
+  })
 
   const scriptsFor = (req: RequestDef, ctx: RunContext, phase: 'pre' | 'post') => {
     const folders = folderChain(ctx.folders, req.folderId).reverse() // outermost first
@@ -119,6 +133,7 @@ export function scriptPipeline(o: ScriptPipelineOptions): Pipeline {
     let vars = start
     let request = pmReq
     let skip = false
+    const host = hostFor(ctx)
     const it = o.iteration?.() ?? { iteration: 0, iterationCount: 1 }
     for (const s of scripts) {
       const r = await o.engine.run({ phase, source: s.source, code: s.code, request, response, vars, info: { requestName: req.name, requestId: req.id, ...it } }, host)
