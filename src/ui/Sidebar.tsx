@@ -8,6 +8,7 @@ import { DND_TAB, type DragItem, carries, putItems, wantsCopy } from './dnd'
 import { Icon, type IconName } from './Icons'
 import { rowMenuItems, useContextMenu } from './ContextMenu'
 import type { ShareTarget } from '../core/share'
+import { InlineName } from './InlineName'
 
 type Tab = 'collections' | 'flows' | 'history' | 'environments'
 
@@ -21,6 +22,8 @@ export interface SidebarDialogs {
 }
 
 interface Props { ws: WorkspaceApi; dialogs: SidebarDialogs; onExportCollection: (c: Collection) => void; onExportPostman?: (c: Collection) => void; onShare?: (t: ShareTarget) => void }
+
+type RenameKind = 'request' | 'folder' | 'collection' | 'flow' | 'environment'
 
 const SECTIONS: { id: Tab; label: string; icon: IconName }[] = [
   { id: 'collections', label: 'Collections', icon: 'collections' },
@@ -87,6 +90,26 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman, onSh
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+  const [renaming, setRenaming] = useState<{ kind: RenameKind; id: string } | null>(null)
+  /** The row to focus again after a rename that ended from the keyboard. */
+  const refocus = useRef<string | null>(null)
+  const aside = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (renaming || !refocus.current) return
+    const id = refocus.current; refocus.current = null
+    aside.current?.querySelector<HTMLElement>(`[data-row="${CSS.escape(id)}"]`)?.focus()
+  }, [renaming])
+  const isRenaming = (kind: RenameKind, id: string) => renaming?.kind === kind && renaming.id === id
+  /** A row's name button: double-click or F2 renames in place. */
+  const rowProps = (kind: RenameKind, id: string) => ({
+    'data-row': id,
+    onDoubleClick: (e: React.MouseEvent) => { if (!e.ctrlKey && !e.metaKey) setRenaming({ kind, id }) },
+    onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'F2') { e.preventDefault(); setRenaming({ kind, id }) } },
+  })
+  const nameField = (id: string, name: string, save: (name: string) => Promise<unknown>) => {
+    const end = (byKey: boolean) => { if (byKey) refocus.current = id; setRenaming(null) }
+    return <InlineName value={name} label={`Rename ${name}`} onCancel={end} onSave={(n, byKey) => { end(byKey); void save(n) }} />
+  }
   const toggleSelect = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
   /** What's being dragged: the selection when the dragged request is part of it. */
   const draggedFrom = (d: DragItem | null): DragItem[] => !d ? [] : d.kind === 'request' && selected.has(d.id) ? [...selected].map((id) => ({ kind: 'request' as const, id })) : [d]
@@ -162,16 +185,16 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman, onSh
 
   const reqRow = (r: RequestDef) => (
     <li key={r.id} className={`row ${ws.draft.id === r.id && ws.view.kind === 'request' ? 'on' : ''} ${selected.has(r.id) ? 'selected' : ''} ${dropAt === `before:${r.id}` ? 'dropBefore' : ''}`}
-      draggable={!!r.collectionId} onDragStart={(e) => startDrag(e, { kind: 'request', id: r.id }, r.name)} onDragEnd={() => { setDrag(null); setDropAt(null); setCopying(false) }}
+      draggable={!!r.collectionId && !isRenaming('request', r.id)} onDragStart={(e) => startDrag(e, { kind: 'request', id: r.id }, r.name)} onDragEnd={() => { setDrag(null); setDropAt(null); setCopying(false) }}
       {...(r.collectionId ? dropProps(`before:${r.id}`, { collectionId: r.collectionId, folderId: r.folderId }, r.id) : {})}>
-      <button type="button" className="rowMain" title={`${r.name}\n${r.url}`} aria-pressed={selected.has(r.id) || undefined}
+      {isRenaming('request', r.id) ? nameField(r.id, r.name, (name) => ws.renameRequest(r, name)) : <button type="button" {...rowProps('request', r.id)} className="rowMain" title={`${r.name}\n${r.url}`} aria-pressed={selected.has(r.id) || undefined}
         onClick={(e) => { if (e.ctrlKey || e.metaKey) toggleSelect(r.id); else { setSelected(new Set()); ws.openRequest(r) } }}>
         {r.protocol === 'http' ? <Method m={r.method} /> : <span className="mtag m-proto">{({ ws: 'WS', mqtt: 'MQTT', grpc: 'gRPC', sse: 'SSE', socketio: 'SIO', mcp: 'MCP', browser: 'WEB' } as Record<string, string>)[r.protocol]}</span>}<span className="rowName">{r.name}</span>
         {r.handoff && <span className="pill handoff" title={`Handed to the AI assistant${r.handoff.note ? `: ${r.handoff.note}` : ''}`}>to review</span>}
         {openTabIds.has(r.id) && ws.draft.id !== r.id && <span className="openDot" aria-label="open in a tab" />}
-      </button>
+      </button>}
       <Menu label={`More for ${r.name}`} items={[
-        ['Rename', async () => { const name = await ask('Rename request', r.name); if (name) await ws.renameRequest(r, name) }],
+        ['Rename', () => setRenaming({ kind: 'request', id: r.id })],
         ['Duplicate', async () => ws.openRequest(await ws.duplicateRequest(r))],
         ['Move to…', async () => { const to = await pickPlace(`Move “${r.name}”`, r); if (to) await ws.moveRequest(r, to.collectionId, to.folderId) }],
         ...(r.collectionId ? moveItems('request', r.id, r.collectionId, r.folderId ?? null) : []),
@@ -200,10 +223,10 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman, onSh
     return (
       <li key={fo.id} className={`folder ${dropAt === `before:${fo.id}` ? 'dropBefore' : ''}`} {...dropProps(`before:${fo.id}`, { collectionId: c.id, folderId: fo.parentId }, fo.id)}>
         <div className={`row ${ws.view.kind === 'folder' && ws.view.id === fo.id ? 'on' : ''} ${dropAt === `into:${fo.id}` ? 'dropInto' : ''}`}
-          draggable onDragStart={(e) => { e.stopPropagation(); startDrag(e, { kind: 'folder', id: fo.id }, fo.name) }} onDragEnd={() => { setDrag(null); setDropAt(null); setCopying(false) }}
+          draggable={!isRenaming('folder', fo.id)} onDragStart={(e) => { e.stopPropagation(); startDrag(e, { kind: 'folder', id: fo.id }, fo.name) }} onDragEnd={() => { setDrag(null); setDropAt(null); setCopying(false) }}
           {...dropProps(`into:${fo.id}`, { collectionId: c.id, folderId: fo.id }, null)}>
           <button type="button" className="caret" aria-expanded={open} aria-label={`${open ? 'Collapse' : 'Expand'} ${fo.name}`} onClick={() => toggle(fo.id)}>{open ? '▾' : '▸'}</button>
-          <button type="button" className="rowMain folderName" title={fo.name} onClick={() => ws.setView({ kind: 'folder', id: fo.id })}><span className="folderIcon" aria-hidden>▤</span><span className="rowName">{fo.name}</span></button>
+          {isRenaming('folder', fo.id) ? nameField(fo.id, fo.name, (name) => ws.updateFolder({ ...fo, name })) : <button type="button" {...rowProps('folder', fo.id)} className="rowMain folderName" title={fo.name} onClick={() => ws.setView({ kind: 'folder', id: fo.id })}><span className="folderIcon" aria-hidden>▤</span><span className="rowName">{fo.name}</span></button>}
           <Menu label={`More for ${fo.name}`} items={[
             ['New request', () => ws.startNew(c.id, fo.id)],
             ['New subfolder', async () => { const n = await ask('New folder'); if (n) await ws.addFolder(c.id, n, fo.id) }],
@@ -211,7 +234,7 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman, onSh
             ...(onShare ? [['Share as HTML…', () => onShare({ kind: 'folder', folderId: fo.id })] as [string, () => void]] : []),
             ...moveItems('folder', fo.id, c.id, fo.parentId),
             ['Sort by name', () => void ws.sortByName(c.id, fo.id)],
-            ['Rename', async () => { const n = await ask('Rename folder', fo.name); if (n) await ws.updateFolder({ ...fo, name: n }) }],
+            ['Rename', () => setRenaming({ kind: 'folder', id: fo.id })],
             ['Delete', async () => { if (await confirm(`Delete folder “${fo.name}” and everything in it?`)) await ws.removeFolder(fo.id) }, 'danger'],
           ]} />
         </div>
@@ -223,7 +246,7 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman, onSh
   const loose = ws.requests.filter((r) => !r.collectionId && match(r)).sort(byName)
 
   return (
-    <aside className={`side ${collapsed ? 'collapsed' : ''}`} aria-label="Library" style={{ ['--side-w' as string]: `${width}px` }} onContextMenu={rowMenu}>
+    <aside ref={aside} className={`side ${collapsed ? 'collapsed' : ''}`} aria-label="Library" style={{ ['--side-w' as string]: `${width}px` }} onContextMenu={rowMenu}>
       <nav className="rail" aria-label="Sections">
         <button type="button" className={`railBtn ${ws.view.kind === 'home' ? 'on' : ''}`} aria-current={ws.view.kind === 'home' ? 'page' : undefined} onClick={() => ws.setView({ kind: 'home' })}>
           <Icon name="home" /><span>Home</span>
@@ -278,7 +301,7 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman, onSh
               <li key={c.id} className="folder">
                 <div className={`row ${ws.view.kind === 'collection' && ws.view.id === c.id ? 'on' : ''} ${dropAt === `into:${c.id}` ? 'dropInto' : ''}`} {...dropProps(`into:${c.id}`, { collectionId: c.id, folderId: null }, null)}>
                   <button type="button" className="caret" aria-expanded={open} aria-label={`${open ? 'Collapse' : 'Expand'} ${c.name}`} onClick={() => toggle(c.id)}>{open ? '▾' : '▸'}</button>
-                  <button type="button" className="rowMain folderName" title={c.name} onClick={() => ws.setView({ kind: 'collection', id: c.id })}><span className="rowTitle">{c.name}</span></button>
+                  {isRenaming('collection', c.id) ? nameField(c.id, c.name, (name) => ws.updateCollection({ ...c, name })) : <button type="button" {...rowProps('collection', c.id)} className="rowMain folderName" title={c.name} onClick={() => ws.setView({ kind: 'collection', id: c.id })}><span className="rowTitle">{c.name}</span></button>}
                   <button type="button" className="icon rowAdd" aria-label={`New request in ${c.name}`} title="New request here" onClick={() => ws.startNew(c.id)}>+</button>
                   <Menu label={`More for ${c.name}`} items={[
                     ['New request', () => ws.startNew(c.id)],
@@ -287,7 +310,7 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman, onSh
                     ['Sort by name', () => void ws.sortByName(c.id, null)],
                     ['View docs', () => ws.setView({ kind: 'docs', collectionId: c.id })],
                     ['Mock server…', () => ws.setView({ kind: 'mock', collectionId: c.id })],
-                    ['Rename', async () => { const n = await ask('Rename collection', c.name); if (n) await ws.updateCollection({ ...c, name: n }) }],
+                    ['Rename', () => setRenaming({ kind: 'collection', id: c.id })],
                     ['Export collection', () => onExportCollection(c)],
                     ...(onShare ? [['Share as HTML…', () => onShare({ kind: 'collection', collectionId: c.id })] as [string, () => void]] : []),
                     ...ws.spaces.filter((x) => x.id !== ws.activeSpaceId).map((x) => [`Move to “${x.name}”`, () => void ws.moveToSpace('collection', c.id, x.id)] as [string, () => void]),
@@ -336,11 +359,11 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman, onSh
         <ul className="tree">
           {ws.flows.slice().sort((a, b) => a.name.localeCompare(b.name)).map((f) => (
             <li key={f.id} className={`row ${ws.view.kind === 'flow' && ws.view.id === f.id ? 'on' : ''}`}>
-              <button type="button" className="rowMain" onClick={() => ws.setView({ kind: 'flow', id: f.id })}>
+              {isRenaming('flow', f.id) ? nameField(f.id, f.name, (name) => ws.updateFlow({ ...f, name })) : <button type="button" {...rowProps('flow', f.id)} className="rowMain" onClick={() => ws.setView({ kind: 'flow', id: f.id })}>
                 <span className="rowName">{f.name}</span><span className="muted tiny">{f.nodes.length} block{f.nodes.length === 1 ? '' : 's'}</span>
-              </button>
+              </button>}
               <Menu label={`More for ${f.name}`} items={[
-                ['Rename', async () => { const n = await ask('Rename flow', f.name); if (n) await ws.updateFlow({ ...f, name: n }) }],
+                ['Rename', () => setRenaming({ kind: 'flow', id: f.id })],
                 ['Duplicate', async () => { const c = await ws.duplicateFlow(f); ws.setView({ kind: 'flow', id: c.id }) }],
                 ...ws.spaces.filter((x) => x.id !== ws.activeSpaceId).map((x) => [`Move to “${x.name}”`, () => void ws.updateFlow({ ...f, workspaceId: x.id })] as [string, () => void]),
                 ['Delete', async () => { if (await confirm(`Delete flow “${f.name}”? You can undo this right after.`)) await ws.removeFlow(f.id) }, 'danger'],
@@ -366,14 +389,14 @@ export function Sidebar({ ws, dialogs, onExportCollection, onExportPostman, onSh
           </li>
           {ws.environments.map((e) => (
             <li key={e.id} className={`row ${ws.view.kind === 'environment' && ws.view.id === e.id ? 'on' : ''}`}>
-              <button type="button" className="rowMain" onClick={() => ws.setView({ kind: 'environment', id: e.id })}>
+              {isRenaming('environment', e.id) ? nameField(e.id, e.name, (name) => ws.updateEnvironment({ ...e, name })) : <button type="button" {...rowProps('environment', e.id)} className="rowMain" onClick={() => ws.setView({ kind: 'environment', id: e.id })}>
                 <span className="rowName">{e.name}</span>
                 {ws.settings.activeEnvId === e.id && <span className="pill">active</span>}
-              </button>
+              </button>}
               <Menu label={`More for ${e.name}`} items={[
                 ['Use', () => ws.setSettings({ activeEnvId: e.id })],
                 ['Duplicate', async () => { const c = await ws.duplicateEnvironment(e); ws.setView({ kind: 'environment', id: c.id }) }],
-                ['Rename', async () => { const n = await ask('Rename environment', e.name); if (n) await ws.updateEnvironment({ ...e, name: n }) }],
+                ['Rename', () => setRenaming({ kind: 'environment', id: e.id })],
                 ...ws.spaces.filter((x) => x.id !== ws.activeSpaceId).map((x) => [`Move to “${x.name}”`, () => void ws.moveToSpace('environment', e.id, x.id)] as [string, () => void]),
                 ['Delete', async () => { if (await confirm(`Delete environment “${e.name}”? You can undo this right after.`)) await ws.removeEnvironment(e.id) }, 'danger'],
               ]} />

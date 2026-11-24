@@ -18,9 +18,11 @@ import { saveTextFile } from './files'
  * Edits save as you type, like settings, so there's no separate Save step to forget. Local state keeps typing
  * smooth; every change is also written straight away, so switching away never loses the last keystroke.
  */
-function useSaved<T extends { id: string }>(value: T, save: (v: T) => Promise<void>) {
+function useSaved<T extends { id: string; name: string }>(value: T, save: (v: T) => Promise<void>) {
   const [local, setLocal] = useState(value)
   useEffect(() => setLocal(value), [value.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Renamed elsewhere (the sidebar): the next edit here must not bring the old name back.
+  useEffect(() => setLocal((l) => (l.name === value.name ? l : { ...l, name: value.name })), [value.name])
   return [local, (next: T) => { setLocal(next); void save(next) }] as const
 }
 

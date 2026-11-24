@@ -102,6 +102,7 @@ button.icon:hover { color: var(--ink); background: var(--primary-soft); }
 .row.on { background: var(--primary-soft); }
 .row.label { padding: 8px 6px 4px; }
 .rowMain { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; border: 0; background: none; color: inherit; text-align: left; padding: 6px 6px; cursor: pointer; font: inherit; }
+.inlineName { flex: 1; min-width: 0; margin: 1px 0; padding: 4px 5px; font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--primary); border-radius: 6px; }
 .rowName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .folderName { font-weight: 650; }
 .caret { border: 0; background: none; color: var(--muted); cursor: pointer; width: 24px; padding: 4px 0; }
