@@ -317,3 +317,22 @@ export async function getMcpSignIns(): Promise<McpSignIn[]> {
   try { return JSON.parse(await (await unsealer())(sealedList)) } catch { return [] }
 }
 export async function putMcpSignIns(list: McpSignIn[]) { await put('meta', await (await sealer())(JSON.stringify(list)), 'mcpSignIns') }
+
+// ---------- assistant connections (keys sealed like other secrets, never exported) ----------
+import { normalizeConnection, type Connection } from './assistant/connections'
+const CONNECTIONS = 'assistantConnections'
+export async function getConnections(): Promise<Connection[]> {
+  const stored = await getMeta<Connection[]>(CONNECTIONS)
+  if (!Array.isArray(stored)) return []
+  const f = await unsealer()
+  return Promise.all(stored.map(async (c) => {
+    const key = typeof c.key === 'string' ? await f(c.key) : ''
+    // A saved key that won't open (another device's key) reads as '' and is flagged; it is never sent blank as if set.
+    const { keyLost: _drop, ...rest } = c
+    return normalizeConnection({ ...rest, key, ...(c.key && !key ? { keyLost: true as const } : {}) })
+  }))
+}
+export async function putConnections(list: Connection[]) {
+  const f = await sealer()
+  await put('meta', await Promise.all(list.map(async ({ keyLost: _drop, ...c }) => ({ ...c, key: await f(c.key) }))), CONNECTIONS)
+}
