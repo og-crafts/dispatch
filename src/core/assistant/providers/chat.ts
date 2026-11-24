@@ -151,6 +151,7 @@ export function chatProvider(conn: Connection, unlimited: typeof globalThis.fetc
   }
 
   return {
+    connectionId: conn.id,
     turn: (t) => runTurn(t.signal, async (began) => {
       assertUsable(conn)
       try { return await attempt(t, began) } catch (e) {

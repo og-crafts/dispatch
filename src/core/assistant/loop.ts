@@ -51,7 +51,11 @@ function refusal(conn: Connection): string | null {
 /** The person's own words, as typed, without connection keys. */
 function withoutKeys(message: unknown, keys: string[]): unknown {
   const m = message as { role?: unknown; content?: unknown } | null | undefined
-  return m?.role === 'user' && typeof m.content === 'string' ? { ...m, content: new Redactor(keys).known(m.content) } : message
+  if (m?.role !== 'user') return message
+  const redact = new Redactor(keys)
+  if (typeof m.content === 'string') return { ...m, content: redact.known(m.content) }
+  if (!Array.isArray(m.content)) return message
+  return { ...m, content: m.content.map((b: { type?: unknown; text?: unknown }) => (b?.type === 'text' && typeof b.text === 'string' ? { ...b, text: redact.known(b.text) } : b)) }
 }
 
 /** Some servers refuse a conversation with an empty message, or one that ends in unfinished thinking. */
@@ -72,10 +76,15 @@ function until<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
 }
 
 export async function ask(o: AskOptions): Promise<Answer> {
-  const messages = o.messages.map((m, i) => (i === o.messages.length - 1 ? withoutKeys(m, [o.conn.key, ...(o.keys?.() ?? [])]) : m))
+  const messages = o.messages.map((m, i) => (i === o.messages.length - 1 ? withoutKeys(m, [o.conn.key]) : m))
   const end = (ended: Answer['ended'], error?: string): Answer => ({ messages, ended, ...(error ? { error } : {}) })
   const no = refusal(o.conn)
   if (no) return end('error', no)
+  if (o.provider.connectionId !== o.conn.id) return end('error', 'This chat belongs to another connection. Start a new chat.')
+  try {
+    const keys = o.keys?.() ?? []
+    if (messages.length) messages[messages.length - 1] = withoutKeys(messages[messages.length - 1], keys)
+  } catch { return end('error', 'Something went wrong in the assistant. Try again.') }
   if (o.signal.aborted) return end('stopped')
 
   // One signal for both ways to be cut short: the person's stop, and the time limit.

@@ -35,17 +35,23 @@ export interface SecretParts {
   hostToken?: string
 }
 
+/** The values in a Cookie header, or the one a Set-Cookie header sets. */
+const cookieValues = (k: string, v: string): string[] =>
+  (/^cookie$/i.test(k) ? v.split(';') : /^set-cookie$/i.test(k) ? v.split(';', 1) : []).map((p) => p.slice(p.indexOf('=') + 1).trim().replace(/^"(.*)"$/, '$1'))
+
 /** Every secret Dispatch knows; give it what all workspaces hold, not just the open one. */
 export function allSecrets(p: SecretParts): string[] {
   const sent = (p.history ?? []).map((h) => ({ ...h.request, headers: [...h.request.headers, ...[...h.sent.headers, ...(h.response?.headers ?? [])].map(([k, v]) => kv(k, v))] }))
+  const requests = [...p.requests, ...sent]
   return knownSecrets({
     environments: p.environments, globals: p.globals, collections: p.collections, folders: p.folders,
     // every named value a request has; knownSecrets keeps the ones with a secret's name
-    requests: [...p.requests, ...sent].map((r) => ({ ...r, headers: [...r.headers, ...(r.params ?? []), ...(r.pathVars ?? []), ...(r.body?.fields ?? []), ...(r.mcp?.env ?? []), ...(r.grpc?.metadata ?? [])] })),
+    requests: requests.map((r) => ({ ...r, headers: [...r.headers, ...(r.params ?? []), ...(r.pathVars ?? []), ...(r.body?.fields ?? []), ...(r.mcp?.env ?? []), ...(r.grpc?.metadata ?? [])] })),
     extra: [
       ...p.connections.map((c) => c.key),
       ...p.signIns.flatMap((s) => [s.accessToken, s.refreshToken, s.clientSecret]),
       ...p.cookies.map((c) => c.value),
+      ...requests.flatMap((r) => r.headers.flatMap((x) => cookieValues(x.key, x.value))),
       // a key can also turn up a line at a time
       ...p.clientCerts.flatMap((c) => [c.key, ...c.key.split(/\r?\n/).filter((l) => l.length >= 40)]),
       p.hostToken ?? '',
@@ -56,7 +62,7 @@ export function allSecrets(p: SecretParts): string[] {
 /** The fixed instructions. They help the model; what it may do is enforced by the gate, not here. */
 export function systemPrompt(o: { openRequest?: string; workspace: string }, secrets: string[] = []): string {
   const redact = new Redactor(secrets)
-  const quoted = (s: string) => JSON.stringify(redact.text(redact.known(s)).slice(0, 200).replace(/\p{Cs}/gu, ''))
+  const quoted = (s: string) => JSON.stringify(redact.clean(s).slice(0, 200).replace(/\p{Cs}/gu, ''))
   return [
     'You are the assistant in Dispatch, a desktop app for working with APIs. You help the person understand and improve the requests, scripts, tests and environments in their open workspace.',
     'You can only read, with the tools you are given. You can’t change, send, run or delete anything, and no tool for that exists here. When something needs changing, show what to change and where, so the person can do it themselves. Never say you did something you can’t do.',

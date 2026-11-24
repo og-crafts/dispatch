@@ -94,8 +94,8 @@ export function anthropicProvider(conn: Connection, unlimited: typeof globalThis
     const lastFallback = parts.map((p) => p?.block.type).lastIndexOf('fallback')
     const kept = parts.filter((p, i) => p && (i > lastFallback || p.block.type === 'text' || p.block.type === 'fallback'))
     const calls: Call[] = []
-    // the API refuses empty text
-    const content = kept.filter((p) => p.block.type !== 'text' || p.block.text !== '').map(({ block, json, closed }) => {
+    // the API refuses empty and blank text
+    const content = kept.filter((p) => p.block.type !== 'text' || p.block.text.trim() !== '').map(({ block, json, closed }) => {
       if (block.type !== 'tool_use') return block
       let call = parseCall(block.id, block.name, json || JSON.stringify(block.input ?? {}))
       if (!closed) call = { id: call.id, name: call.name, input: undefined, invalid: 'The arguments weren’t finished. Nothing was run.' }
@@ -113,6 +113,7 @@ export function anthropicProvider(conn: Connection, unlimited: typeof globalThis
   }
 
   return {
+    connectionId: conn.id,
     turn: (t) => runTurn(t.signal, async (began) => {
       assertUsable(conn)
       try { return await attempt(t, began) } catch (e) {

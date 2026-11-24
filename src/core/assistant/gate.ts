@@ -15,6 +15,8 @@ export interface ToolContext {
   world: () => McpServeOptions
   conn: Connection
   signal: AbortSignal
+  /** The workspace the question was asked in: after a switch no tool runs. */
+  spaceId: string
   /** Secrets beyond the open workspace's: connection keys, sign-ins, cookies, certificate keys, other workspaces (allSecrets). */
   secrets: () => string[]
 }
@@ -55,7 +57,9 @@ export async function runTool(name: string, input: unknown, ctx: ToolContext): P
   if (bad) return refuse(`${bad} Nothing was run.`)
   if (JSON.stringify(input).includes(HIDDEN)) return refuse(`${HIDDEN} stands for a secret you weren’t shown, so it can’t be used. Nothing was run.`)
   try {
-    const { options, clean } = prepare(name, input as Record<string, unknown>, ctx)
+    const world = ctx.world()
+    if (world.settings.activeSpaceId !== ctx.spaceId) return refuse('The person opened another workspace, so this chat can’t read here now. Nothing was run.')
+    const { options, clean } = prepare(name, input as Record<string, unknown>, ctx, world)
     const r = await handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: input } }, options)
     return { text: exit(String(r?.result?.content?.[0]?.text ?? 'This tool isn’t available.'), clean, ctx.conn), isError: !r?.result || !!r.result.isError }
   } catch {
@@ -79,10 +83,9 @@ function exit(text: string, clean: (s: string) => string, conn: Connection): str
 /**
  * What handleMcp is given: the open workspace only, read only, as a copy already cleaned of secrets. Cleaning first
  * matters because the handler cuts long bodies and hides patterns itself (half a secret could stay), and because its
- * searches must not tell whether a hidden text is there.
+ * searches must not tell whether a hidden text is there. The console has no workspace, so all of it counts as open.
  */
-function prepare(name: string, input: Record<string, unknown>, ctx: ToolContext): { options: McpServeOptions; clean: (s: string) => string } {
-  const w = ctx.world()
+function prepare(name: string, input: Record<string, unknown>, ctx: ToolContext, w: McpServeOptions): { options: McpServeOptions; clean: (s: string) => string } {
   const history = ctx.conn.readLogs ? w.logs?.history() ?? [] : []
   const redact = new Redactor([
     ...ctx.secrets(),
@@ -92,11 +95,23 @@ function prepare(name: string, input: Record<string, unknown>, ctx: ToolContext)
       connections: [ctx.conn], signIns: [], cookies: [], clientCerts: w.settings.clientCerts, hostToken: w.settings.mcpHostToken,
     }),
   ])
-  const clean = (s: string) => redact.text(redact.known(s))
+  const clean = (s: string) => redact.clean(s)
   const deep = <T>(v: T, key = ''): T => {
     if (typeof v === 'string') return (/^(id|kind|method)$|Id$/.test(key) ? v : clean(v)) as T
-    if (Array.isArray(v)) return v.map((x) => deep(x)) as T
-    return v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deep(x, k)])) as T : v
+    if (Array.isArray(v)) {
+      const header = key === 'headers' && v.length === 2 && typeof v[0] === 'string' && typeof v[1] === 'string'
+      return (header ? [clean(v[0]), redact.named(v[0], v[1])] : v.map((x) => deep(x, key))) as T
+    }
+    if (!v || typeof v !== 'object') return v
+    const out = Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deep(x, k)]))
+    const item = v as { key?: unknown; value?: unknown; secret?: unknown; options?: { value: string }[] }
+    if (typeof item.key === 'string' && typeof item.value === 'string') {
+      // the name as it really is decides, so before it is cleaned itself
+      const show = (x: string) => (item.secret && x ? HIDDEN : redact.named(item.key as string, x))
+      out.value = show(item.value)
+      if (item.options) out.options = item.options.map((x) => ({ ...deep(x), value: show(x.value) }))
+    }
+    return out as T
   }
 
   const here = <T extends { workspaceId?: string }>(x: T) => spaceOf(x) === w.settings.activeSpaceId
@@ -113,7 +128,7 @@ function prepare(name: string, input: Record<string, unknown>, ctx: ToolContext)
     if (name === 'get_history_entry' && h.id.startsWith(String(input.id).trim())) return { ...deep(h), request }
     return { ...h, request, sent: { ...h.sent, url: clean(h.sent.url) }, error: h.error && clean(h.error) }
   }
-  const logs = ctx.conn.readLogs ? { logs: () => (w.logs?.logs() ?? []).map((l) => deep(l)), history: () => history.map(entry) }
+  const logs = ctx.conn.readLogs ? { logs: () => (w.logs?.logs() ?? []).map((l) => deep(l)), history: () => history.filter((h) => h.request.collectionId && ids.has(h.request.collectionId)).map(entry) }
     : name === 'get_environment' ? { logs: () => [], history: () => [] } // environments come with the log tools in the handler
       : undefined
   return {

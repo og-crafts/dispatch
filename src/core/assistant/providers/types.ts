@@ -22,6 +22,8 @@ export interface Turn {
 export interface TurnRequest { system: string; messages: unknown[]; tools: ToolSpec[]; signal: AbortSignal; onText(s: string): void }
 
 export interface Provider {
+  /** The connection it was made for. */
+  readonly connectionId: string
   turn(t: TurnRequest): Promise<Turn>
   toolResults(calls: { id: string; text: string; isError: boolean }[]): unknown[]
   listModels(): Promise<string[]>
