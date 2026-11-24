@@ -123,6 +123,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   })
   const [ready, setReady] = useState(false)
   const [collections, setCollections] = useState<Collection[]>([])
+  const collectionsRef = useRef(collections); collectionsRef.current = collections
   const [folders, setFolders] = useState<Folder[]>([])
   const [requests, setRequests] = useState<RequestDef[]>([])
   const [environments, setEnvironments] = useState<Environment[]>([])
@@ -451,6 +452,13 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     setFolders((fs) => [...fs, f])
     return f
   }, [])
+  /** Saves variables a run changed, onto the collections as they are now (they may have been edited meanwhile). */
+  const saveCollectionVars = useCallback(async (changed: Record<string, KV[]>) => {
+    for (const c of collectionsRef.current) {
+      const variables = changed[c.id]
+      if (variables && JSON.stringify(variables) !== JSON.stringify(c.variables)) await updateCollection({ ...c, variables })
+    }
+  }, [updateCollection])
   const updateFolder = useCallback(async (f: Folder) => {
     const next = { ...f, updatedAt: Date.now() }
     setFolders((fs) => fs.map((x) => (x.id === f.id ? next : x)))
@@ -546,9 +554,10 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     const r = await runFlow(f, { collections, folders, requests, environment: env, globals, settings: settingsRef.current }, transport, pipelineRef.current, engine, { onStep, signal })
     if (r.environment && env && JSON.stringify(r.environment) !== JSON.stringify(env.variables)) await updateEnvironment({ ...env, variables: r.environment })
     if (JSON.stringify(r.globals) !== JSON.stringify(globals)) await setGlobals(r.globals)
+    await saveCollectionVars(r.collections)
     log([...r.logs, { level: r.ok ? 'info' : 'error', at: Date.now(), source: 'flow', text: `${f.name}: ${r.ok ? 'passed' : `failed — ${r.error}`} (${r.steps.length} steps, ${r.durationMs} ms)` }])
     return r
-  }, [environments, collections, folders, requests, globals, transport, engine, updateEnvironment, setGlobals, log])
+  }, [environments, collections, folders, requests, globals, transport, engine, updateEnvironment, setGlobals, saveCollectionVars, log])
 
   // ---------- workspaces ----------
   const activeSpaceId = spaces.some((x) => x.id === settings.activeSpaceId) ? settings.activeSpaceId : DEFAULT_SPACE.id
@@ -625,7 +634,6 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
    * Saves what an MCP assistant made or changed in its own workspace (added the first time) or in a workspace the
    * user lets it edit. Anything elsewhere is ignored.
    */
-  const collectionsRef = useRef(collections); collectionsRef.current = collections
   const requestsRef = useRef(requests); requestsRef.current = requests
   const saveAssistant = useCallback(async (c: { collections: Collection[]; folders: Folder[]; requests: RequestDef[] }) => {
     if (!spacesRef.current.some((x) => x.id === ASSISTANT_SPACE.id)) await saveSpaces([...spacesRef.current, ASSISTANT_SPACE])
@@ -919,7 +927,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     setDraft, setView, setSettings, setLogs, log, openRequest, startNew, closeTab, closeTabs, duplicateTab, selectTab, saveDraft, saveDraftAs, renameRequest,
     moveRequest, removeRequest, duplicateRequest, saveAssistant, removeForAssistant, handToAssistant, send, cancel, applyChanges, applyAuthUpdate, openHistory, clearHistory,
     addCollection, updateCollection, removeCollection, addFolder, updateFolder, removeFolder,
-    addEnvironment, updateEnvironment, removeEnvironment, duplicateEnvironment, setGlobals, importWorkspace,
+    addEnvironment, updateEnvironment, removeEnvironment, duplicateEnvironment, setGlobals, saveCollectionVars, importWorkspace,
   }
 }
 

@@ -18,11 +18,13 @@ import { saveTextFile } from './files'
  * Edits save as you type, like settings, so there's no separate Save step to forget. Local state keeps typing
  * smooth; every change is also written straight away, so switching away never loses the last keystroke.
  */
-function useSaved<T extends { id: string; name: string }>(value: T, save: (v: T) => Promise<void>) {
+function useSaved<T extends { id: string; name: string; variables?: KV[] }>(value: T, save: (v: T) => Promise<void>) {
   const [local, setLocal] = useState(value)
   useEffect(() => setLocal(value), [value.id]) // eslint-disable-line react-hooks/exhaustive-deps
   // Renamed elsewhere (the sidebar): the next edit here must not bring the old name back.
   useEffect(() => setLocal((l) => (l.name === value.name ? l : { ...l, name: value.name })), [value.name])
+  // Scripts may change variables while this is open; pick those up.
+  useEffect(() => setLocal((l) => (JSON.stringify(l.variables) === JSON.stringify(value.variables) ? l : { ...l, variables: value.variables })), [value.variables])
   return [local, (next: T) => { setLocal(next); void save(next) }] as const
 }
 
@@ -208,8 +210,6 @@ void hasLayers
 
 export function EnvironmentEditor({ ws, confirm, environment }: Common & { environment: Environment }) {
   const [e, setE] = useSaved(environment, ws.updateEnvironment)
-  // Scripts may change variables while this is open; pick those up.
-  useEffect(() => { if (JSON.stringify(environment.variables) !== JSON.stringify(e.variables)) setE({ ...e, variables: environment.variables }) }, [environment.variables]) // eslint-disable-line react-hooks/exhaustive-deps
   const active = ws.settings.activeEnvId === e.id
   return (
     <section className="editor" aria-label="Environment">
