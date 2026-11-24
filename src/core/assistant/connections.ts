@@ -12,7 +12,7 @@ export interface Connection {
   model: string
   key: string
   contextTokens?: number
-  /** May the assistant read the console and history. On for loopback, off elsewhere. */
+  /** May the assistant read the console and history. A default (on for loopback, off elsewhere) the person can change. */
   readLogs: boolean
   tools: 'unknown' | 'yes' | 'no'
   /** The host (with port) the owner agreed to send data to. */
@@ -78,6 +78,7 @@ export function validateAddress(url: string): string | null {
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return 'The address must start with https:// (or http:// for a local model).'
   if (u.username || u.password) return 'Addresses with a user name or password in them aren’t allowed.'
   if (!u.hostname) return 'The address has no host.'
+  if (u.search || u.hash || url.includes('?') || url.includes('#')) return 'The address can’t have a ? or # part (put it in the key field instead).'
   if (u.protocol === 'http:' && reach(url) === 'cloud') return 'Plain http is only allowed for local models (localhost or a private address). Use https.'
   return null
 }
@@ -95,21 +96,27 @@ export function newConnection(kind: ConnectionKind): Connection {
 }
 
 /**
- * Changes the address. The console is only ever on for loopback and never turns itself back on; consent follows the host
- * (with port); a key never travels to another origin. Fixed-address kinds ignore the change.
+ * Changes the address. Within one origin (path edits, the same URL) everything stays. A changed origin clears the consent,
+ * the key (it never travels to another host), the tool check and the context size, and turns the console off unless the
+ * new address is loopback; moving back to loopback never turns it on again. Fixed-address kinds ignore the change.
  */
 export function withBaseUrl(c: Connection, url: string): Connection {
   if (c.kind !== 'compatible') return c
-  const before = parse(c.baseUrl), after = parse(url)
-  const out: Connection = { ...c, baseUrl: url }
-  if (reach(url) !== 'local') out.readLogs = false
-  if (before?.host.toLowerCase() !== after?.host.toLowerCase() || !after) delete out.consentHost
-  if (!before || !after || before.origin !== after.origin || after.origin === 'null') { out.key = ''; delete out.keyLost }
+  const next = url.trim()
+  const before = parse(c.baseUrl), after = parse(next)
+  const out: Connection = { ...c, baseUrl: next }
+  if (before && after && after.origin !== 'null' && before.origin === after.origin) return out
+  delete out.consentHost
+  delete out.keyLost
+  delete out.contextTokens
+  out.key = ''
+  out.tools = 'unknown'
+  if (reach(next) !== 'local') out.readLogs = false
   return out
 }
 
-/** What a stored record is trusted to say: fixed kinds keep their official address, only loopback may read the console. */
+/** What a stored record is trusted to say: fixed kinds keep their official address. The console tick is the person's choice. */
 export function normalizeConnection(c: Connection): Connection {
   const baseUrl = c.kind === 'compatible' ? c.baseUrl : OFFICIAL_URL[c.kind]
-  return { ...c, baseUrl, readLogs: c.readLogs === true && reach(baseUrl) === 'local' }
+  return { ...c, baseUrl, readLogs: c.readLogs === true }
 }

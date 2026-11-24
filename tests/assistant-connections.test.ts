@@ -34,6 +34,13 @@ describe('validateAddress', () => {
       expect(e!.length).toBeGreaterThan(5)
     }
   })
+  it('refuses a query or fragment (a key pasted there would be stored in clear)', () => {
+    for (const u of ['https://api.example.com/v1?key=sk-123', 'https://api.example.com/v1#sk-123', 'http://localhost:1/v1?']) {
+      const e = validateAddress(u)
+      expect(typeof e, u).toBe('string')
+      expect(e).not.toContain('sk-123')
+    }
+  })
   it('never repeats the address back (it may hold a secret)', () => {
     expect(validateAddress('https://user:hunter2@api.example.com')).not.toContain('hunter2')
   })
@@ -96,7 +103,27 @@ describe('withBaseUrl', () => {
     const cloud = { ...newConnection('compatible'), baseUrl: 'https://a.example.com/v1', key: 'k', consentHost: 'a.example.com' }
     const c = withBaseUrl(cloud, 'http://a.example.com/v1')
     expect(c.key).toBe('')
-    expect(c.consentHost).toBe('a.example.com')
+    expect(c.consentHost).toBeUndefined()
+  })
+  it('https to http on a private address (same host text) clears consent', () => {
+    const c = withBaseUrl({ ...newConnection('compatible'), baseUrl: 'https://192.168.1.5', consentHost: '192.168.1.5', key: 'k' }, 'http://192.168.1.5')
+    expect(c.consentHost).toBeUndefined()
+    expect(c.key).toBe('')
+  })
+  it('the same origin keeps a ticked console on a network or cloud address', () => {
+    const n = { ...newConnection('compatible'), baseUrl: 'http://192.168.1.5:8000/v1', readLogs: true, tools: 'yes' as const, contextTokens: 8000 }
+    const c = withBaseUrl(n, 'http://192.168.1.5:8000/other')
+    expect(c.readLogs).toBe(true)
+    expect(c.tools).toBe('yes')
+    expect(c.contextTokens).toBe(8000)
+  })
+  it('a changed origin resets tools and drops contextTokens', () => {
+    const c = withBaseUrl({ ...local, tools: 'yes', contextTokens: 8000 }, 'http://localhost:1234/v1')
+    expect(c.tools).toBe('unknown')
+    expect(c.contextTokens).toBeUndefined()
+  })
+  it('stores the trimmed address', () => {
+    expect(withBaseUrl(local, '  http://localhost:11434/v1  ').baseUrl).toBe('http://localhost:11434/v1')
   })
   it('an unparseable address is treated as cloud', () => {
     const c = withBaseUrl(local, 'htt')
@@ -141,12 +168,71 @@ describe('storage', () => {
     expect(r.key).toBe('')
     expect(r.keyLost).toBeUndefined()
   })
-  it('a stored record cannot point a fixed kind at another host, or turn the console on for a remote one', async () => {
-    const c = sample()
-    await db.putMeta('assistantConnections', [{ ...c, baseUrl: 'https://evil.example.com', readLogs: true }])
-    const [r] = await db.getConnections()
-    expect(r.baseUrl).toBe('https://api.anthropic.com')
-    expect(r.readLogs).toBe(false)
+  it('a stored record cannot point a fixed kind at another host', async () => {
+    await db.putMeta('assistantConnections', [{ ...sample(), baseUrl: 'https://evil.example.com' }])
+    expect((await db.getConnections())[0].baseUrl).toBe('https://api.anthropic.com')
+  })
+  it('a ticked console on a cloud or network connection round-trips as true', async () => {
+    const a = { ...sample(), readLogs: true }
+    const b = { ...newConnection('compatible'), baseUrl: 'http://192.168.1.5:8000/v1', readLogs: true }
+    await db.putConnections([a, b])
+    expect((await db.getConnections()).map((c) => c.readLogs)).toEqual([true, true])
+  })
+  it('malformed elements are skipped, not fatal', async () => {
+    await db.putMeta('assistantConnections', [null, 5, 'x', { kind: 'weird', baseUrl: 'x' }, { ...sample(), key: '' }])
+    const list = await db.getConnections()
+    expect(list).toHaveLength(1)
+    expect(list[0].kind).toBe('anthropic')
+  })
+  describe('an unreadable key survives get then put', () => {
+    const foreign = async (c: Connection) => {
+      const other = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt'])
+      await db.putMeta('assistantConnections', [{ ...c, key: await seal(other, 'sk-FOREIGN') }])
+      return (await db.getMeta<Connection[]>('assistantConnections'))![0].key
+    }
+    for (const kind of ['anthropic', 'compatible'] as const) {
+      it(kind, async () => {
+        const c = { ...newConnection(kind), key: 'x' }
+        const cipher = await foreign(c)
+        const [r] = await db.getConnections()
+        expect(r.keyLost).toBe(true)
+        await db.putConnections([{ ...r, name: 'renamed' }])
+        const stored = (await db.getMeta<Connection[]>('assistantConnections'))![0]
+        expect(stored.key).toBe(cipher)
+        const [again] = await db.getConnections()
+        expect(again.keyLost).toBe(true)
+        expect(again.key).toBe('')
+        expect(again.name).toBe('renamed')
+      })
+    }
+    it('editing another connection in between keeps it', async () => {
+      const a = { ...newConnection('anthropic'), key: 'x' }
+      const b = { ...newConnection('openai'), key: 'sk-B' }
+      const other = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt'])
+      await db.putConnections([a, b])
+      const cur = (await db.getMeta<Connection[]>('assistantConnections'))!
+      await db.putMeta('assistantConnections', [{ ...cur[0], key: await seal(other, 'sk-F') }, cur[1]])
+      const cipher = (await db.getMeta<Connection[]>('assistantConnections'))![0].key
+      const [ra, rb] = await db.getConnections()
+      await db.putConnections([ra, { ...rb, name: 'edited' }])
+      expect((await db.getMeta<Connection[]>('assistantConnections'))![0].key).toBe(cipher)
+      expect((await db.getConnections())[1].key).toBe('sk-B')
+    })
+    it('setting a key, or removing it explicitly, replaces it', async () => {
+      const c = { ...newConnection('compatible'), key: 'x' }
+      await foreign(c)
+      const [r] = await db.getConnections()
+      await db.putConnections([{ ...r, key: 'sk-NEW' }])
+      expect((await db.getConnections())[0]).toMatchObject({ key: 'sk-NEW' })
+      expect((await db.getConnections())[0].keyLost).toBeUndefined()
+      await foreign(c)
+      const [r2] = await db.getConnections()
+      const { keyLost: _k, ...cleared } = r2
+      await db.putConnections([{ ...cleared, key: '' }])
+      const [after] = await db.getConnections()
+      expect(after.key).toBe('')
+      expect(after.keyLost).toBeUndefined()
+    })
   })
   it('nothing stored means an empty list', async () => { expect(await db.getConnections()).toEqual([]) })
 })

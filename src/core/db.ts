@@ -322,17 +322,30 @@ export async function putMcpSignIns(list: McpSignIn[]) { await put('meta', await
 import { normalizeConnection, type Connection } from './assistant/connections'
 const CONNECTIONS = 'assistantConnections'
 export async function getConnections(): Promise<Connection[]> {
-  const stored = await getMeta<Connection[]>(CONNECTIONS)
+  const stored = await getMeta<unknown[]>(CONNECTIONS)
   if (!Array.isArray(stored)) return []
   const f = await unsealer()
-  return Promise.all(stored.map(async (c) => {
+  const out: Connection[] = []
+  for (const x of stored) {
+    if (!x || typeof x !== 'object') continue
+    const c = x as Connection
+    if (c.kind !== 'anthropic' && c.kind !== 'openai' && c.kind !== 'compatible') continue
+    if (typeof c.id !== 'string' || typeof c.baseUrl !== 'string') continue
     const key = typeof c.key === 'string' ? await f(c.key) : ''
     // A saved key that won't open (another device's key) reads as '' and is flagged; it is never sent blank as if set.
     const { keyLost: _drop, ...rest } = c
-    return normalizeConnection({ ...rest, key, ...(c.key && !key ? { keyLost: true as const } : {}) })
-  }))
+    out.push(normalizeConnection({ ...rest, key, ...(c.key && !key ? { keyLost: true as const } : {}) }))
+  }
+  return out
 }
 export async function putConnections(list: Connection[]) {
   const f = await sealer()
-  await put('meta', await Promise.all(list.map(async ({ keyLost: _drop, ...c }) => ({ ...c, key: await f(c.key) }))), CONNECTIONS)
+  const stored = await getMeta<unknown[]>(CONNECTIONS)
+  const old = new Map<string, string>()
+  if (Array.isArray(stored)) for (const x of stored) { const o = x as Connection | null; if (o && typeof o.id === 'string' && typeof o.key === 'string' && o.key) old.set(o.id, o.key) }
+  await put('meta', await Promise.all(list.map(async ({ keyLost, ...c }) => ({
+    ...c,
+    // An unreadable key keeps its stored ciphertext until a key is set or removed on purpose.
+    key: keyLost && !c.key ? (old.get(c.id) ?? '') : await f(c.key),
+  }))), CONNECTIONS)
 }
