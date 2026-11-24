@@ -9,9 +9,9 @@ export interface UpdateInfo {
   date: string | null
 }
 
-async function call<T>(cmd: string): Promise<T> {
+async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import('@tauri-apps/api/core')
-  return invoke<T>(cmd)
+  return invoke<T>(cmd, args)
 }
 
 export const updatesAvailable = () => isDesktop()
@@ -19,8 +19,8 @@ export const updatesAvailable = () => isDesktop()
 /** Asks GitHub for the newest published release. Throws a readable message when it can't. */
 export const checkForUpdate = () => call<UpdateInfo>('update_check')
 
-/** Downloads, checks the signature, installs and restarts Dispatch. */
-export const installUpdate = () => call<void>('update_install')
+/** Downloads the version agreed to, checks the signature, installs and restarts Dispatch. */
+export const installUpdate = (version: string) => call<void>('update_install', { version })
 
 export type Notify = (msg: string, action?: { label: string; run: () => void }) => void
 export type Confirm = (msg: string) => Promise<boolean>

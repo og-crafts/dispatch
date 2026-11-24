@@ -6,8 +6,9 @@ import { defaultSettings, type Settings } from '../src/core/types'
 
 const H = 3_600_000
 let calls: string[] = []
+let installed: (string | undefined)[] = []
 let on: Record<string, () => unknown> = {}
-vi.mock('@tauri-apps/api/core', () => ({ invoke: async (cmd: string) => { calls.push(cmd); return on[cmd]?.() } }))
+vi.mock('@tauri-apps/api/core', () => ({ invoke: async (cmd: string, args?: { version?: string }) => { calls.push(cmd); if (cmd === 'update_install') installed.push(args?.version); return on[cmd]?.() } }))
 let offered = false
 vi.mock('../src/ui/telemetry', async (orig) => ({ ...(await orig<object>()), telemetryOffered: () => offered }))
 const { useUpdates } = await import('../src/ui/useUpdates')
@@ -20,7 +21,7 @@ const wait = async (ms: number) => { await act(async () => { vi.advanceTimersByT
 
 beforeEach(async () => {
   await resetForTests()
-  calls = []; offered = false
+  calls = []; installed = []; offered = false
   on = { update_configured: () => true, update_check: () => info(null), update_install: () => undefined }
   ;(window as any).__TAURI_INTERNALS__ = {}
   vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
@@ -157,6 +158,66 @@ describe('installing', () => {
     await act(async () => { await Promise.all([x.get().install(), x.get().install()]) })
     expect(x.confirm).toHaveBeenCalledTimes(1)
     expect(calls.filter((c) => c === 'update_install')).toHaveLength(1)
+  })
+})
+
+describe('after the review', () => {
+  it('offers the download page when the recheck before installing fails', async () => {
+    on.update_check = () => info('0.3.0')
+    const x = await start({ seen: true })
+    on.update_check = () => { throw new Error('offline') }
+    await act(async () => { await x.get().install() })
+    expect(x.notify).toHaveBeenLastCalledWith('Couldn’t install Dispatch 0.3.0: offline', expect.objectContaining({ label: 'Open download page' }))
+    expect(x.get().available?.version).toBe('0.3.0')
+  })
+  it('makes no automatic check while a prompt is open, and installs the version agreed to', async () => {
+    on.update_check = () => info('0.3.0')
+    let yes!: (v: boolean) => void
+    const x = await start({ seen: true, confirm: () => new Promise((r) => { yes = r }) })
+    let p!: Promise<void>
+    await act(async () => { p = x.get().checkNow(); await Promise.resolve() }); await flush()
+    const before = checks()
+    on.update_check = () => info('0.4.0')
+    await wait(25 * H)
+    expect(checks()).toBe(before)
+    await act(async () => { yes(true); await p })
+    expect(installed).toEqual(['0.3.0'])
+  })
+  it('drops an automatic result that arrives while a prompt is open', async () => {
+    let done!: (v: unknown) => void
+    on.update_check = () => new Promise((r) => { done = r })
+    const x = await start({ seen: true, confirm: () => new Promise(() => {}) })
+    on.update_check = () => info('0.3.0')
+    await act(async () => { void x.get().checkNow() }); await flush()
+    await act(async () => { done(info('0.4.0')) }); await flush()
+    expect(x.get().available?.version).toBe('0.3.0')
+  })
+  it('tries a failed automatic check again after an hour', async () => {
+    on.update_check = () => { throw new Error('offline') }
+    const x = await start({ seen: true })
+    on.update_check = () => info('0.3.0')
+    await wait(0.75 * H); expect(checks()).toBe(1)
+    await wait(0.5 * H); expect(checks()).toBe(2)
+    expect(x.get().available?.version).toBe('0.3.0')
+  })
+  it('says it is busy, and shows it, while an install is under way', async () => {
+    on.update_check = () => info('0.3.0')
+    const x = await start({ seen: true })
+    let done!: () => void
+    on.update_install = () => new Promise<void>((r) => { done = r })
+    let p!: Promise<void>
+    await act(async () => { p = x.get().install() }); await flush()
+    expect(x.get().busy).toBe(true)
+    await act(async () => { await x.get().checkNow() })
+    expect(x.notify).toHaveBeenLastCalledWith('Dispatch is already checking for or installing an update.')
+    await act(async () => { done(); await p })
+    expect(x.get().busy).toBe(false)
+  })
+  it('installs nothing on no, from the button or the menu', async () => {
+    on.update_check = () => info('0.3.0')
+    const x = await start({ seen: true, confirm: async () => false })
+    await act(async () => { await x.get().install(); await x.get().checkNow() })
+    expect(installed).toEqual([])
   })
 })
 

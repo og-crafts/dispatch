@@ -47,7 +47,11 @@ pub async fn update_check(app: AppHandle) -> Result<UpdateInfo, String> {
         return Err("This build can’t update itself. Download the newest version from dispatch.ogcrafts.cloud.".into());
     }
     let updater = app.updater().map_err(|e| e.to_string())?;
-    let found = updater.check().await.map_err(|e| check_error_text(&e, &current))?;
+    // A connection that stalls mustn't leave the window waiting for good.
+    let found = tokio::time::timeout(std::time::Duration::from_secs(30), updater.check())
+        .await
+        .map_err(|_| "Couldn’t check for updates: GitHub didn’t answer within 30 seconds.".to_string())?
+        .map_err(|e| check_error_text(&e, &current))?;
     let info = match &found {
         Some(u) => UpdateInfo { current, version: Some(u.version.clone()), notes: u.body.clone(), date: u.date.map(|d| d.to_string()) },
         None => UpdateInfo { current, version: None, notes: None, date: None },
@@ -68,10 +72,14 @@ pub fn check_error_text(e: &tauri_plugin_updater::Error, current: &str) -> Strin
     }
 }
 
-/// Downloads and installs the update found by `update_check`, then restarts Dispatch.
+/// Downloads and installs the update found by `update_check`, then restarts Dispatch. Only the version the person
+/// agreed to: a later check may have found another.
 #[tauri::command]
-pub async fn update_install(app: AppHandle) -> Result<(), String> {
+pub async fn update_install(app: AppHandle, version: String) -> Result<(), String> {
     let update = app.state::<PendingUpdate>().0.lock().unwrap().take().ok_or("Check for updates first.")?;
+    if update.version != version {
+        return Err(format!("The newest version is now {}. Check for updates again.", update.version));
+    }
     update
         .download_and_install(|_, _| {}, || {})
         .await

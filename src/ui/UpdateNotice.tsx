@@ -6,7 +6,7 @@ export function UpdateButton({ updates, onDismissed }: { updates: UpdatesApi; on
   if (!v) return null
   return (
     <span className="updateBtn">
-      <button type="button" className="btn small primary" aria-label={`Update to ${v}`} title={`Update to ${v}`} onClick={() => void updates.install()}>Update<span className="updateTo"> to {v}</span></button>
+      <button type="button" className="btn small primary" aria-label={`Update to ${v}`} title={`Update to ${v}`} aria-disabled={updates.busy} onClick={() => void updates.install()}>{updates.busy ? 'Updating…' : <span>Update<span className="updateTo"> to {v}</span></span>}</button>
       <button type="button" className="icon" aria-label={`Dismiss update ${v}`} title="Not now" onClick={() => { updates.dismiss(); onDismissed() }}>×</button>
     </span>
   )

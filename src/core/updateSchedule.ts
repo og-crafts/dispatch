@@ -9,7 +9,7 @@ export interface UpdateState {
   dismissed?: string
 }
 
-const DAY = 24 * 3_600_000
+export const DAY = 24 * 3_600_000
 
 /**
  * The first check waits until the notice has been shown and the app restarted, or a day has passed, so there is time

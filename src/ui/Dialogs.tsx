@@ -12,7 +12,15 @@ type Pending =
 
 /** Promise-based dialogs on a native <dialog>, so focus and Escape are handled by the browser. */
 export function useDialogs() {
-  const [pending, setPending] = useState<Pending | null>(null)
+  const [pending, setPendingState] = useState<Pending | null>(null)
+  const current = useRef<Pending | null>(null)
+  const count = useRef(0)
+  /** A dialog that another one replaces counts as cancelled, so whoever waits for it goes on. */
+  const setPending = useCallback((p: Pending | null) => {
+    const old = current.current
+    current.current = p; count.current++; setPendingState(p)
+    if (p && old) { if (old.kind === 'confirm') old.resolve(false); else old.resolve(null) }
+  }, [])
   const ask = useCallback((title: string, initial = '') => new Promise<string | null>((resolve) => setPending({ kind: 'ask', title, initial, resolve })), [])
   const confirm = useCallback((message: string) => new Promise<boolean>((resolve) => setPending({ kind: 'confirm', message, resolve })), [])
   /** Optional multi-line text: '' when left empty, null when cancelled. */
@@ -24,7 +32,7 @@ export function useDialogs() {
   const askPlace = useCallback((title: string, collections: Collection[], folders: Folder[], place: Place) =>
     new Promise<Place | null>((resolve) => setPending({ kind: 'save', title, name: null, collections, folders, place,
       resolve: (v) => resolve(v ? { collectionId: v.collectionId, folderId: v.folderId } : null) })), [])
-  const node = pending ? <Dialog pending={pending} close={() => setPending(null)} /> : null
+  const node = pending ? <Dialog key={count.current} pending={pending} close={() => setPending(null)} /> : null
   return { ask, confirm, askNote, askSave, askPlace, node }
 }
 
