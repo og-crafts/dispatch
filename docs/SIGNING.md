@@ -8,7 +8,7 @@ https://signpath.org/terms; the points that apply to Dispatch are below.
 
 - [x] Code signing policy page: https://dispatch.ogcrafts.cloud/code-signing/, linked as "Code signing policy" from
       the footer of every page (home and download included) and from the download page.
-- [x] Privacy policy says what the optional update check does.
+- [x] Privacy policy says what the update check does.
 - [x] CI: the Windows job of a release tag sends the installers to SignPath and waits for the signed files, when the
       `SIGNPATH_API_TOKEN` secret is set (`.github/workflows/build.yml`).
 - [x] Owner: multi-factor authentication on GitHub (done 2026-11-22). SignPath MFA: set it up when the account is created.
@@ -29,7 +29,7 @@ https://signpath.org/terms; the points that apply to Dispatch are below.
   functionality described on the download page.
 - Only our own binaries, built from this repo by GitHub Actions on GitHub-hosted runners (SignPath checks this).
 - No hacking tools; no data sent to systems the user didn't choose (Dispatch sends requests only where the user
-  points them; the update check is opt-in); an uninstaller (both installers have one).
+  points them; the update check tells people first and can be turned off); an uninstaller (both installers have one).
 - MFA for everyone with access to GitHub and SignPath.
 - Roles: authors/committers, reviewers (every outside pull request is reviewed), approvers (each release is
   approved by hand in SignPath).

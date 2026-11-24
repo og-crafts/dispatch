@@ -9,7 +9,8 @@ runner, load tests, mocks and docs all in the same free app, and collections as 
 
 No account, no sync. Collections, environments and history stay in this device's storage. Besides the requests you
 send, Dispatch sends nothing unless you opt in to anonymous usage and error reports (asked on first launch; see
-docs/TELEMETRY.md) or check for updates.
+docs/TELEMETRY.md). The desktop app also asks GitHub for new versions on start and once a day; it tells you first, no
+workspace data is sent, and Settings turns it off.
 
 ## Features
 

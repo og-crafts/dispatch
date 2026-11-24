@@ -85,18 +85,19 @@ with its secrets in GitHub.
 
 ## Auto-updates
 
-Built: the desktop app has **☰ → Check for updates…** and a setting (Settings → General, off by default because it
-contacts GitHub) to check quietly on start. Nothing installs without the person agreeing. An update is installed only
+Built: the desktop app checks on start and once a day (Settings → General, on by default; a one-time notice comes
+before the first check) and shows **Update to X** in the top bar; **☰ → Check for updates…** asks at once. Nothing installs without the person agreeing. An update is installed only
 if its signature matches the public key built into the app, so only the holder of the private key can ship updates.
 
 - Rust: `src-tauri/src/updater.rs` (`update_check`, `update_install`); the plugin loads only when
-  `plugins.updater.pubkey` is set, so builds without a key still run. UI: `src/ui/updates.ts`.
+  `plugins.updater.pubkey` is set, so builds without a key still run. UI: `src/ui/useUpdates.ts`,
+  `src/ui/UpdateNotice.tsx`; timing in `src/core/updateSchedule.ts`.
 - Release tags: when the `TAURI_SIGNING_PRIVATE_KEY` secret is set, the desktop jobs build with
   `src-tauri/tauri.updater.conf.json` (signed updater files: NSIS `.exe`, AppImages, `Dispatch.app.tar.gz`, each with
   a `.sig`), and the `updater` job attaches `latest.json` (`scripts/make-latest-json.mjs`) to the draft release.
 - Installed copies read `https://github.com/og-crafts/dispatch/releases/latest/download/latest.json`, so an update
   reaches people when the owner **publishes** the release, not before.
-- Linux `.deb`/`.rpm` installs don't self-update (Tauri updates AppImages only); they show the download page.
+- Linux `.deb`/`.rpm` installs don't self-update (Tauri updates AppImages only); a failed install offers the download page.
 
 **One-time set-up (owner):** `scripts/setup-updater.sh`. It makes the key pair in `~/keys` (with a random password
 next to it), writes the public key into `tauri.conf.json`, and stores the key and password as GitHub secrets. Commit

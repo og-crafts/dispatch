@@ -428,7 +428,9 @@ Run these from the repo folder in PowerShell.
      sent, then cancel.
 
 8.6. **Updates:** ☰ → Check for updates… must answer within a few seconds. On the Latest release it says
-     you have the newest version; record what it says.
+     you have the newest version; record what it says. On a fresh profile a notice says Dispatch looks for new versions on
+     GitHub: **Turn off** must untick Settings → General → Check for new versions automatically. If a newer release
+     exists, **Update to X** appears in the top bar after a restart and stays until it is installed or dismissed.
 
 8.7. **AI assistants** (optional; needs Claude Desktop, Claude Code or another MCP client): Settings → AI
      assistants → turn the local endpoint on and follow the on-screen steps. The assistant lists your requests and
