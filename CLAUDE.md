@@ -152,7 +152,7 @@ unpack it from `apt-get download libasound2t64` with `dpkg-deb -x` and set `LD_L
 
 ## Where we left off
 
-Updated 2026-11-23 (evening). **Pending work is tracked on the Kan board "Dispatch"**
+Updated 2026-11-24. **Pending work is tracked on the Kan board "Dispatch"**
 (https://kanban.gautamlabs.io/boards/mb7hut0k7z77; CLI: `KAN_BOARD=mb7hut0k7z77 ~/bin/kan show|card|move|note|desc`).
 Lists: Waiting on you (owner actions), To do, In progress, Testing, Done; labels Release, Feature, Bug, Testing,
 Infra. Keep the cards current at the end of each session (as with the Native Android Apps board).
@@ -208,15 +208,22 @@ focus on the URL at all, both fixed in #50. gRPC over the internet couldn't be c
 9000/9001 time out from the homelab and the Predator) and grpc.postman-echo.com fails the TLS handshake
 ("InvalidContentType") with the old crates on `main` exactly as with #53, so TLS behaves as before; the local
 end-to-end and grpc-js tests cover plaintext.
-**Resume here (2026-11-23 evening, read first): next feature round is designed, waiting on the owner's approval.**
-The owner asked for six changes; the design is `docs/superpowers/specs/2026-11-23-extract-variables-and-polish-design.md`
-(branch `feature/extract-and-polish`): Extract into variable (right-click a selected response value or a header value;
-the rule is a `// extracted` line in the request's after-response script, owner picked this "approach A"), long values
-readable in key/value tables, curl paste renames the request unless the person named it, cookies per environment
-(desktop + runs), a Secrets section instead of the checkbox column, and rename in place (double-click or F2 in the
-sidebar). Builder's calls are marked in the doc for the owner to overrule. Nothing is built yet. On approval: write
-the plan (superpowers:writing-plans), then four PRs in order: 1 polish (rename, curl naming, long values), 2 extract,
-3 secrets, 4 cookies. Owner paused for the day 2026-11-23.
+**Resume here (2026-11-24, read first): the six-feature round is BUILT, four stacked PRs wait for the owner.**
+#81 polish (rename in place, curl naming, wrapping values) <- #82 extract into variable <- #83 Secrets section <- #84
+cookies per environment. **Merge all four, bottom up, without deleting base branches until the next PR is retargeted to
+`main`**; the review fixes for all of them are in the top PR (#84, 2861eaf), so don't release only some. CI green on all
+four (no updater, as always), 574 tests. Setup for the owner: Predator `Downloads\Dispatch_0.1.0_x64-setup-extract-cookies.exe`
+(it upgrades the cookie store of the installed app; going back to 0.1.0 starts fine but without those cookies).
+Design + plan: `docs/superpowers/specs/2026-11-23-extract-variables-and-polish-design.md`,
+`docs/superpowers/plans/2026-11-24-extract-variables-and-polish.md`. The rule line differs from the design on purpose:
+`{ const v = <expr>; if (v != null && v !== '') dx.env.set('token', v) } // extracted` (a failed login keeps the token).
+Runs merge what they changed onto the tables as they are now (`mergeVars`, `ws.keepVars`), so edits made meanwhile stay.
+Checked on the Predator (build 2861eaf, own data folder through `WEBVIEW2_USER_DATA_FOLDER`, so the installed app's data
+is untouched: use that from now on; CDP listened on `[::1]:9222`): extract, refresh on the next send, empty token kept,
+cookies separate for two environments and none, rename, Secrets. **Not checked there: values after a restart** (Windows
+held later launches of the unpacked exe; storage tests cover it). Changelog entry: add with the next version bump (these
+features aren't in 0.1.0). Known minors: Undo of Extract after its tab is closed leaves the rule; multi-line plain values
+become one line when edited; the key-column handle has a dead zone in narrow panes.
 
 **Earlier on 2026-11-23: Dispatch 0.1.0 is OUT.** #76 merged, tag `v0.1.0` on `main` 10fd7d8, CI green
 on every job incl. updater; the owner published it as **Latest** 2026-11-23 (notes from the changelog). `latest.json`
