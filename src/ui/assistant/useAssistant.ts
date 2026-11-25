@@ -16,11 +16,12 @@ import type { McpServeOptions } from '../../core/mcpHandler'
 import { Redactor } from '../../core/mcpLogs'
 import type { WorkspaceApi } from '../useWorkspace'
 import { type Binding, bindingOf, bound, hostOf, originOf } from './binding'
+import { badState, type ToolState } from './transcript'
 import { keepChat, onAllChatsDeleted, removeChat, updateConnections, useConnections } from './store'
 
 /** `sent`: take it out of the box. `consent`: ask (pendingConsent). `blocked`: see `blocked` or `error`. Otherwise keep the text. */
 export type SendResult = 'sent' | 'consent' | 'busy' | 'empty' | 'blocked' | 'stopped'
-export interface ToolActivity { id: number; name: string; input: unknown; state: 'running' | 'ok' | 'failed' | 'stopped'; /** Where in `streamed`, while it answers. */ at?: number }
+export interface ToolActivity { id: number; name: string; input: unknown; state: ToolState; /** Where in `streamed`, while it answers. */ at?: number }
 /** A proposed change the person decides on. `text`: why it wasn't applied, or why it couldn't be undone. */
 export interface Card { proposal: Proposal; state: 'waiting' | 'applying' | 'applied' | 'rejected' | 'expired' | 'stopped' | 'undone'; text?: string
   /** How many messages the chat had when it was asked for: the card comes after that question's answer. */
@@ -169,6 +170,8 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
   const waiting = useRef(new Map<string, Waiting>())
   /** The secrets known when a change was proposed; some may be forgotten by the time it's undone. */
   const knownAt = useRef(new WeakMap<Proposal, string[]>())
+  /** Secrets known before a change that was written, or may have been: it may have taken away the one place they are known from. */
+  const kept = useRef(new Set<string>())
   const jobs = useRef(new Set<Job>())
   const mounted = useRef(false)
   /** Deleted chats: an answer still ending must not bring them back. */
@@ -222,6 +225,8 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
       // the text can hold a name as it really is
       let shown = text
       try { shown = text && new Redactor(known()).clean(text) } catch { shown = undefined }
+      p.basis = '' // it holds real values
+      if (writing) for (const s of before) kept.current.add(s)
       if (outcome === 'applied') knownAt.current.set(p, before)
       setCard(chatId, p.id, outcome, shown)
       answer({ outcome, ...(text ? { text } : {}) })
@@ -239,17 +244,19 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
   const approve = async (id: string) => {
     const w = waitingOnScreen(id), conn = w?.job.conn, card = cardOnScreen(id)
     if (!w || !conn || !card) return
+    let holds: () => boolean
     try {
       const [conns, schedules] = await Promise.all([db.getConnections(), db.getSchedules()])
       const now = conns.find((c) => c.id === conn.id)
       if (waitingOnScreen(id) !== w) return // stopped, rejected or approved meanwhile
       if (differs(conn, now) || wsRef.current.activeSpaceId !== w.job.spaceId) { w.job.ctl.abort(); return }
       // what the card warns of may not hold any more
-      if (basisOf(worldOf(wsRef.current), w.job.spaceId, schedules) !== card.proposal.basis) { w.end('expired', EXPIRED); return }
+      holds = () => basisOf(worldOf(wsRef.current), w.job.spaceId, schedules) === card.proposal.basis
+      if (!holds()) { w.end('expired', EXPIRED); return }
     } catch { setError(FAILED); return }
     w.begin()
     try {
-      const r = await wsRef.current.applyProposal(card.proposal)
+      const r = await wsRef.current.applyProposal(card.proposal, holds)
       if (r.ok) w.end('applied'); else w.end('expired', r.text)
     } catch { w.end('expired', 'Something went wrong while this was being applied. Look at it before you go on.') }
   }
@@ -261,7 +268,7 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
     undoing.current.add(id)
     try {
       const signIns = await db.getMcpSignIns()
-      const secrets = () => secretsOf(wsRef.current, list ?? [], signIns)
+      const secrets = () => [...secretsOf(wsRef.current, list ?? [], signIns), ...kept.current]
       const before = secrets()
       const r = await wsRef.current.undoProposal(card.proposal)
       if (r.ok) setCard(chatId, id, 'undone')
@@ -349,6 +356,8 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
     const { conn } = r
     /** Text of the turn being written; a finished turn is in the messages. */
     let turn = '', n = 0, shown = ''
+    /** The last result. */
+    let said = ''
     const mine = () => current.current === job
     const world = () => worldOf(wsRef.current)
     if (batchesRef.current.chatId !== start.id) batchesRef.current = { chatId: start.id, batches: new ParameterBatches() }
@@ -358,19 +367,21 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
     try {
       result = await ask({
         provider: r.provider, conn, messages: start.messages, tools: offeredTools(conn, about), keys: () => r.keys, signal: job.ctl.signal,
-        system: systemPrompt({ workspace: wsRef.current.spaces.find((s) => s.id === start.spaceId)?.name ?? '', ...(wsRef.current.view.kind === 'request' ? { openRequest: wsRef.current.draft.name } : {}) }, secretsOf(wsRef.current, r.conns, r.signIns)),
+        system: systemPrompt({ workspace: wsRef.current.spaces.find((s) => s.id === start.spaceId)?.name ?? '', ...(wsRef.current.view.kind === 'request' ? { openRequest: wsRef.current.draft.name } : {}) }, [...secretsOf(wsRef.current, r.conns, r.signIns), ...kept.current]),
         settles: (name) => toolClass(name) !== 'read',
         run: async (name, input, signal, clock) => {
           // read again: a key, a sign-in or the console tick may have changed since the question
           const [conns, signIns] = await until(Promise.all([db.getConnections(), db.getMcpSignIns()]), signal)
           const now = conns.find((c) => c.id === conn.id)
           if (differs(conn, now)) { job.ctl.abort(); return { text: 'The connection was changed. Nothing was run.', isError: true } }
-          const secrets = () => secretsOf(wsRef.current, [...r.conns, ...conns], [...r.signIns, ...signIns])
-          return runTool(name, input, {
+          const secrets = () => [...secretsOf(wsRef.current, [...r.conns, ...conns], [...r.signIns, ...signIns]), ...kept.current]
+          const res = await runTool(name, input, {
             world, signal, batches, secrets, job: about, spaceId: start.spaceId, conn: { ...conn, readLogs: conn.readLogs && now?.readLogs === true },
             unsaved: (id) => wsRef.current.isUnsaved(id), schedules: db.getSchedules,
             decide: (p, stop) => decide(job, start.id, start.messages.length, clock, secrets, p, stop),
           })
+          said = res.text
+          return res
         },
         on: {
           text: (s) => { turn += s; shown += s; if (mine()) setStreamed((x) => x + s) },
@@ -383,7 +394,7 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
             setStreamed(so)
             setTools((l) => [...l, { id, name, input, state: 'running', at }])
           },
-          toolEnd: (_name, isError) => { if (mine()) setTools((l) => l.map((t) => (t.state === 'running' ? { ...t, state: isError ? 'failed' : 'ok' } : t))) },
+          toolEnd: (_name, isError) => { if (mine()) setTools((l) => l.map((t) => (t.state === 'running' ? { ...t, state: isError ? badState(said) : 'ok' } : t))) },
           usage: (u) => { if (mine()) setUsage((x) => ({ ...u, totalInput: (x?.totalInput ?? 0) + u.input, totalOutput: (x?.totalOutput ?? 0) + u.output })) },
           fallback: (model) => { if (mine()) setFallback(model) },
         },

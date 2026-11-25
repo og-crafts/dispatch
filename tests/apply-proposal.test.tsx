@@ -731,7 +731,9 @@ describe('the undo list and the card', () => {
   it('a request edited while its delete commits stays and is not on the list', async () => {
     const { r } = await seed(); const h = await mount()
     whileCommitting('requests', () => { void h.current.renameRequest(r, 'Kept') })
-    await apply(h, proposal([remove(r)], { cls: 'delete' }))
+    const p = proposal([remove(r)], { cls: 'delete' })
+    expect(await apply(h, p)).toEqual(refused('changed'))
+    expect(await undo(h, p)).toEqual(refused('changed'))
     expect(h.current.requests.filter((x) => x.id === r.id).map((x) => x.name)).toEqual(['Kept'])
     expect(h.current.trash).toEqual([])
     expect((await storedRequest(r.id))!.name).toBe('Kept')

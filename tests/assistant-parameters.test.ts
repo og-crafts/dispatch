@@ -360,7 +360,9 @@ describe('apply_parameters', () => {
     it('none for a base URL and a token that go where they went', async () => {
       const c = col(), o = { collections: [c], requests: [typical(c)], active: envOf([]) }
       expect((await good(make({ ...o, environments: [o.active, envOf([], 'Prod')] }).move({ 'base URL': '', 'bearer token': '' }))).warnings).toEqual([])
-      expect((await good(make(o).move({ 'base URL': 'authToken' }, 'collection'))).warnings).toEqual([])
+      expect((await good(make(o).move({ 'base URL': 'address' }, 'collection'))).warnings).toEqual([])
+      // readable, so never under a secret's name
+      expect(await refused(make(o).move({ 'base URL': 'authToken' }, 'collection'))).toContain('has a secret’s name')
     })
     it('an existing secret where it was', async () => {
       const c = col(), p = await good(make({ collections: [c], requests: [typical(c)], active: envOf([secretVar('tok', TOKEN)]) }).move({ tok: '' }))

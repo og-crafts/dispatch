@@ -10,7 +10,7 @@ import { newRequest } from '../src/core/types'
 import type { WorkspaceApi } from '../src/ui/useWorkspace'
 import AssistantPanel from '../src/ui/assistant/AssistantPanel'
 import { AssistantHost } from '../src/ui/assistant/AssistantHost'
-import { items, toolLine, turns } from '../src/ui/assistant/transcript'
+import { items, stateWords, toolLine, turns } from '../src/ui/assistant/transcript'
 import type { AssistantApi, Card } from '../src/ui/assistant/useAssistant'
 
 const fake = vi.hoisted(() => ({ a: null as unknown }))
@@ -404,6 +404,12 @@ describe('the rest of the panel', () => {
     panel({ status: 'idle', cards: [], chat: asked(chat) as AssistantApi['chat'] })
     expect([...document.querySelectorAll('.aiTool')].map((x) => x.textContent)).toEqual(['Proposed a change to Create order (not applied)', 'Proposed to delete Old', 'Proposed a change to Create order'])
     expect(b(/Apply|Undo|Reject|Delete$/)).toBeNull()
+    const unsure = 'This failed inside Dispatch. Look at it before you say whether it was changed.'
+    const unknown = [{ role: 'user', content: 'a' }, { role: 'assistant', content: '', tool_calls: [edit] }, { role: 'tool', tool_call_id: 'c0', content: `Error: ${unsure}` }]
+    expect(items(unknown)[1]).toMatchObject({ state: 'unsure' })
+    expect(items([{ role: 'user', content: 'a' }, { role: 'assistant', content: [{ type: 'tool_use', id: 't', name: 'set_scripts', input: {} }] }, { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't', is_error: true, content: unsure }] }])[1]).toMatchObject({ state: 'unsure' })
+    expect(items([{ role: 'user', content: 'a' }, { role: 'assistant', content: [{ type: 'tool_use', id: 't', name: 'set_scripts', input: {} }] }, { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't', is_error: true, content: [{ type: 'text', text: unsure }] }] }])[1]).toMatchObject({ state: 'unsure' })
+    expect(stateWords('set_scripts', 'unsure')).toBe(' (check it)')
     const anthropic = [{ role: 'user', content: 'a' }, { role: 'assistant', content: [{ type: 'tool_use', id: 't', name: 'set_scripts', input: { path: 'Orders/Admin' } }] }, { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't', is_error: true, content: 'x' }] }]
     expect(items(anthropic)[1]).toMatchObject({ text: 'Proposed a change to Admin', state: 'failed' })
   })

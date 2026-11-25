@@ -41,10 +41,23 @@ dialogs) and `src-tauri/src/ai.rs` (sends and streams, because the webview's CSP
   can't be set or removed at all. Exceptions: a header may be replaced by a lone `{{variable}}`, `apply_parameters` moves
   a hidden value without showing it, and a whole request may be deleted. The check comes before the edit code answers,
   so an answer can't tell a right guess from a wrong one. Cost: a script holding a known secret can't be edited.
+- The chat can't write a literal where it becomes a known secret (`places.ts`), because a known value is hidden wherever it
+  is: by what else goes missing, a made-up one tells whether a guess at a hidden value is right, about a character per
+  card. Decided by the place, never by a value. `set_variables`: a new variable with a secret's name is made secret and
+  empty, one that is there is the person's. Headers with a secret's name (and key headers, which can be moved to a secret
+  variable): only `{{variable}}`, also after Bearer, Basic, Digest or Token. Query parameters with a secret's name: only
+  `{{variable}}`. A URL that holds what looks like a secret is refused. `apply_parameters` moves values, but a readable
+  one never to a secret's name. A new source in `allSecrets` that the chat can write needs the same. Cost:
+  `Cookie: sid={{sid}}`, and IDs in a path like `/tokens/12`, need another way or name.
+- What was known as a secret before a change that was written stays hidden in every chat until Dispatch closes (`kept` in
+  `useAssistant.ts`): the change may have taken away the one place it was known from.
+- Control characters in a URL, name or path the model gives are refused, and one-line values are drawn on one line, so
+  one can't look like another row. Cost: a record whose name has one can't be reached by the chat.
 - Two records at the same path, a record outside the open workspace, the assistant's own workspace and an open tab with
   unsaved edits of the request are refused. Cost: the person renames, or saves or discards, first.
 - The card shows everything that would change: "before" cleaned; "after" exactly as the model gave it, otherwise cleaned;
-  control, zero-width and direction characters as codes; one row per variable or header. A change that can't be drawn is
+  control, zero-width and direction characters as codes; one row per variable
+  (with its alternatives) or header. A change that can't be drawn is
   refused.
 - Warnings name what can be told: scripts, a new address for a sign-in (compared environment by environment), a secret
   used in a place it wasn't, how many requests are reached, schedules that send. Stricter is fine, silence isn't. A secret
@@ -59,14 +72,16 @@ dialogs) and `src-tauri/src/ai.rs` (sends and streams, because the webview's CSP
 
 ### Approval, apply and undo (`useAssistant.ts`, `useWorkspace.ts`)
 - Each edit and delete is approved by itself, for these arguments and this state. There is no "always allow". A
-  proposal's `basis` (the active environment, environments, globals, collections, folders, enabled schedules) is compared
-  right before writing, and the records again before the transaction; any difference ends the card as expired. Cost: a
+  proposal's `basis` (the active environment, environments, globals, collections, folders but not their order, enabled
+  schedules) is compared on approval, when its turn to write comes and right before the transaction (schedules as read on
+  approval), and so are the records; any difference ends the card as expired. It is dropped when the card ends. Cost: a
   script's own writes (a run that stores a variable), or a folder sync, expire a waiting card. So does an unsaved tab.
 - An approval doesn't survive a stop, another workspace, a changed or removed connection, or a restart.
 - The write is one transaction; the screen follows once it has committed. What the person writes meanwhile is put on top.
   Stop while it is being written: the write decides, and the panel and the model hear "applied". A failure while drawing
   doesn't make it untrue. When the outcome is unknown, the card and the model are told to look at it.
 - Editors (`Editors.tsx`, `CodeArea.tsx`) take applied changes up, so the next keystroke doesn't write old text back.
+- A delete of a request the person edited in that instant leaves their version, and isn't called applied.
 - Undo puts back the records as they were only when they are still as they were applied, and shows what changed since
   otherwise. Without it: undo would overwrite the person's work.
 - Cards, previews and undo are in memory only: never in saved chats, backups, logs or telemetry. Cost: they end when
@@ -142,8 +157,13 @@ dialogs) and `src-tauri/src/ai.rs` (sends and streams, because the webview's CSP
   data isn't hidden.
 - Known secrets shorter than 6 characters are hidden in their own field, but not where the same text recurs elsewhere
   (hiding "admin" or "1234" everywhere would garble ordinary text).
-- A known value that crosses a text hidden by its pattern can hide its neighbours, so what is hidden can tell a little
-  about a guess. In the chat each guess needs an approved, visible edit.
+- A known value that crosses a text hidden by its pattern hides its neighbours too. The chat can't make one by an edit
+  (see Proposals), but a person's send can: a header filled from a variable the chat set is in the history as a secret.
+  So can a script that runs.
+- A whole known secret the model guessed comes back as `<hidden>`, in a text it wrote or a refusal, so a short or
+  guessable one can be confirmed, many guesses at a time. That needs the whole value, never a part of it.
+- What a change took away is remembered in memory only: after a restart, a copy of it elsewhere under an ordinary name is
+  ordinary data.
 - Base64 and HTML-escaped forms of a secret aren't recognised.
 
 ## Open minor points
@@ -163,10 +183,9 @@ dialogs) and `src-tauri/src/ai.rs` (sends and streams, because the webview's CSP
 - Panel: Ctrl+K in the chat goes to the sidebar search; focus after blur isn't verified in a real webview; "Open Settings"
   can't go straight to the AI tab; below 1200 px the panel covers the request's Send.
 
-- Proposals: a refusal repeats a full secret the model guessed as `<hidden>`; odd address wording for `https:\\{{token}}`; no
+- Proposals: odd address wording for `https:\\{{token}}`; no
   warning when a secret moves between two headers or two fields, when `create_request` goes where scripts run, or for
-  `{{scheme}}://host` and path-variable hosts; a lone `{{name}}` host counts as "no address" also when only another
-  scope defines it; warnings belong in their own file.
+  `{{scheme}}://host` and path-variable hosts; warnings belong in their own file.
 - Gate: history is gathered twice (`prepare` and the cleaner); "never offered" is tested for the default job only.
 - Parameters: choosing a path ID together with an existing variable of the same name is refused; some refusals are stricter than needed; `token2` can come as a duplicate;
   exact headers go by index; a swap can be left out where the same short text is both readable and hidden in one place
@@ -175,9 +194,8 @@ dialogs) and `src-tauri/src/ai.rs` (sends and streams, because the webview's CSP
   moved out during "take the folder's version" shows twice; `placeItems` and `sortByName` have no roll-back;
   two overlapping failing first saves for the assistant workspace can leave its list wrong.
 - Approval: a write queued at Stop still starts and is reported as applied; the card logic could be its own hook; undo's
-  console line uses the render's lists; `basis` counts a folder's sort order, isn't checked again inside the turn, and
-  isn't cleared when a card ends.
-- Card: copying a diff copies the spoken prefixes; a reopened chat says "(not applied)" for an unknown outcome; timing of
+  console line uses the render's lists.
+- Card: copying a diff copies the spoken prefixes; timing of
   the "stay applied" announcement; buttons can be half cut at the log's edge; clipping on Safari; Tibetan and pointed
   Hebrew marks show as codes; "what changed since" isn't reset when a new one comes; one CSS test is a regex.
 

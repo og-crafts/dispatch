@@ -18,6 +18,7 @@ import { namesIn } from '../vars'
 import { cleaner } from './clean'
 import type { ToolContext } from './gate'
 import { applyParameters, setEnvironmentVariables } from './parameters'
+import { literalIn, withoutLiterals } from './places'
 import { canonical, type Change, type Field, type Line, type Proposal, type Rec } from './proposal'
 import { allSecrets, toolClass } from './tools'
 
@@ -47,6 +48,8 @@ const IS_VAR = /^\s*\{\{[^{}]+\}\}\s*$/
 const TEXT_BODIES = ['json', 'text', 'xml', 'html', 'graphql']
 export const BODY_FIELDS = ['urlencoded', 'formdata']
 
+const CONTROL = /[\p{Cc}\p{Zl}\p{Zp}]/u
+
 const given = (v: unknown) => v !== undefined && v !== null
 export const held = (what: string) => `The ${what} holds a secret you weren’t shown, so it can’t be changed or removed here. Ask the person to move the secret into a {{variable}} first.`
 const isEmpty = (s: string) => !s.trim()
@@ -72,6 +75,8 @@ export async function propose(name: string, input: Record<string, unknown>, ctx:
   const hiddenBack = refuse(`${HIDDEN} stands for a secret you weren’t shown, so it can’t be saved.`)
   // A path may hold it (a name with a secret in it is shown so); what would be written may not.
   if (JSON.stringify(Object.entries(input).filter(([k]) => !PATHS[name].includes(k))).includes(HIDDEN)) return hiddenBack
+  // in one of these it would make the card's line look like several
+  if ([...PATHS[name], 'url', 'name', 'newName'].some((k) => CONTROL.test(String(input[k] ?? '')))) return refuse('A name, place or URL can’t hold a line break, tab or other control character.')
 
   if (name === 'apply_parameters' || name === 'set_environment_variables') {
     const d = (name === 'apply_parameters' ? applyParameters : setEnvironmentVariables)(input, ctx, w, cl)
@@ -91,10 +96,22 @@ export async function propose(name: string, input: Record<string, unknown>, ctx:
   // Before the edit code looks at the values: what it answers could tell a right guess from a wrong one.
   const kept = name === 'update_request' ? heldInRequest(input, found!, cl) : null
   if (kept) return refuse(held(kept))
+  const literal = name === 'create_request' || name === 'update_request' ? literalIn(input, found, cl) : null
+  if (literal) return refuse(literal)
+  let call = input, empty: string[] = []
+  if (name === 'set_variables') {
+    const at = collections.find((c) => c.name === segments(String(input.collection))[0])?.id
+    const vars = real.collections.find((c) => c.id === at)?.variables ?? []
+    const why = badVariables(input, vars, cl)
+    if (why) return refuse(why)
+    const r = withoutLiterals(input, vars, [...real.globals, ...real.requests.filter((x) => x.collectionId === at).flatMap((x) => x.handoff?.variables ?? [])])
+    if ('refused' in r) return refuse(r.refused)
+    call = r.input; empty = r.empty
+  }
 
   let got: AssistantChanges = { collections: [], folders: [], requests: [] }
   let gone: string[] = []
-  const [reply, failed] = await workspaceCall(name, input, {
+  const [reply, failed] = await workspaceCall(name, call, {
     w: { collections: [], editable: { name: 'the open workspace', workspaceId: OPEN, collections }, save: async (c) => { got = c }, remove: async (ids) => { gone = ids } },
     folders, requests, allCollections: collections, allowMethods: [], lookup,
   })
@@ -117,7 +134,7 @@ export async function propose(name: string, input: Record<string, unknown>, ctx:
     const variables = c.variables.map((v) => {
       const i = pool.findIndex((x) => x.id === v.id && cl.clean(x.key) === v.key)
       const back = i < 0 ? v : { ...v, key: pool.splice(i, 1)[0].key }
-      return name === 'set_variables' && Object.hasOwn((input.variables as object) ?? {}, back.key) ? inStep(back) : back
+      return name === 'set_variables' && Object.hasOwn((input.variables as object) ?? {}, back.key) ? (empty.includes(back.key) ? { ...back, secret: true } : inStep(back)) : back
     })
     const keys = new Set(real.collections.flatMap((x) => x.variables).map((v) => v.key))
     if (variables.some((v) => v.key.includes(HIDDEN) && !keys.has(v.key))) return hiddenBack
@@ -141,10 +158,6 @@ export async function propose(name: string, input: Record<string, unknown>, ctx:
     if (!was) return outside
     add('request', id, was, null)
   }
-  if (name === 'set_variables') {
-    const why = badVariables(input, colOf.get(got.collections[0]?.id)?.variables ?? [], cl)
-    if (why) return refuse(why)
-  }
   if (name === 'set_scripts') {
     const r = colOf.get(got.collections[0]?.id) ?? folderOf.get(got.folders[0]?.id)
     if (r && ([['preRequestScript', r.scripts.pre], ['testScript', r.scripts.post]] as const).some(([k, s]) => given(input[k]) && cl.clean(s) !== s)) return refuse(held('script'))
@@ -159,10 +172,13 @@ export async function propose(name: string, input: Record<string, unknown>, ctx:
     name: name === 'create_request' || (name === 'copy_request' ? !isEmpty(String(input.name ?? '')) : given(input.newName)),
     ...(writes ? { url: given(input.url), body: given(input.body), docs: given(input.docs), headers: new Map(pairs(input.headers).map(([k, v]) => [k.toLowerCase(), v])) } : {}),
     ...(writes || name === 'set_scripts' ? { pre: given(input.preRequestScript), post: given(input.testScript) } : {}),
-    ...(name === 'set_variables' ? { variables: new Map(pairs(input.variables)) } : {}),
+    ...(name === 'set_variables' ? { variables: new Map(pairs(call.variables)) } : {}),
   }
-  return proposalOf(ctx, w, cl, { tool: name, title: titleOf(name, changes, sources), changes, reply, exact, sources })
+  return proposalOf(ctx, w, cl, { tool: name, title: titleOf(name, changes, sources), changes, exact, sources, notes: empty.map(leftEmpty),
+    reply: empty.length ? `${reply} Made ${empty.join(', ')}, secret and empty for the person to fill in.` : reply })
 }
+/** Said on the card. */
+export const leftEmpty = (k: string) => `Dispatch leaves “${k}” empty for you to fill in.`
 
 /** Checks done and records final: what the card draws and warns of. */
 export async function proposalOf(ctx: ProposeContext, w: McpServeOptions, cl: Cleaner, d: Draft): Promise<Proposal | Refused> {
@@ -188,7 +204,7 @@ export function basisOf(w: McpServeOptions, spaceId: string, schedules: Schedule
   const o = openWorld(w, spaceId)
   const each = (l: unknown[]) => l.map((x) => canonical(x as Rec)).sort()
   return JSON.stringify([
-    o.active?.id ?? null, each(o.environments), canonical(o.globals), each(o.collections), each(o.folders),
+    o.active?.id ?? null, each(o.environments), canonical(o.globals), each(o.collections), each(o.folders.map((f) => ({ ...f, sort: 0 }))),
     each(schedules.filter((s) => s.enabled).map(({ lastRunAt: _, ...s }) => s)),
   ])
 }
@@ -234,10 +250,11 @@ function applied(w: World, changes: Change[]): World {
 
 // ---- checks ----
 
+const segments = (path: string) => path.split('/').map((s) => s.trim()).filter(Boolean)
 /** Why this place can't be meant, before the edit code picks the first that fits or makes what isn't there. */
 function badPlace(tool: string, path: string, collections: Collection[], folders: Folder[]): string | null {
   const p = path.trim().replace(/^\/+|\/+$/g, '')
-  const segs = p.split('/').map((s) => s.trim()).filter(Boolean)
+  const segs = segments(path)
   if (!segs.length || (tool === 'set_variables' && segs.length > 1)) return `Name ${tool === 'set_variables' ? 'one collection' : 'a collection, or a folder in one'}, like “Orders”.`
   if (segs[0] === 'assistant' || p.startsWith(ASSISTANT_PREFIX)) {
     // the edit code takes this for its own workspace, unless it finds the collection and its folder
@@ -385,7 +402,7 @@ function fieldsOf(c: Change, before: World, after: World, d: Draft, cl: Cleaner)
     const x = rec as Collection | Folder
     const fresh = made.has(x.id)
     return [
-      ...(!fresh ? [] : c.kind === 'collection' ? [['New collection', x.name] as [string, string]] : [['New folder', placeText(w, (x as Folder).collectionId, x.id, cl, made)] as [string, string]]),
+      ...(!fresh ? [] : c.kind === 'collection' ? [['New collection', oneLine(x.name)] as [string, string]] : [['New folder', placeText(w, (x as Folder).collectionId, x.id, cl, made)] as [string, string]]),
       ...('variables' in x ? [['Variables', variablesText(x.variables, exact, cl)] as [string, string]] : []),
       ['Pre-request script', exact.pre ? x.scripts.pre : cl.clean(x.scripts.pre)], ['After-response script', exact.post ? x.scripts.post : cl.clean(x.scripts.post)],
     ]
@@ -397,19 +414,22 @@ function fieldsOf(c: Change, before: World, after: World, d: Draft, cl: Cleaner)
 const placeText = (w: World, collectionId: string | null, folderId: string | null, cl: Cleaner, made: Set<string>) =>
   [...w.collections.filter((c) => c.id === collectionId), ...folderChain(w.folders, folderId).reverse()].map((x) => oneLine(made.has(x.id) ? x.name : cl.clean(x.name))).join(' / ')
 
+/** A variable's alternatives; the active one's value is the variable's. */
+const others = (v: KV, shown: KV, value: string) =>
+  (v.options?.length ? ` (${v.options.map((o, i) => `${oneLine(shown.options![i].name)}: ${oneLine(o.name === v.active && o.value === v.value ? value : shown.options![i].value)}`).join('; ')})` : '')
 /** One row per entry: a line break in one is drawn, so it can't look like another. */
 const rows = (l: KV[], shown: KV[], exact: (v: KV) => boolean, sep: string) =>
-  l.map((v, i) => { const x = exact(v) ? v : shown[i]; return `${v.enabled === false ? '(off) ' : ''}${oneLine(x.key)}${sep}${oneLine(x.value)}` }).join('\n')
+  l.map((v, i) => { const x = exact(v) ? v : shown[i]; return `${v.enabled === false ? '(off) ' : ''}${oneLine(x.key)}${sep}${oneLine(x.value)}${others(v, shown[i], x.value)}` }).join('\n')
 const variablesText = (l: KV[], exact: Exact, cl: Cleaner) => rows(l, cl.deep(l), (v) => !v.secret && exact.variables?.get(v.key) === v.value, ' = ')
 
 function requestTexts(real: RequestDef, w: World, exact: Exact, cl: Cleaner, made: Set<string>): [string, string][] {
   const r = light(real), s = cl.deep(r)
   const b = r.body
-  const body = b.kind === 'none' ? '' : b.kind === 'binary' ? `A file: ${cl.clean(real.body.file?.name ?? 'none')}`
+  const body = b.kind === 'none' ? '' : b.kind === 'binary' ? `A file: ${oneLine(cl.clean(real.body.file?.name ?? 'none'))}`
     : BODY_FIELDS.includes(b.kind) ? rows(b.fields, s.body.fields, () => false, ': ')
       : [exact.body ? b.text : s.body.text, ...(b.kind === 'graphql' && s.body.graphqlVariables ? [`Variables: ${s.body.graphqlVariables}`] : [])].join('\n')
   return [
-    ['Name', exact.name ? r.name : s.name], ['In', placeText(w, r.collectionId, r.folderId, cl, made)], ['Method', r.method], ['URL', exact.url ? r.url : s.url],
+    ['Name', oneLine(exact.name ? r.name : s.name)], ['In', placeText(w, r.collectionId, r.folderId, cl, made)], ['Method', oneLine(r.method)], ['URL', oneLine(exact.url ? r.url : s.url)],
     ['Path variables', rows(r.pathVars, s.pathVars, () => false, ': ')], ['Headers', rows(r.headers, s.headers, (h) => exact.headers?.get(h.key.toLowerCase()) === h.value, ': ')],
     ['Auth', authText(r.auth, cl)], ['Body type', b.kind === 'none' ? '' : b.kind], ['Body', body], ['Docs', exact.docs ? r.docs : s.docs],
     ['Pre-request script', exact.pre ? r.scripts.pre : s.scripts.pre], ['After-response script', exact.post ? r.scripts.post : s.scripts.post],
@@ -525,7 +545,9 @@ function newAddresses(r: RequestDef, was: RequestDef | undefined, before: World,
       // it has no address here so far: what the active environment makes of the same URL isn't new
       ...(a.unset ? addresses(x, before, before.active).filter((b) => b.source === a.source) : []),
     ].map((b) => ({ x, a: b }))))
-    return addresses(r, after, e).filter((a) => (!a.unset || e === after.active) && !known.some((k) => k.a.source === a.source && k.a.key === a.key)).map((a) => ({ a, known }))
+    // without a value there it sends nothing there, but a name the active environment doesn't have either may be filled another way
+    const nowhere = (a: Address) => a.unset && e !== after.active && addresses(r, after, after.active).some((b) => b.source === a.source && !b.unset)
+    return addresses(r, after, e).filter((a) => !nowhere(a) && !known.some((k) => k.a.source === a.source && k.a.key === a.key)).map((a) => ({ a, known }))
   })
   if (!fresh.length || !carriesSecret(r, after, cl)) return []
   return fresh.map(({ a, known }) => {

@@ -78,6 +78,19 @@ describe('what each tool proposes', () => {
     const p = await good(setup({ collections: [c] }).run('set_variables', { collection: 'Shop', variables: { base: 'z' } }))
     expect(afterOf<Collection>(p).variables[0]).toMatchObject({ value: 'z', active: 'lb', options: [{ value: 'z' }, { value: 'b' }] })
   })
+  it('the alternatives of a variable that is removed or changed are on the card, hidden ones hidden', async () => {
+    const opt = (name: string, value: string) => ({ id: name, name, value })
+    const c = col('Shop', { variables: [kv('base', 'a', true, { options: [opt('lb', 'a'), opt('pod\nx', 'b'), opt('odd', `see ${P.env}`)], active: 'lb' }), kv('gone', '1', true, { options: [opt('x', '1'), opt('y', 'why')], active: 'x' })] })
+    const p = await good(setup({ collections: [c], globals: [] }).run('set_variables', { collection: 'Shop', variables: { base: 'z' }, remove: ['gone'] }))
+    expect(removed(p, 'Variables')).toEqual([`base = a (lb: a; pod\\u{A}x: b; odd: see ${P.env})`, 'gone = 1 (x: 1; y: why)'])
+    expect(added(p, 'Variables')).toEqual([`base = z (lb: z; pod\\u{A}x: b; odd: see ${P.env})`])
+    const q = await setup({ collections: [c], secrets: [P.env] }).run('set_scripts', { path: 'Shop', testScript: 'x' })
+    noSecrets({ ...q, changes: undefined, basis: undefined })
+    const n = setup({ collections: [c], secrets: [P.env] })
+    const del = await good(n.run('set_variables', { collection: 'Shop', remove: ['gone'] }))
+    expect(removed(del, 'Variables')).toEqual(['gone = 1 (x: 1; y: why)'])
+    noSecrets(card(del))
+  })
   it('a variable that isn’t named stays as it is, alternatives and all', async () => {
     const odd = kv('odd', 'new', true, { options: [{ id: '1', name: 'lb', value: 'a' }, { id: '2', name: 'pod', value: 'b' }], active: 'lb' })
     const c = col('Shop', { variables: [odd, kv('n', '1')] })
@@ -431,6 +444,13 @@ describe('what the card warns of', () => {
       const covered = { ...env, variables: [...env.variables, kv('host', 'shop.test')] }
       for (const o of [{}, { environments: [covered], active: covered }]) expect(await warns('set_variables', { collection: 'Shop', variables: { host: h } }, { requests: [r], ...o })).toContain(NEW(h))
     })
+    it('a name the active environment doesn’t have excuses nothing, also when another one loses it', async () => {
+      const live = { ...newEnvironment('Live'), variables: [kv('z', 'shop.test')] }, r = req('V', shop, { url: 'https://{{z}}/x' })
+      const input = { environment: 'Live', remove: ['z'] }
+      expect(await warns('set_environment_variables', input, { requests: [r], environments: [env, live] })).toContain(NEW('{{z}}'))
+      const active = { ...env, variables: [...env.variables, kv('z', 'shop.test')] }
+      expect(await warns('set_environment_variables', input, { requests: [r], environments: [active, live], active })).toEqual(['Used by 1 request.'])
+    })
     it('userinfo is not the host, and may hide one', async () => {
       const r = req('V', shop, { url: 'https://{{host}}/x' })
       const covered = { ...env, variables: [...env.variables, kv('host', 'shop.test')] }
@@ -542,12 +562,42 @@ describe('hidden characters', () => {
   const r = req('R', shop, { scripts: { pre: '', post: 'old​\n\tkept' } })
   it('are drawn as codes, before and after; the change keeps them', async () => {
     const script = 'a‮b c\rd\u0000e\u{E0041}f️gㅤh\n\tkept'
-    const p = await good(setup({ collections: [shop], requests: [r] }).run('update_request', { name: 'R', newName: 'x‮y\nz', testScript: script }))
+    const p = await good(setup({ collections: [shop], requests: [r] }).run('update_request', { name: 'R', newName: 'x‮y', testScript: script }))
     expect(field(p, 'After-response script')!.lines).toEqual([
       { type: 'del', text: 'old\\u{200B}' }, { type: 'add', text: 'a\\u{202E}b\\u{2028}c\\u{D}d\\u{0}e\\u{E0041}f\\u{FE0F}g\\u{3164}h' }, { type: 'same', text: '\tkept' },
     ])
     expect(afterOf<RequestDef>(p).scripts.post).toBe(script)
-    expect(added(p, 'Name')).toEqual(['x\\u{202E}y', 'z'])
+    expect(added(p, 'Name')).toEqual(['x\\u{202E}y'])
+  })
+  it.each<[string, string, Record<string, unknown>]>([
+    ['a line break in a URL', 'create_request', { folder: 'Shop', name: 'N', url: 'https://shop.test\n@evil.example/x' }],
+    ['a tab in a host', 'update_request', { name: 'R', url: 'https://shop\t.test/x' }],
+    ['a line separator in a URL', 'update_request', { name: 'R', url: 'https://shop.test/\u2028x' }],
+    ['a made-up row in a new name', 'update_request', { name: 'R', newName: 'Order\nIn: Other / Place' }],
+    ['a name', 'create_request', { folder: 'Shop', name: 'a\rb', url: 'https://x.test' }],
+    ['a place', 'create_request', { folder: 'Shop/a\nb', name: 'N', url: 'https://x.test' }],
+    ['a copy’s name', 'copy_request', { from: 'Shop/R', to: 'Shop', name: 'a\tb' }],
+    ['a copy’s place', 'copy_request', { from: 'Shop/R', to: 'New\n' }],
+    ['a move’s place', 'move_request', { name: 'Shop/R', to: 'a\u0000' }],
+    ['a move’s name', 'move_request', { name: 'Shop/R', to: 'New', newName: 'a\u0085b' }],
+    ['a path to look up', 'delete_request', { name: 'Shop/R\n' }],
+    ['a collection', 'set_variables', { collection: 'Shop\n', variables: { a: '1' } }],
+    ['a scripts’ path', 'set_scripts', { path: 'Shop\t', testScript: 'x' }],
+    ['an environment', 'set_environment_variables', { environment: 'P\n', variables: { a: '1' } }],
+    ['a request to parameterize', 'apply_parameters', { name: 'Shop/R\n', batch: 'x', choose: {}, where: 'globals' }],
+  ])('%s with a control character is refused', async (_what, name, input) => {
+    expect(await refused(setup({ collections: [shop], requests: [r] }).run(name, input))).toContain('line break, tab or other control character')
+  })
+  it('stored ones are drawn on one line', async () => {
+    const odd = req('a\nIn: b', col('C\nX'), { url: 'https://x.test\n\tMethod: GET', body: { ...emptyBody('binary'), file: { name: 'f\ng', type: '', size: 1, base64: '' } } })
+    const c = { ...shop, id: odd.collectionId!, name: 'C\nX' }
+    const p = await good(setup({ collections: [c], requests: [{ ...odd, name: 'Plain' }] }).run('delete_request', { name: 'Plain' }))
+    expect(removed(p, 'URL')).toEqual(['https://x.test\\u{A}\\u{9}Method: GET'])
+    expect(removed(p, 'In')).toEqual(['C\\u{A}X'])
+    expect(removed(p, 'Body')).toEqual(['A file: f\\u{A}g'])
+    const w = setup({ collections: [c], requests: [odd] })
+    const n = await good(proposalOf(w.ctx, w.world, cleaner(w.ctx, w.world), { tool: 'delete_request', title: 't', changes: [{ kind: 'request', id: odd.id, before: odd, after: null }], reply: '' }))
+    expect(removed(n, 'Name')).toEqual(['a\\u{A}In: b'])
   })
   it('a long unchanged part is a gap', async () => {
     const pre = Array.from({ length: 20 }, (_, i) => `l${i}`).join('\n')

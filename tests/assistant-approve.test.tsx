@@ -17,6 +17,7 @@ import { InlineEngine } from '../src/core/scriptPipeline'
 import type { Transport } from '../src/core/transport'
 import { defaultSettings, DEFAULT_SPACE, emptyAuth, kv, newCollection, newEnvironment, newFolder, newRequest, type RequestDef } from '../src/core/types'
 import { removeAllChats, updateConnections } from '../src/ui/assistant/store'
+import { items } from '../src/ui/assistant/transcript'
 import { useAssistant } from '../src/ui/assistant/useAssistant'
 import { useWorkspace } from '../src/ui/useWorkspace'
 
@@ -229,6 +230,27 @@ describe('approve and reject', () => {
     expect(state()).toBe('undone')
     expect((await stored())!.name).toBe('Create order')
   })
+  it.each<[string, [string, object]]>([
+    ['deleted', ['delete_request', { name: 'Shop/Create order' }]],
+    ['replaced by a variable', ['update_request', { name: 'Shop/Create order', headers: { 'X-Token': '{{t}}' } }]],
+  ])('what an approved change takes away stays hidden where else it is: the one place it was known from %s', async (_how, change) => {
+    const gone = 'plant-gone-CCCC3'
+    const { c } = await seed({ headers: [kv('X-Token', gone)] })
+    await db.putRequest(newRequest({ name: 'Notes', collectionId: c.id, sort: 2, docs: `old one: ${gone}` }))
+    await mount()
+    await send('go', calls(change), calls(['get_request', { name: 'Shop/Notes' }]), says('Done'))
+    await approve((await waits()).id)
+    await idle()
+    expect(state()).toBe('applied')
+    expect(results()[1]).toContain('old one: <hidden>')
+    await send('again', calls(['get_request', { name: 'Shop/Notes' }]), says('Done'))
+    await idle()
+    expect(JSON.stringify(rust.sent)).not.toContain(gone)
+    await act(async () => a().newChat())
+    await send('again', calls(['get_request', { name: 'Shop/Notes' }]), says('Done'))
+    await idle()
+    expect(JSON.stringify(rust.sent)).not.toContain(gone)
+  })
   it('a small context gets its job’s tools, and the gate goes by the same job', async () => {
     await seed(); await mount([local({ contextTokens: 8_000 })])
     await send('go', calls(script('two')), says('Ok'))
@@ -291,6 +313,43 @@ describe('what the preview rests on', () => {
     await approve(p.id)
     await idle()
     expect(state()).toBe('applied')
+  })
+  it('a place in the order of folders changes nothing: applied', async () => {
+    const r = await ready()
+    const p = await proposed('two', says('Ok'))
+    await act(async () => { await ws().updateFolder({ ...now(ws().folders, r.f), sort: 99 }) })
+    await approve(p.id)
+    await idle()
+    expect(state()).toBe('applied')
+  })
+  it('changed by a write that was ahead in the queue: expired, nothing written', async () => {
+    const r = await ready()
+    const p = await proposed('two', says('Ok'))
+    const t = heldOpen()
+    const before = now(ws().requests, r.other), dev = now(ws().environments, r.dev)
+    let first!: Promise<unknown>, done!: Promise<void>
+    act(() => { first = ws().applyProposal({ ...p, id: 'ahead', changes: [{ kind: 'request', id: before.id, before, after: { ...before, docs: 'd' } }, { kind: 'environment', id: dev.id, before: dev, after: { ...dev, variables: [kv('base', 'https://evil.test')] } }] }) })
+    await waitFor(() => expect(t.held()).toBe(true))
+    act(() => { done = a().approve(p.id) })
+    await waitFor(() => expect(state()).toBe('applying'))
+    t.release()
+    await act(async () => { await first; await done })
+    await idle()
+    expect(card()).toMatchObject({ state: 'expired', text: CHANGED })
+    expect((await db.listRequests()).find((x) => x.name === 'Create order')!.scripts.post).toBe('one')
+  })
+  it('isn’t kept once a card has ended', async () => {
+    await ready()
+    const p = await proposed('two', says('Ok'))
+    expect(card().proposal.basis).not.toBe('')
+    await approve(p.id)
+    await idle()
+    expect(card().proposal.basis).toBe('')
+    await send('go', calls(script('three')), says('Ok'))
+    const q = await waits(1)
+    act(() => a().reject(q.id))
+    await idle()
+    expect(card(1).proposal.basis).toBe('')
   })
   it('is what it was when the proposal was made, also for what changed while the schedules were read', async () => {
     const { c, dev, other, f } = await ready()
@@ -393,6 +452,8 @@ describe('stopping', () => {
     expect(card()).toMatchObject({ state: 'expired', text: expect.stringContaining('Look at it') })
     expect(results()[0]).toContain('Look at it')
     expect(results()[0]).not.toMatch(/nothing was|boom/i)
+    expect(a().tools).toMatchObject([{ state: 'unsure' }])
+    expect(items(a().chat!.messages)[1]).toMatchObject({ state: 'unsure' })
     expect(a().ended).toBe('done')
   })
   it('a write that fails is said to have failed', async () => {

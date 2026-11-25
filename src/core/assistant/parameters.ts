@@ -17,8 +17,9 @@ import { type Auth, type Collection, emptyAuth, emptyBody, type Environment, kv,
 import { paramsFromUrl, splitUrl } from '../url'
 import { interpolate } from '../vars'
 import { cleaner } from './clean'
+import { secretName } from './places'
 import { canonical, type Change } from './proposal'
-import { badVariables, BODY_FIELDS, type Cleaner, cleanWorld, type Draft, held, inStep, light, lost, oneLine, type ProposeContext, type Refused } from './propose'
+import { badVariables, BODY_FIELDS, type Cleaner, cleanWorld, type Draft, held, inStep, leftEmpty, light, lost, oneLine, type ProposeContext, type Refused } from './propose'
 
 const text = { type: 'string' }
 export function parameterTools() {
@@ -290,6 +291,8 @@ export function applyParameters(input: Record<string, unknown>, ctx: ProposeCont
       if (name !== s.varName) return refuse(`“${id}” is already a variable, so it keeps its name: choose it with "".`)
     } else {
       if (!NAME.test(name) || name in FAKE || (s.kind === 'pathId' && !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(name))) return refuse(`“${name}” can’t be a name here: no spaces or braces, not empty, and in the path only letters, digits, _ and -.`)
+      // what can be read must not become a known secret: see places.ts
+      if (!s.secret && secretName(name)) return refuse(`“${name}” has a secret’s name, and this isn’t one. Choose another name.`)
       if (taken.has(name)) return refuse(`“${name}” is already used there. Choose another name.`)
       taken.add(name)
     }
@@ -372,6 +375,6 @@ export function setEnvironmentVariables(input: Record<string, unknown>, ctx: Pro
     tool: 'set_environment_variables', title: `Change the variables of “${env.name}”`,
     changes: canonical(env) === canonical(after) ? [] : structuredClone([{ kind: 'environment' as const, id: env.id, before: env, after }]),
     reply: `Environment “${env.name}”: ${[done.length ? `set ${done.join(', ')}` : '', empty.length ? `made ${empty.join(', ')}, secret and empty for the person to fill in` : '', drop.length ? `removed ${drop.join(', ')}` : ''].filter(Boolean).join('; ')}.`,
-    exact: { variables: new Map(set) }, notes: empty.map((k) => `Dispatch leaves “${k}” empty for you to fill in.`),
+    exact: { variables: new Map(set) }, notes: empty.map(leftEmpty),
   }
 }

@@ -1104,15 +1104,16 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
    * right before the transaction. Whatever the person writes while it commits is queued behind it and stays theirs:
    * the change is put onto their version.
    */
-  const writeChanges = useCallback(async (spaceId: string, list: Change[], done: 'applied' | 'undone'): Promise<{ result: ApplyResult; written: Change[] }> => {
+  const writeChanges = useCallback(async (spaceId: string, list: Change[], done: 'applied' | 'undone', holds: () => boolean = () => true): Promise<{ result: ApplyResult; written: Change[] }> => {
     const at = Date.now()
     const written: Change[] = list.map((c) => ({ ...c, after: c.after && !Array.isArray(c.after) ? { ...structuredClone(c.after), updatedAt: at } : structuredClone(c.after) }))
-    let refused = refusal(spaceId, written, done)
+    const check = () => refusal(spaceId, written, done) ?? (holds() ? null : no('changed', `This changed meanwhile, so nothing was ${done}.`))
+    let refused = check()
     if (refused) return { result: refused, written }
     const was = new Map<Change, Rec | null>()
     try {
       await db.applyRecords(written.filter((c) => c.after), written.filter((c) => !c.after), () => {
-        refused = refusal(spaceId, written, done)
+        refused = check()
         if (refused) throw new Error('refused')
         for (const c of written) was.set(c, recordNow(c.kind, c.id))
       })
@@ -1170,10 +1171,13 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   }, [refusal, recordNow])
   /** Proposals applied since Dispatch started, with the records as they were written. In memory only. */
   const appliedRef = useRef(new Map<string, { changes: Change[]; trashId: string | null; undone: boolean }>())
-  const applyProposal = useCallback((p: Proposal): Promise<ApplyResult> => inTurn(async () => {
+  /** `holds`: whether what the card said still does, asked when its turn comes and right before the write. */
+  const applyProposal = useCallback((p: Proposal, holds?: () => boolean): Promise<ApplyResult> => inTurn(async () => {
     if (appliedRef.current.has(p.id)) return no('changed', 'This was already applied.')
-    const { result, written } = await writeChanges(p.spaceId, p.changes, 'applied')
+    const { result, written } = await writeChanges(p.spaceId, p.changes, 'applied', holds)
     if (!result.ok) return result
+    // the person edited it in that instant, and their version stays
+    if (written.length && written.every((c) => !c.after && recordNow(c.kind, c.id))) return no('changed', 'This changed meanwhile, so it wasn’t deleted.')
     const gone = written.flatMap((c) => (c.kind === 'request' && !c.after && !recordNow('request', c.id) ? [c.before as RequestDef] : []))
     const trashId = gone.length ? toTrash(gone.length === 1 ? `“${gone[0].name}”` : `${gone.length} requests`, { requests: gone }) : null
     appliedRef.current.set(p.id, { changes: written, trashId, undone: false })

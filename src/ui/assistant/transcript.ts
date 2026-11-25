@@ -1,7 +1,7 @@
 import { toolClass } from '../../core/assistant/tools'
 
 /** What the panel shows of a chat's messages. They are a provider's own, or a model's words: every part is checked before it's used. */
-export type ToolState = 'running' | 'ok' | 'failed' | 'stopped'
+export type ToolState = 'running' | 'ok' | 'failed' | 'stopped' | 'unsure'
 export type Item =
   | { kind: 'you' | 'assistant' | 'model'; text: string }
   | { kind: 'tool'; text: string; name: string; state?: ToolState }
@@ -29,9 +29,11 @@ export function proposed(tool: string, name: string): string {
   }
 }
 const changes = (name: unknown) => { const c = toolClass(str(name)); return c === 'edit' || c === 'delete' }
+/** How a result that isn't a good one ended: whether it was applied can be unknown (gate.ts and useAssistant.ts say "Look at it…" then). */
+export const badState = (text: string): ToolState => (text.includes('Look at it before you ') ? 'unsure' : 'failed')
 /** What is added to a tool's line. A change that didn't come about wasn't applied. */
 export const stateWords = (name: string, state?: ToolState): string =>
-  (state !== 'failed' && state !== 'stopped' ? '' : changes(name) ? ' (not applied)' : state === 'failed' ? ' (didn’t work)' : ' (stopped)')
+  (state === 'unsure' ? ' (check it)' : state !== 'failed' && state !== 'stopped' ? '' : changes(name) ? ' (not applied)' : state === 'failed' ? ' (didn’t work)' : ' (stopped)')
 
 /** A look-up, or a change that was proposed, in plain words. */
 export function toolLine(name: unknown, input: unknown): string {
@@ -58,10 +60,10 @@ const json = (s: unknown): unknown => { try { return JSON.parse(str(s)) } catch 
 export function items(messages: unknown): Item[] {
   const out: Item[] = []
   const say = (kind: 'you' | 'assistant', text: string) => { if (text.trim()) out.push({ kind, text }) }
-  const failed = new Map<string, boolean>()
+  const failed = new Map<string, ToolState>()
   for (const m of list(messages)) for (const b of list(bag(m).content)) {
     const r = bag(b)
-    if (r.type === 'tool_result' && str(r.tool_use_id)) failed.set(str(r.tool_use_id), r.is_error === true)
+    if (r.type === 'tool_result' && str(r.tool_use_id)) failed.set(str(r.tool_use_id), r.is_error !== true ? 'ok' : badState(str(r.content) || list(r.content).map((x) => str(bag(x).text)).join('')))
   }
   const all = list(messages)
   for (const [at, m] of all.entries()) {
@@ -78,15 +80,15 @@ export function items(messages: unknown): Item[] {
       if (b.type === 'tool_use') {
         say(who, text); text = ''
         const bad = failed.get(str(b.id))
-        out.push({ kind: 'tool', name: line(b.name, 40), text: toolLine(b.name, b.input), ...(bad === undefined ? {} : { state: bad ? 'failed' : 'ok' }) })
+        out.push({ kind: 'tool', name: line(b.name, 40), text: toolLine(b.name, b.input), ...(bad === undefined ? {} : { state: bad }) })
       }
     }
     say(who, text)
     if (who === 'assistant') for (const [n, c] of list(calls).entries()) {
       const f = bag(bag(c).function)
       // results come right after, in order; some servers use the same ids again
-      const r = bag(all[at + 1 + n]), bad = changes(f.name) && r.role === 'tool' ? str(r.content).startsWith('Error: ') : undefined
-      out.push({ kind: 'tool', name: line(f.name, 40), text: toolLine(f.name, json(f.arguments)), ...(bad === undefined ? {} : { state: bad ? 'failed' : 'ok' }) })
+      const r = bag(all[at + 1 + n]), bad = !changes(f.name) || r.role !== 'tool' ? undefined : str(r.content).startsWith('Error: ') ? badState(str(r.content)) : 'ok'
+      out.push({ kind: 'tool', name: line(f.name, 40), text: toolLine(f.name, json(f.arguments)), ...(bad === undefined ? {} : { state: bad }) })
     }
   }
   return out

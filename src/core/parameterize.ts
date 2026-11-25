@@ -27,7 +27,7 @@ export interface Suggestion {
 
 export interface KnownVar { key: string; value: string; from: string }
 
-const API_KEY_HEADER = /^(x-api-key|api-key|apikey|x-auth-token|x-access-token|x-apikey|ocp-apim-subscription-key)$/i
+export const API_KEY_HEADER = /^(x-api-key|api-key|apikey|x-auth-token|x-access-token|x-apikey|ocp-apim-subscription-key)$/i
 const looksId = (s: string) => /^\d{2,}$/.test(s) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s) || /^[0-9a-f]{24}$/i.test(s) || /^[0-9a-f]{32,}$/i.test(s)
 const singular = (w: string) => w.replace(/ies$/, 'y').replace(/(ss|us)$/, '$1').replace(/s$/, '')
 const camel = (w: string) => w.replace(/[^a-zA-Z0-9]+(.)/g, (_, c: string) => c.toUpperCase()).replace(/^[A-Z]/, (c) => c.toLowerCase())
