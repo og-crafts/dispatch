@@ -205,7 +205,7 @@ export async function putCookieJars(jars: Record<string, StoredCookie[]>) {
 export async function putLegacyCookiesForTests(list: StoredCookie[]) { await put('meta', await (await sealer())(JSON.stringify(list)), 'cookies') }
 
 /** Writes a whole workspace (imports) in one transaction. */
-async function putManyNow(plain: { collections?: Collection[]; folders?: Folder[]; requests?: RequestDef[]; environments?: Environment[]; flows?: Flow[] }) {
+async function putManyNow(plain: { collections?: Collection[]; folders?: Folder[]; requests?: RequestDef[]; environments?: Environment[]; flows?: Flow[]; spaces?: Space[] }) {
   if (plain.flows?.length) for (const f of plain.flows) await putFlow(f)
   const f = await sealer()
   const data = {
@@ -215,12 +215,16 @@ async function putManyNow(plain: { collections?: Collection[]; folders?: Folder[
     environments: plain.environments && await Promise.all(plain.environments.map((e) => secretsOf.environment(e, f))),
   }
   const db = await open()
-  const t = db.transaction(['collections', 'folders', 'requests', 'environments'], 'readwrite')
-  data.folders?.forEach((f) => t.objectStore('folders').put(f))
-  data.collections?.forEach((c) => t.objectStore('collections').put(c))
-  data.requests?.forEach((r) => t.objectStore('requests').put(r))
-  data.environments?.forEach((e) => t.objectStore('environments').put(e))
-  await done(t)
+  const t = db.transaction(['collections', 'folders', 'requests', 'environments', ...(plain.spaces ? ['meta'] : [])], 'readwrite')
+  const finished = done(t)
+  try {
+    data.folders?.forEach((f) => t.objectStore('folders').put(f))
+    data.collections?.forEach((c) => t.objectStore('collections').put(c))
+    data.requests?.forEach((r) => t.objectStore('requests').put(r))
+    data.environments?.forEach((e) => t.objectStore('environments').put(e))
+    if (plain.spaces) t.objectStore('meta').put(plain.spaces, 'spaces')
+  } catch (e) { finished.catch(() => {}); t.abort(); throw e }
+  await finished
 }
 
 export const putMany = inFlight(putManyNow)

@@ -34,3 +34,16 @@ it('doesn’t report a text from outside as typing', async () => {
   expect(typed).toHaveBeenCalledTimes(1)
   ed.destroy()
 })
+
+it('takes a text with Windows line endings with the cursor at the end, and only when it differs', async () => {
+  const host = document.body.appendChild(document.createElement('div'))
+  const ed = await createEditor(host, { doc: 'one\ntwo\nthree and more', lang: 'text', label: 'x' })
+  ed.view.dispatch({ selection: { anchor: ed.view.state.doc.length } })
+  const step = vi.spyOn(ed.view, 'dispatch')
+  syncDoc(ed.view, 'one\r\ntwo\r\nthree')
+  expect(ed.view.state.doc.toString()).toBe('one\ntwo\nthree')
+  expect(ed.view.state.selection.main.anchor).toBe(13)
+  syncDoc(ed.view, 'one\r\ntwo\r\nthree')
+  expect(step).toHaveBeenCalledTimes(1)
+  ed.destroy()
+})

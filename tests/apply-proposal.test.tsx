@@ -4,13 +4,14 @@ import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@t
 import { useEffect } from 'react'
 import { type WorkspaceApi, useWorkspace } from '../src/ui/useWorkspace'
 import { CollectionEditor, EnvironmentEditor, FolderEditor } from '../src/ui/Editors'
-import { type FolderApi, linkSpace, useFolderSync } from '../src/ui/linkedDirs'
+import { workspaceToFiles } from '../src/core/workspaceFiles'
+import { type FolderApi, linkSpace, takeFile, useFolderSync } from '../src/ui/linkedDirs'
 import type { Change, Proposal } from '../src/core/assistant/proposal'
 import { InlineEngine } from '../src/core/scriptPipeline'
 import { ruleLine } from '../src/core/extract'
 import * as db from '../src/core/db'
 import { secretsOf } from '../src/core/vault'
-import { DEFAULT_SPACE, type Collection, type Environment, type Folder, type KV, type RequestDef, kv, newCollection, newEnvironment, newFolder, newRequest, uid } from '../src/core/types'
+import { ASSISTANT_SPACE, DEFAULT_SPACE, type Collection, type Environment, type Folder, type KV, type RequestDef, kv, newCollection, newEnvironment, newFolder, newRequest, uid } from '../src/core/types'
 import type { Transport } from '../src/core/transport'
 
 beforeEach(async () => { await db.resetForTests(); localStorage.clear() })
@@ -203,6 +204,18 @@ describe('while other writes are on their way', () => {
     const stored = (await db.listCollections())[0]
     expect(stored).toMatchObject(want)
     expect(stored.variables.map((v) => [v.key, v.value])).toEqual([['base', 'applied'], ['token', 'sec-ret-1'], ['mine', '1']])
+  })
+
+  it('also when the person’s write takes longer to store than the change put onto it', async () => {
+    const { c } = await seed(); const h = await mount()
+    const real = secretsOf.collection
+    whileCommitting('collections', () => {
+      vi.spyOn(secretsOf, 'collection').mockImplementationOnce(async (x, f) => { await new Promise((res) => setTimeout(res, 40)); return real(x, f) })
+      void h.current.updateCollection({ ...c, docs: 'typed' })
+    })
+    expect(await apply(h, proposal([edit('collection', c, { scripts: scripts('applied') })]))).toEqual(ok)
+    await new Promise((res) => setTimeout(res, 80))
+    expect((await db.listCollections())[0]).toMatchObject({ docs: 'typed', scripts: scripts('applied') })
   })
 
   it('a collection removed while it commits takes the new request with it', async () => {
@@ -508,6 +521,192 @@ describe('a linked folder', () => {
     await waitFor(() => expect(fs.text()).toContain('applied-script'), { timeout: 4000 })
     expect(h.current.requests.find((x) => x.id === r2.id)!.url).toContain('from-git')
   }, 20000)
+})
+
+describe('a folder’s version that was worked out earlier', () => {
+  /** Links the workspace to a folder that already holds it with only “Plain”, answering yes to every question. */
+  async function link(answer: (h: H, message: string) => Promise<void> = async () => {}) {
+    const plain = newCollection('Plain'), own = { ...newCollection('Own'), linkedDir: '/own' }
+    await db.putMany({ collections: [plain, own], requests: [newRequest({ name: 'mine', collectionId: own.id })] })
+    const h = await mount()
+    await act(() => h.current.setSpaceFolderId(DEFAULT_SPACE.id, 'fid'))
+    const { stringify } = await import('yaml')
+    const files = workspaceToFiles({ space: { id: 'fid', name: h.current.spaces[0].name }, collections: [plain], folders: [], requests: [], environments: [], flows: [] }, stringify)
+    const fs: FolderApi = { pick: async () => null, hash: (t) => t, read: async () => files.map((f) => ({ ...f, hash: f.text })), sync: async () => ({ known: {}, conflicts: [] }) }
+    await act(async () => { await linkSpace(h.current, fs, h.current.spaces[0], '/repo', async (m) => { await answer(h, m); return true }) })
+    return h
+  }
+  it('keeps the collections that were just moved in', async () => {
+    const h = await link()
+    expect(h.current.collections.map((c) => c.name)).toEqual(['Own', 'Plain'])
+    expect((await db.listCollections()).map((c) => c.name).sort()).toEqual(['Own', 'Plain'])
+    expect((await db.listRequests()).map((x) => x.name)).toEqual(['mine'])
+  })
+  it('keeps what was added while it asked', async () => {
+    const h = await link(async (w, m) => { if (m.includes('already holds')) await act(async () => { await w.current.addCollection('Added'); await w.current.addEnvironment('Env added') }) })
+    expect(h.current.collections.map((c) => c.name)).toEqual(['Added', 'Own', 'Plain'])
+    expect(h.current.environments.map((x) => x.name)).toEqual(['Env added'])
+    expect((await db.listCollections()).length).toBe(3)
+    expect((await db.listEnvironments()).length).toBe(1)
+    // and the backup taken first has it all
+    const saved = await db.getBackup(h.current.backups[0].id)
+    expect(saved!.collections.map((c) => c.name).sort()).toEqual(['Added', 'Own', 'Plain'])
+  })
+  it('does not remove a collection that has moved to another workspace meanwhile', async () => {
+    const { c } = await seed(); const h = await mount()
+    const sp = await act(() => h.current.addSpace('B'))
+    const old = h.current
+    await act(() => h.current.moveToSpace('collection', c.id, sp.id))
+    await act(async () => { await old.replaceSpaceContents(DEFAULT_SPACE.id, { collections: [], folders: [], requests: [], environments: [], flows: [] }) })
+    expect((await db.listCollections()).map((x) => x.id)).toEqual([c.id])
+    expect((await db.listRequests()).length).toBe(2)
+  })
+  it('of one collection is not taken in over a later write', async () => {
+    const { c, r2 } = await seed(); const h = await mount()
+    const old = h.current
+    expect(await apply(h, proposal([edit('request', r2, { url: 'https://applied.test' })]))).toEqual(ok)
+    expect(await act(() => old.replaceCollection({ collections: [c], folders: [], requests: [r2], environments: [] }, { keepEdits: true, trashLabel: 'x', ifUnchanged: true }))).toBe(false)
+    expect((await storedRequest(r2.id))!.url).toBe('https://applied.test')
+    expect(h.current.trash).toEqual([])
+  })
+  it('“Use the file’s version” says so when something changed meanwhile, and changes nothing', async () => {
+    const { r, r2 } = await seed(); const h = await mount()
+    const { stringify } = await import('yaml')
+    await act(() => h.current.setSpaceFolder(DEFAULT_SPACE.id, '/repo'))
+    const ws = h.current, ids = new Set(ws.collections.map((c) => c.id))
+    const files = workspaceToFiles({ space: { id: DEFAULT_SPACE.id, name: ws.spaces[0].name }, collections: ws.collections, folders: ws.folders, requests: ws.requests.filter((x) => ids.has(x.collectionId!)), environments: ws.environments, flows: [] }, stringify)
+    await db.putFolderState(`space:${DEFAULT_SPACE.id}`, Object.fromEntries(files.map((f) => [f.path, f.text])))
+    const path = files.find((f) => f.text.includes('a.test/other'))!.path
+    const disk = files.map((f) => ({ path: f.path, text: f.text.replace('a.test/other', 'a.test/from-git') }))
+    const fs: FolderApi = { pick: async () => null, hash: (t) => t, sync: async () => ({ known: {}, conflicts: [] }), read: async () => { await h.current.applyProposal(proposal([edit('request', r, { docs: 'applied' })])); return disk.map((f) => ({ ...f, hash: f.text })) } }
+    await act(async () => { await expect(takeFile(ws, fs, `space:${DEFAULT_SPACE.id}`, path)).rejects.toThrow('Try again') })
+    expect((await storedRequest(r.id))!.docs).toBe('applied')
+    expect((await storedRequest(r2.id))!.url).toBe(r2.url)
+  })
+  it('an import queued before a switch still lands where it was asked for', async () => {
+    await seed(); const h = await mount()
+    const sp = await act(() => h.current.addSpace('B'))
+    await act(async () => { const p = h.current.importWorkspace({ collections: [newCollection('Imported')], folders: [], requests: [], environments: [] }); h.current.switchSpace(sp.id); await p })
+    expect((await db.listCollections()).find((x) => x.name === 'Imported')!.workspaceId).toBe(DEFAULT_SPACE.id)
+  })
+})
+
+describe('writes that fail', () => {
+  it('a hand-off that can’t be stored leaves nothing behind, and the next one works', async () => {
+    const { r } = await seed(); const h = await mount()
+    vi.spyOn(secretsOf, 'collection').mockRejectedValueOnce(new Error('no'))
+    await act(async () => { await expect(h.current.handToAssistant(r, 'a')).rejects.toThrow('no') })
+    expect(h.current.requests.length).toBe(2)
+    expect(h.current.spaces.map((x) => x.id)).toEqual([DEFAULT_SPACE.id])
+    expect((await db.getSpaces()).map((x) => x.id)).toEqual([DEFAULT_SPACE.id])
+    await act(async () => { await h.current.handToAssistant(r, 'b') })
+    const inbox = (await db.listCollections()).find((x) => x.workspaceId === ASSISTANT_SPACE.id)!
+    expect((await db.listRequests()).filter((x) => x.handoff).map((x) => x.collectionId)).toEqual([inbox.id])
+    expect((await db.getSpaces()).map((x) => x.id)).toContain(ASSISTANT_SPACE.id)
+  })
+  it('an assistant’s change that can’t be stored puts request, folder and tab back', async () => {
+    const { c, f, r } = await seed(); const h = await mount()
+    await act(async () => { await h.current.setSpaceAi(DEFAULT_SPACE.id, true) })
+    act(() => h.current.openRequest(r))
+    const real = IDBObjectStore.prototype.put
+    vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (this: IDBObjectStore, v, k) { if (this.name === 'requests') throw new Error('full'); return k === undefined ? real.call(this, v) : real.call(this, v, k) })
+    await act(async () => { await expect(h.current.saveAssistant({ collections: [{ ...c, docs: 'n' }], folders: [{ ...f, docs: 'n' }], requests: [{ ...r, url: 'n' }] })).rejects.toThrow('full') })
+    vi.restoreAllMocks()
+    expect([h.current.collections[0].docs, h.current.folders[0].docs, h.current.draft.url, h.current.dirty]).toEqual(['', '', r.url, false])
+    expect([(await db.listCollections())[0].docs, (await db.listFolders())[0].docs, (await storedRequest(r.id))!.url]).toEqual(['', '', r.url])
+  })
+  it('an assistant’s change still being sealed can’t land on an applied one', async () => {
+    const { r } = await seed(); const h = await mount()
+    await act(async () => { await h.current.setSpaceAi(DEFAULT_SPACE.id, true) })
+    const real = secretsOf.request
+    vi.spyOn(secretsOf, 'request').mockImplementationOnce(async (x, f) => { await new Promise((res) => setTimeout(res, 40)); return real(x, f) })
+    const mid = { ...r, docs: 'assistant' }
+    await act(async () => {
+      const slow = h.current.saveAssistant({ collections: [], folders: [], requests: [mid] })
+      expect(await h.current.applyProposal(proposal([edit('request', mid, { url: 'https://applied.test' })]))).toEqual(ok)
+      await slow
+    })
+    expect(await storedRequest(r.id)).toMatchObject({ docs: 'assistant', url: 'https://applied.test' })
+  })
+  it('a hand-off that is still adding its workspace can’t land on an applied change', async () => {
+    const { r } = await seed(); const h = await mount()
+    await act(async () => { await h.current.setSpaceAi(DEFAULT_SPACE.id, true) })
+    // Storing the list of workspaces takes a while.
+    const real = IDBObjectStore.prototype.put
+    vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (this: IDBObjectStore, v, k) {
+      const q = k === undefined ? real.call(this, v) : real.call(this, v, k)
+      const end = Date.now() + 40
+      const hold = () => { if (Date.now() < end) this.get('x').onsuccess = hold }
+      if (k === 'spaces') hold()
+      return q
+    })
+    await act(async () => {
+      const slow = h.current.saveAssistant({ collections: [], folders: [], requests: [{ ...r, docs: 'a' }] })
+      const [a] = await Promise.all([h.current.applyProposal(proposal([edit('request', { ...r, docs: 'a' }, { url: 'https://applied.test' })])), slow])
+      expect(a).toEqual(ok)
+    })
+    expect(await storedRequest(r.id)).toMatchObject({ docs: 'a', url: 'https://applied.test' })
+  })
+  it('a delete that fails puts everything back', async () => {
+    const { c, f, r, e } = await seed(); const h = await mount()
+    act(() => h.current.openRequest(r))
+    const was = JSON.stringify([h.current.collections, h.current.folders, h.current.environments]), stored = await everything()
+    vi.spyOn(IDBObjectStore.prototype, 'delete').mockImplementation(() => { throw new Error('full') })
+    for (const run of [() => h.current.removeRequest(r.id), () => h.current.removeRequests([r.id]), () => h.current.removeFolder(f.id), () => h.current.removeCollection(c.id), () => h.current.removeEnvironment(e.id)]) {
+      await act(async () => { await expect(run()).rejects.toThrow('full') })
+      expect(JSON.stringify([h.current.collections, h.current.folders, h.current.environments])).toBe(was)
+      expect(h.current.requests.map((x) => x.name).sort()).toEqual(['Create order', 'Other'])
+    }
+    vi.restoreAllMocks()
+    expect(h.current.trash).toEqual([])
+    expect(h.current.draft.id).toBe(r.id)
+    expect(await everything()).toBe(stored)
+  })
+})
+
+describe('the undo list and the card', () => {
+  it('a card’s undo that is refused leaves the list untouched the whole time', async () => {
+    const { f, r } = await seed()
+    const lengths: number[] = []
+    const h = renderHook(() => { const w = useWorkspace({ transport }); lengths.push(w.trash.length); return w }).result
+    await waitFor(() => expect(h.current.ready).toBe(true))
+    const p = proposal([remove(r)], { cls: 'delete' })
+    await apply(h, p)
+    await act(() => h.current.removeFolder(f.id))
+    const list = h.current.trash; lengths.length = 0
+    expect(await undo(h, p)).toEqual(refused('gone'))
+    expect(h.current.trash).toBe(list)
+    expect(lengths.filter((n) => n !== 2)).toEqual([])
+    expect(await act(() => h.current.undoDelete(list[0].id))).toBe('“Create order”') // the list still can
+  })
+  it('the toast’s Undo puts back only what it named', async () => {
+    await seed()
+    const rs = await db.listRequests()
+    const h = await mount()
+    await act(() => h.current.removeRequest(rs[0].id)); const first = h.current.trash[0]
+    await act(() => h.current.removeRequest(rs[1].id)); const second = h.current.trash[1]
+    expect(await act(() => h.current.undoDelete(first.id))).toBe(first.label)
+    expect(h.current.trash.map((t) => t.id)).toEqual([second.id])
+    expect(await act(() => h.current.undoDelete(first.id))).toBeNull()
+    expect(h.current.requests.map((x) => x.id)).toEqual([rs[0].id])
+  })
+  it('a request edited while its delete commits stays and is not on the list', async () => {
+    const { r } = await seed(); const h = await mount()
+    whileCommitting('requests', () => { void h.current.renameRequest(r, 'Kept') })
+    await apply(h, proposal([remove(r)], { cls: 'delete' }))
+    expect(h.current.requests.filter((x) => x.id === r.id).map((x) => x.name)).toEqual(['Kept'])
+    expect(h.current.trash).toEqual([])
+    expect((await storedRequest(r.id))!.name).toBe('Kept')
+  })
+  it('the backup before a restore has what was applied since the click was drawn', async () => {
+    const { r2 } = await seed(); const h = await mount()
+    await act(() => h.current.backupNow())
+    const id = h.current.backups[0].id, old = h.current
+    expect(await apply(h, proposal([edit('request', r2, { url: 'https://applied.test' })]))).toEqual(ok)
+    await act(() => old.restoreBackup(id))
+    const b = h.current.backups.find((x) => x.reason === 'before-restore')!
+    expect((await db.getBackup(b.id))!.requests.map((x) => x.url)).toContain('https://applied.test')
+  })
 })
 
 describe('records', () => {

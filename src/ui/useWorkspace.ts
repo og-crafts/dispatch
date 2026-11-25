@@ -178,11 +178,11 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   const [logs, setLogs] = useState<LogLine[]>([])
   /** Recently deleted things, newest last, so a delete can be undone. */
   const [trash, setTrash, trashRef] = useLive<{ id: string; label: string; data: Workspace }[]>([])
-  /** Undo list entries the person put back, so a card can't put them back again. */
+  /** Undo list entries being put back or put back already, from the list or a card: never twice. */
   const restored = useRef(new Set<string>())
   const [backups, setBackups] = useState<db.BackupInfo[]>([])
   const [spaces, setSpacesState, spacesRef] = useLive<Space[]>([DEFAULT_SPACE])
-  const [flows, setFlows] = useState<Flow[]>([])
+  const [flows, setFlows, flowsRef] = useLive<Flow[]>([])
   /** Flows deleted in this session. A late save (an editor closing, a pending timer) must not bring them back (#14). */
   const deletedFlows = useRef(new Set<string>())
   const aborts = useRef(new Map<string, AbortController>())
@@ -621,10 +621,9 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     }
   }, [setGlobals, updateEnvironment, updateCollection])
 
-  const importWorkspace = useCallback((w0: Workspace) => inTurn(async () => {
+  const importWorkspace = useCallback((w0: Workspace) => { const here = settingsRef.current.activeSpaceId; return inTurn(async () => {
     for (const e of w0.environments) { const kept = droppedJars.current.get(e.id); if (kept) { droppedJars.current.delete(e.id); for (const k of kept) jars.get(e.id).set(k) } }
     // Imports land in the workspace you're looking at (unless they name one that exists here).
-    const here = settingsRef.current.activeSpaceId
     const known = (id?: string) => !!id && spacesRef.current.some((x) => x.id === id)
     const w: Workspace = {
       ...w0,
@@ -644,7 +643,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
       const merged = [...now, ...w.globals.filter((g) => !now.some((x) => x.key === g.key))]
       await setGlobals(merged)
     }
-  }), [setGlobals, inTurn])
+  }) }, [setGlobals, inTurn])
 
   // ---------- flows ----------
   const addFlow = useCallback(async (name: string) => {
@@ -727,13 +726,13 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
   const renameSpace = useCallback((id: string, name: string) => saveSpaces(spacesRef.current.map((x) => (x.id === id ? { ...x, name } : x))), [saveSpaces])
   /** Only empty workspaces can be removed (move or delete their collections and environments first). */
   const removeSpace = useCallback(async (id: string) => {
-    if (id === DEFAULT_SPACE.id || collections.some((c) => spaceOf(c) === id) || environments.some((e) => spaceOf(e) === id)) return false
+    if (id === DEFAULT_SPACE.id || collectionsRef.current.some((c) => spaceOf(c) === id) || environmentsRef.current.some((e) => spaceOf(e) === id)) return false
     await saveSpaces(spacesRef.current.filter((x) => x.id !== id))
     try { await deleteChats(id) } catch { /* the sweep on the next start finishes it */ } // Chats go for good with their workspace (no undo).
     jars.delete(jarKey(null, id))
     if (settingsRef.current.activeSpaceId === id) switchSpace(DEFAULT_SPACE.id)
     return true
-  }, [collections, environments, saveSpaces, switchSpace])
+  }, [saveSpaces, switchSpace])
   const moveToSpace = useCallback(async (kind: 'collection' | 'environment', id: string, spaceId: string) => {
     if (kind === 'collection') {
       const c = collectionsRef.current.find((x) => x.id === id); if (c) await updateCollection({ ...c, workspaceId: spaceId })
@@ -757,7 +756,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
    * user lets it edit. Anything elsewhere is ignored.
    */
   const saveAssistant = useCallback(async (c: { collections: Collection[]; folders: Folder[]; requests: RequestDef[] }) => {
-    const space = spacesRef.current.some((x) => x.id === ASSISTANT_SPACE.id) ? null : saveSpaces([...spacesRef.current, ASSISTANT_SPACE])
+    const newSpace = !spacesRef.current.some((x) => x.id === ASSISTANT_SPACE.id)
     const allowed = aiSpaces()
     // An existing collection keeps its workspace whatever the assistant sends.
     const cols = c.collections.filter((x) => {
@@ -767,9 +766,11 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     const ok = new Set([...collectionsRef.current.filter((x) => allowed.has(spaceOf(x))).map((x) => x.id), ...cols.map((x) => x.id)])
     const fs = c.folders.filter((f) => ok.has(f.collectionId))
     const rs = c.requests.filter((r) => r.collectionId && ok.has(r.collectionId))
-    const before = new Map(requestsRef.current.filter((r) => rs.some((y) => y.id === r.id)).map((r) => [r.id, r]))
+    const was = { cols: collectionsRef.current, fs: foldersRef.current, rs: requestsRef.current, tabs: tabsRef.current }
+    const before = new Map(was.rs.filter((r) => rs.some((y) => y.id === r.id)).map((r) => [r.id, r]))
     const upsert = <T extends { id: string }>(list: T[], add: T[]) => [...list.filter((x) => !add.some((y) => y.id === x.id)), ...add]
     // The state moves at once, so a second call (two quick hand-offs, an approved change) sees these.
+    if (newSpace) setSpacesState((xs) => [...xs, ASSISTANT_SPACE])
     if (cols.length) setCollections((xs) => upsert(xs, cols).sort(byName))
     if (fs.length) setFolders((xs) => upsert(xs, fs))
     if (rs.length) setRequests((xs) => upsert(xs, rs))
@@ -782,11 +783,22 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
         return n && old && same(old, t.draft) ? { ...t, draft: structuredClone(n) } : t
       }))
     }
-    await space
-    for (const x of cols) await db.putCollection(x)
-    for (const f of fs) await db.putFolder(f)
-    for (const r of rs) await db.putRequest(r)
-  }, [saveSpaces])
+    const shown = tabsRef.current
+    try {
+      // Stored in one go, or not at all.
+      await db.putMany({ collections: cols, folders: fs, requests: rs, ...(newSpace ? { spaces: spacesRef.current } : {}) })
+    } catch (e) {
+      // Back as it was, but for what was written since.
+      const back = <T extends { id: string }>(xs: T[], mine: T[], old: T[]) => [...xs.filter((x) => !mine.includes(x)), ...old.filter((o) => mine.some((m) => m.id === o.id && xs.includes(m)))]
+      setCollections((xs) => back(xs, cols, was.cols).sort(byName)); setFolders((xs) => back(xs, fs, was.fs)); setRequests((xs) => back(xs, rs, was.rs))
+      setTabs((ts) => ts.map((t) => {
+        const old = was.tabs.find((x) => x.id === t.id), put = shown.find((x) => x.id === t.id)
+        return old && put && old.draft !== put.draft && t.draft === put.draft ? { ...t, draft: old.draft } : t
+      }))
+      if (newSpace && !collectionsRef.current.some((x) => spaceOf(x) === ASSISTANT_SPACE.id)) setSpacesState((xs) => xs.filter((x) => x.id !== ASSISTANT_SPACE.id))
+      throw e
+    }
+  }, [])
   /**
    * "Hand to AI assistant": a copy of a saved request goes to the assistant's Inbox with the user's note, for it to
    * review and file (core/mcpWorkspace.ts). The copy takes the auth it inherited; the original stays as it is.
@@ -952,10 +964,11 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
    */
   const replaceSpaceContents = useCallback(async (spaceId: string, w: { collections: Collection[]; folders: Folder[]; requests: RequestDef[]; environments: Environment[]; flows: Flow[] }, opts: FromFolder = {}) => inTurn(async () => {
     if (opts.ifUnchanged && !unchanged()) return false
-    const collections = collectionsRef.current, folders = foldersRef.current, requests = requestsRef.current, environments = environmentsRef.current
+    // What to remove is decided on what was here when `w` was worked out (this render): an item added or moved in since
+    // isn't missing from the folder. One that has left since stays where it went.
     const inSpace = <T extends { workspaceId?: string }>(x: T) => spaceOf(x) === spaceId
-    const goneCols = collections.filter((c) => inSpace(c) && !c.linkedDir && !w.collections.some((x) => x.id === c.id)).map((c) => c.id)
-    const goneEnvs = environments.filter((e) => inSpace(e) && !w.environments.some((x) => x.id === e.id)).map((e) => e.id)
+    const goneCols = collections.filter((c) => inSpace(c) && !c.linkedDir && !w.collections.some((x) => x.id === c.id) && collectionsRef.current.some((x) => x.id === c.id && inSpace(x) && !x.linkedDir)).map((c) => c.id)
+    const goneEnvs = environments.filter((e) => inSpace(e) && !w.environments.some((x) => x.id === e.id) && environmentsRef.current.some((x) => x.id === e.id && inSpace(x))).map((e) => e.id)
     const goneFlows = flows.filter((f) => inSpace(f) && !w.flows.some((x) => x.id === f.id)).map((f) => f.id)
     if (opts.trashLabel) {
       const spaceCols = new Set(collections.filter((c) => inSpace(c) && !c.linkedDir).map((c) => c.id))
@@ -970,6 +983,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
       if (gone.collections!.length || gone.requests!.length || gone.environments!.length || gone.flows!.length) toTrash(opts.trashLabel, gone)
     }
     const colIds = new Set([...goneCols, ...w.collections.map((c) => c.id)])
+    const savedBefore = requestsRef.current
     for (const id of colIds) await db.deleteCollection(id)
     for (const id of goneEnvs) { await db.deleteEnvironment(id); dropJar(id) }
     for (const id of goneFlows) { deletedFlows.current.add(id); await db.deleteFlow(id) }
@@ -980,7 +994,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     setRequests((rs) => [...rs.filter((r) => !r.collectionId || !colIds.has(r.collectionId)), ...w.requests])
     setEnvironments((es) => [...es.filter((e) => !goneEnvs.includes(e.id) && !w.environments.some((x) => x.id === e.id)), ...w.environments].sort(byName))
     setFlows((fs) => [...fs.filter((f) => !goneFlows.includes(f.id) && !w.flows.some((x) => x.id === f.id)), ...w.flows])
-    setTabs((ts) => ts.map((t) => refreshTab(t, w.requests, requests, opts)))
+    setTabs((ts) => ts.map((t) => refreshTab(t, w.requests, savedBefore, opts)))
     if (settingsRef.current.activeEnvId && goneEnvs.includes(settingsRef.current.activeEnvId)) setSettings({ activeEnvId: null })
     setView((v) => (v.kind === 'flow' && goneFlows.includes(v.id) ? { kind: 'request' } : v))
     return true
@@ -1019,17 +1033,17 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     const ok = new Set(collectionsRef.current.filter((x) => allowed.has(spaceOf(x))).map((x) => x.id))
     await removeRequests(ids.filter((id) => requestsRef.current.some((r) => r.id === id && r.collectionId && ok.has(r.collectionId))))
   }, [removeRequests])
-  /** Puts back the most recent delete. */
-  const undoDelete = useCallback(async () => {
-    const last = trashRef.current[trashRef.current.length - 1]
+  /** Puts back the most recent delete, or the one named (what a message offered to undo). */
+  const undoDelete = useCallback(async (id?: string) => {
+    const last = trashRef.current.filter((t) => (!id || t.id === id) && !restored.current.has(t.id)).pop()
     if (!last) return null
     restored.current.add(last.id)
-    setTrash((t) => t.slice(0, -1))
+    setTrash((t) => t.filter((x) => x !== last))
     await importWorkspace(last.data)
     return last.label
   }, [importWorkspace])
 
-  const snapshot = useCallback((): db.BackupData => ({ collections, folders, requests, environments, globals, flows }), [collections, folders, requests, environments, globals, flows])
+  const snapshot = useCallback((): db.BackupData => ({ collections: collectionsRef.current, folders: foldersRef.current, requests: requestsRef.current, environments: environmentsRef.current, globals: globalsRef.current, flows: flowsRef.current }), [])
   const backupNow = useCallback(async (reason: db.BackupInfo['reason'] = 'manual') => {
     await db.addBackup(snapshot(), reason); setBackups(await db.listBackups())
   }, [snapshot])
@@ -1102,8 +1116,8 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
         for (const c of written) was.set(c, recordNow(c.kind, c.id))
       })
     } catch { return { result: refused ?? no('failed', `Dispatch couldn’t save this, so nothing was ${done}.`), written } }
-    const again: (() => Promise<void>)[] = []
-    const settled = <T extends Stored>(kind: Kind, xs: T[], here: (x: T) => boolean, put: (x: T) => Promise<unknown>): T[] => {
+    const again: Change[] = []
+    const settled = <T extends Stored>(kind: Kind, xs: T[], here: (x: T) => boolean): T[] => {
       for (const c of written) {
         if (c.kind !== kind) continue
         const old = was.get(c) as T | null, now = xs.find((x) => x.id === c.id) ?? null, after = c.after as T | null
@@ -1113,7 +1127,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
           else if (here(after)) xs = [...xs, after] // what it went into may have been deleted in the same instant
         } else if (now && old && after) {
           const both = rebase(old, after, now) as T
-          xs = xs.map((x) => (x === now ? both : x)); again.push(async () => { await put(both) })
+          xs = xs.map((x) => (x === now ? both : x)); again.push({ ...c, after: both })
         }
       }
       return xs
@@ -1123,16 +1137,16 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     // Rendered at once, so an open editor's next keystroke is already on top of it.
     flushSync(() => {
       const has = (k: Kind) => written.some((c) => c.kind === k)
-      if (has('collection')) setCollections((xs) => settled('collection', xs, () => true, db.putCollection).sort(byName))
-      if (has('folder')) setFolders((xs) => settled('folder', xs, (f) => col(f.collectionId) && fo(f.parentId), db.putFolder))
-      if (has('request')) setRequests((xs) => settled('request', xs, (r) => col(r.collectionId) && fo(r.folderId), db.putRequest))
-      if (has('environment')) setEnvironments((xs) => settled('environment', xs, () => true, db.putEnvironment).sort(byName))
+      if (has('collection')) setCollections((xs) => settled('collection', xs, () => true).sort(byName))
+      if (has('folder')) setFolders((xs) => settled('folder', xs, (f) => col(f.collectionId) && fo(f.parentId)))
+      if (has('request')) setRequests((xs) => settled('request', xs, (r) => col(r.collectionId) && fo(r.folderId)))
+      if (has('environment')) setEnvironments((xs) => settled('environment', xs, () => true).sort(byName))
       const g = written.find((c) => c.kind === 'globals')
       if (g) {
         const now = globalsRef.current, old = was.get(g) as KV[]
         const next = now === old ? g.after as KV[] : mergeVars(old, g.after as KV[], now)
         setGlobalsState(next)
-        if (now !== old) again.push(() => db.putGlobals(next))
+        if (now !== old) again.push({ ...g, after: next })
       }
       // Tabs without edits show the new version; a deleted request's tab stays as an unsaved draft.
       setTabs((ts) => ts.map((t) => {
@@ -1148,7 +1162,8 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
       setView((v) => ((v.kind === 'collection' || v.kind === 'folder' || v.kind === 'environment') && written.some((c) => !c.after && c.kind === v.kind && c.id === v.id) ? { kind: 'request' } : v))
     })
     // The change itself is stored by now; a failure here only leaves what the person's own write left.
-    for (const put of again) await put().catch(() => {})
+    // After the person's own write, which may still be on its way; not over a newer one (that has both already).
+    for (const c of again) await db.applyRecords([c], [], () => { if (recordNow(c.kind, c.id) !== c.after) throw new Error('newer') }).catch(() => {})
     return { result: { ok: true }, written }
   }, [refusal, recordNow])
   /** Proposals applied since Dispatch started, with the records as they were written. In memory only. */
@@ -1157,23 +1172,23 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     if (appliedRef.current.has(p.id)) return no('changed', 'This was already applied.')
     const { result, written } = await writeChanges(p.spaceId, p.changes, 'applied')
     if (!result.ok) return result
-    const gone = written.flatMap((c) => (c.kind === 'request' && !c.after ? [c.before as RequestDef] : []))
+    const gone = written.flatMap((c) => (c.kind === 'request' && !c.after && !recordNow('request', c.id) ? [c.before as RequestDef] : []))
     const trashId = gone.length ? toTrash(gone.length === 1 ? `“${gone[0].name}”` : `${gone.length} requests`, { requests: gone }) : null
     appliedRef.current.set(p.id, { changes: written, trashId, undone: false })
     return result
-  }), [inTurn, writeChanges, toTrash])
+  }), [inTurn, writeChanges, toTrash, recordNow])
   const undoProposal = useCallback((p: Proposal): Promise<ApplyResult> => inTurn(async () => {
     const a = appliedRef.current.get(p.id)
     if (!a || a.undone) return no('changed', a ? 'This was already undone.' : 'This wasn’t applied, so there is nothing to undo.')
     const changed = no('changed', 'This changed meanwhile, so nothing was undone.')
     if (a.trashId && restored.current.has(a.trashId)) return changed
-    // Off the list while it is put back, so the list can't put it back too.
-    const entry = trashRef.current.find((t) => t.id === a.trashId)
-    const at = entry ? trashRef.current.indexOf(entry) : -1
-    if (entry) setTrash((t) => t.filter((x) => x !== entry))
+    // Claimed while it is put back, so the list can't put it back too; off the list once it is.
+    if (a.trashId) restored.current.add(a.trashId)
     const { result } = await writeChanges(p.spaceId, a.changes.map((c) => ({ ...c, before: c.after, after: c.before })).reverse(), 'undone')
-    if (result.ok) a.undone = true
-    else if (entry) setTrash((t) => [...t.slice(0, at), entry, ...t.slice(at)])
+    if (result.ok) {
+      a.undone = true
+      if (a.trashId) setTrash((t) => t.filter((x) => x.id !== a.trashId))
+    } else if (a.trashId) restored.current.delete(a.trashId)
     return result
   }), [inTurn, writeChanges])
 

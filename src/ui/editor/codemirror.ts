@@ -186,6 +186,7 @@ export async function createEditor(parent: HTMLElement, o: EditorOptions): Promi
 const fromOutside = Annotation.define<boolean>()
 /** Replaces the document without losing the cursor when the value changed from outside (e.g. "Tidy"). */
 export function syncDoc(view: EditorView, value: string) {
+  value = value.replace(/\r\n?/g, '\n') // as the editor keeps it
   const cur = view.state.doc.toString()
   if (cur === value) return
   const sel = view.state.selection.main
