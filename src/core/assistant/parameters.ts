@@ -31,12 +31,12 @@ export function parameterTools() {
     },
     {
       name: 'apply_parameters',
-      description: 'Move values that suggest_parameters listed into variables. Dispatch moves the values itself, also the ones you can’t see; tokens, keys and passwords become secret variables. The person decides.',
+      description: 'Move values that suggest_parameters listed into variables. Dispatch moves the values itself, also the ones you can’t see; tokens, keys and passwords become secret variables. The person decides. In choose, {"s1": ""} keeps the suggested name, {"s1": "apiBase"} picks another.',
       inputSchema: {
         type: 'object',
         properties: {
           name: { ...text, description: 'The request, as for suggest_parameters.' }, batch: { ...text, description: 'The batch suggest_parameters gave.' },
-          choose: { type: 'object', additionalProperties: text, description: 'The ids to move, each with the name for its variable, or "" for the suggested name.' },
+          choose: { type: 'object', additionalProperties: text, description: 'The ids to move (s1, s2, … as suggest_parameters listed them), each with the name for its variable: {"s1": ""} keeps the suggested name, {"s1": "apiBase"} picks another.' },
           where: { type: 'string', enum: ['environment', 'collection', 'globals'], description: 'Where new variables go: the active environment, the request’s collection, or the globals.' },
         },
         required: ['name', 'batch', 'choose', 'where'],
@@ -119,7 +119,7 @@ export function suggestionsFor(r: RequestDef, w: McpServeOptions, clean: (s: str
   const base = origin && !plain.some((k) => url.startsWith(k.value)) ? inUrl.filter((s) => s.kind === 'baseUrl').map((s): Found => ({ ...s, value: origin, secret: hideInText(origin) !== origin || !url.includes(origin) })) : []
   // Each place by itself, so that equal ones don't show as such.
   const credentials = [...r.headers.flatMap((h, header) => ask({ headers: [h] }, marked).map((s): Found => ({ ...s, header }))), ...ask({ auth: r.auth }, marked)]
-  return [...existing, ...base, ...credentials, ...inUrl.filter((s) => s.kind === 'pathId')].map((s, i) => ({ ...s, id: `${s.kind}:${i}` }))
+  return [...existing, ...base, ...credentials, ...inUrl.filter((s) => s.kind === 'pathId')].map((s, i) => ({ ...s, id: `s${i + 1}` }))
 }
 const defaultClean = (w: McpServeOptions) => {
   const known = new Redactor(knownSecrets({ environments: [...w.ws.environments, ...(w.environment ? [w.environment] : [])], globals: w.globals, collections: w.ws.collections, folders: w.ws.folders, requests: w.ws.requests, extra: [w.settings.mcpHostToken] }))
@@ -285,7 +285,7 @@ export function applyParameters(input: Record<string, unknown>, ctx: ProposeCont
   const chosen: Found[] = []
   for (const [id, as] of Object.entries((input.choose as Record<string, string>) ?? {})) {
     const s = batch.suggestions.find((x) => x.id === id)
-    if (!s) return refuse(`There is no suggestion “${id}”. Look at the suggestions again.`)
+    if (!s) return refuse(`That isn’t one of the suggestions. Their ids are ${batch.suggestions.map((x) => x.id).join(', ')}.`)
     const name = as === '' ? s.varName : String(as)
     if (s.kind === 'existing') {
       if (name !== s.varName) return refuse(`“${id}” is already a variable, so it keeps its name: choose it with "".`)

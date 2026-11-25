@@ -5,6 +5,7 @@ import { runTool, validate } from '../src/core/assistant/gate'
 import { ask, type LoopEvents } from '../src/core/assistant/loop'
 import { ParameterBatches } from '../src/core/assistant/parameters'
 import { allSecrets, offeredTools, systemPrompt } from '../src/core/assistant/tools'
+import { compileWithFunction, runScript } from '../src/core/scripts'
 import { createProvider } from '../src/core/assistant/providers'
 import { AssistantError } from '../src/core/assistant/providers/shared'
 import type { Call, Provider, Turn, TurnRequest } from '../src/core/assistant/providers/types'
@@ -716,6 +717,17 @@ describe('the instructions', () => {
     expect(p).toMatch(/read/i)
     expect(p).toContain('dx')
     expect(systemPrompt({ workspace: 'W' })).not.toContain('open request')
+  })
+  it('every member of dx.response it names is there', async () => {
+    const names = (systemPrompt({ workspace: 'W' }).split('dx.response has ')[1] ?? '').split('\n')[0].replace(/\([^)]*\)/g, '').match(/[a-zA-Z.]*[a-zA-Z]/g)?.filter((n) => n !== 'and')
+    expect(names).toEqual(['status', 'statusText', 'ok', 'time', 'size', 'text', 'json', 'headers.get', 'validate'])
+    const o = await runScript({
+      phase: 'post', source: 't', code: `dx.vars.set('kinds', [${names!.map((n) => `typeof dx.response.${n}`).join(', ')}].join())`,
+      request: { name: 'r', url: 'https://a.test', method: 'GET', headers: [], body: { mode: 'none', raw: '' } },
+      response: { code: 200, status: 'OK', headers: [], body: '{}', responseTime: 12, responseSize: 2 },
+      vars: { globals: {}, collection: {}, environment: {}, data: {}, locals: {} }, info: { requestName: 'r', requestId: 'id', iteration: 0, iterationCount: 1 },
+    }, { sendRequest: async () => { throw new Error('no') } }, compileWithFunction)
+    expect(JSON.stringify(o)).toContain('number,string,boolean,number,number,function,function,function,function')
   })
 })
 

@@ -44,7 +44,7 @@ function mk(over: { variables?: KV[]; env?: KV[]; url?: string; headers?: KV[]; 
   const read = async (name = 'Shop/Login') => (await call('get_request', { name })).text.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, 'ID').replace(new RegExp(`${RIGHT}|${WRONG}`, 'g'), 'GUESS')
   const suggest = async (name: string) => {
     const t = (await call('suggest_parameters', { name })).text
-    return { batch: /batch: (\S+)/.exec(t)?.[1] ?? '', id: (kind: string) => new RegExp(`^(${kind}:\\d+)`, 'm').exec(t)?.[1] ?? `no ${kind}` }
+    return { batch: /batch: (\S+)/.exec(t)?.[1] ?? '', id: (kind: string) => new RegExp(`^(s\\d+) · ${{ pathId: 'ID in the path', baseUrl: 'base URL', apiKeyHeader: 'API key' }[kind]}`, 'm').exec(t)?.[1] ?? `no ${kind}` }
   }
   return { ws, world, cards, call, read, suggest }
 }

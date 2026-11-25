@@ -813,6 +813,7 @@ describe('the gate', () => {
   it('edit tools are offered, and the instructions say who decides', () => {
     expect(offeredTools(local()).map((x) => x.name)).toContain('update_request')
     const p = systemPrompt({ workspace: 'W' })
+    expect(p).toContain('dx.response has status, statusText, ok, time (milliseconds), size, text(), json(path), headers.get(name) and validate(schema).')
     expect(p).toMatch(/propose/)
     expect(p).toMatch(/person decides/)
     expect(p).toMatch(/can’t send or run/)

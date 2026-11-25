@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { newConnection } from '../src/core/assistant/connections'
 import { runTool } from '../src/core/assistant/gate'
-import { ParameterBatches, suggestionsFor } from '../src/core/assistant/parameters'
+import { ParameterBatches, parameterTools, suggestionsFor } from '../src/core/assistant/parameters'
 import type { Proposal } from '../src/core/assistant/proposal'
 import { propose, type ProposeContext } from '../src/core/assistant/propose'
 import { allSecrets } from '../src/core/assistant/tools'
@@ -66,6 +66,17 @@ describe('suggest_parameters', () => {
     ])
     expect(s.batch).toMatch(/^[0-9a-f-]{20,}$/)
   })
+  it('a line is an id by its place, what it is and the variable, and the tool says how to choose', async () => {
+    const c = col(), s = setup({ collections: [c], requests: [typical(c)], active: envOf([]) })
+    const g = await s.suggest()
+    expect(g.lines[0].join(' · ')).toBe('s1 · base URL · {{baseUrl}} · new')
+    expect((await good(s.run('apply_parameters', { name: 'Shop/Create order', batch: g.batch, choose: { s1: 'apiBase' }, where: 'environment' }))).reply).toContain('{{apiBase}}')
+    const t = parameterTools().find((x) => x.name === 'apply_parameters')!
+    for (const words of [t.description, (t.inputSchema.properties as { choose: { description: string } }).choose.description]) {
+      expect(words).toContain('{"s1": ""} keeps the suggested name')
+      expect(words).toContain('{"s1": "apiBase"} picks another')
+    }
+  })
   it('an existing variable, plain or secret, and a subscription key', async () => {
     const c = col(), r = req(c, { url: 'https://shop.test/acme-prod', headers: [kv('Authorization', `Bearer ${TOKEN}`), kv('Ocp-Apim-Subscription-Key', 'plant-ocp-DDDD4')] })
     const s = await setup({ collections: [c], requests: [r], active: envOf([kv('tenant', 'acme-prod'), secretVar('tok', TOKEN)]) }).suggest()
@@ -124,7 +135,7 @@ describe('suggest_parameters', () => {
   it('one line per suggestion, whatever a variable is called, and none for a name {{…}} can’t hold', async () => {
     const c = col(), r = req(c, { url: 'https://shop.test/acme-prod/other-1' })
     const s = await setup({ collections: [c], requests: [r], active: envOf([kv('a\nbearer:9 · x', 'acme-prod'), kv('b\u202Ec', 'other-1')]) }).suggest()
-    expect(s.lines.map((l) => [l[0], l[2]])).toEqual([['existing:0', '{{b\\u{202E}c}}'], ['baseUrl:1', '{{baseUrl}}']])
+    expect(s.lines.map((l) => [l[0], l[2]])).toEqual([['s1', '{{b\\u{202E}c}}'], ['s2', '{{baseUrl}}']])
   })
   it('a secret in a variable’s name is hidden', async () => {
     const c = col(), r = req(c, { url: 'https://shop.test/acme-prod' })
@@ -220,7 +231,8 @@ describe('apply_parameters', () => {
     const call = (over: object) => s.run('apply_parameters', { name: 'Shop/Create order', batch: g.batch, choose: { [g.id('bearer')]: '' }, where: 'environment', ...over })
     await good(call({}))
     expect(await refused(call({ batch: 'made-up' }))).toBe(CHANGED)
-    expect(await refused(call({ choose: { 'bearer:99': '' } }))).toContain('no suggestion “bearer:99”')
+    for (const id of ['bearer:99', '2', 's99', 'S1', 's01', 'constructor', 'Bearer Token']) expect(await refused(call({ choose: { [id]: 'x' } }))).toBe(`That isn’t one of the suggestions. Their ids are ${g.lines.map((l) => l[0]).join(', ')}. Nothing was changed.`)
+    expect(g.lines.map((l) => l[0])).toEqual(g.lines.map((_l, i) => `s${i + 1}`))
     expect(await refused(call({ choose: {} }))).toContain('Choose at least one')
     expect(await refused(call({ where: 'anywhere' }))).toContain('Nothing was changed.')
     s.world.ws.requests.push({ ...s.world.ws.requests[0], id: 'two', name: 'Two' })
