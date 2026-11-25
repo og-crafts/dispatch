@@ -37,6 +37,7 @@ export function open(): Promise<IDBDatabase> {
 export async function resetForTests() {
   if (opening) (await opening).close()
   opening = null
+  turn = Promise.resolve()
   resetVaultForTests()
   await new Promise<void>((res) => { const r = indexedDB.deleteDatabase(NAME); r.onsuccess = r.onerror = r.onblocked = () => res() })
 }
@@ -59,32 +60,34 @@ export const listRequests = async () => { const f = await unsealer(); return Pro
 export const listCollections = async () => { const f = await unsealer(); return Promise.all((await all<Collection>('collections')).map((c) => secretsOf.collection(normalizeCollection(c), f))) }
 export const listFolders = async () => { const f = await unsealer(); return Promise.all((await all<Folder>('folders')).map((x) => secretsOf.folder(normalizeFolder(x), f))) }
 export const listEnvironments = async () => { const f = await unsealer(); return Promise.all((await all<Environment>('environments')).map((e) => secretsOf.environment(e, f))) }
-/** Record writes that have started and not finished: sealing takes a moment, so a later write could overtake them. */
-const writing = new Set<Promise<unknown>>()
-function inFlight<A extends unknown[], T>(write: (...a: A) => Promise<T>) {
+/**
+ * Writes one after another, in the order they were asked for. Sealing takes a moment, so on their own a newer write could
+ * overtake an older one, and a delete the save before it. A write must not wait for another one made this way.
+ */
+let turn: Promise<unknown> = Promise.resolve()
+function inTurn<A extends unknown[], T>(write: (...a: A) => Promise<T>) {
   return (...a: A): Promise<T> => {
-    const p = write(...a)
-    const end = () => { writing.delete(p) }
-    writing.add(p); p.then(end, end)
+    const p = turn.then(() => write(...a))
+    turn = p.catch(() => {})
     return p
   }
 }
-export const putFolder = inFlight(async (x: Folder) => put('folders', await secretsOf.folder(x, await sealer())))
-export const putRequest = inFlight(async (r: RequestDef) => put('requests', await secretsOf.request(r, await sealer())))
-export const putCollection = inFlight(async (c: Collection) => put('collections', await secretsOf.collection(c, await sealer())))
-export const putEnvironment = inFlight(async (e: Environment) => put('environments', await secretsOf.environment(e, await sealer())))
-export const deleteRequest = (id: string) => del('requests', id)
-export const deleteEnvironment = (id: string) => del('environments', id)
+export const putFolder = inTurn(async (x: Folder) => put('folders', await secretsOf.folder(x, await sealer())))
+export const putRequest = inTurn(async (r: RequestDef) => put('requests', await secretsOf.request(r, await sealer())))
+export const putCollection = inTurn(async (c: Collection) => put('collections', await secretsOf.collection(c, await sealer())))
+export const putEnvironment = inTurn(async (e: Environment) => put('environments', await secretsOf.environment(e, await sealer())))
+export const deleteRequest = inTurn((id: string) => del('requests', id))
+export const deleteEnvironment = inTurn((id: string) => del('environments', id))
 
 /** Deletes a collection and every request saved in it. */
-export async function deleteCollection(id: string) {
+export const deleteCollection = inTurn(async (id: string) => {
   const db = await open()
   const t = db.transaction(['collections', 'requests', 'folders'], 'readwrite')
   t.objectStore('collections').delete(id)
   deleteWhere(t.objectStore('folders'), (f: Folder) => f.collectionId === id)
   deleteWhere(t.objectStore('requests'), (r: RequestDef) => r.collectionId === id)
   await done(t)
-}
+})
 
 function deleteWhere<T>(store: IDBObjectStore, test: (v: T) => boolean) {
   const cursor = store.openCursor()
@@ -97,28 +100,28 @@ function deleteWhere<T>(store: IDBObjectStore, test: (v: T) => boolean) {
 }
 
 /** Deletes folders (a folder and its subfolders) and the requests in them. */
-export async function deleteFolders(ids: string[]) {
+export const deleteFolders = inTurn(async (ids: string[]) => {
   const set = new Set(ids)
   const db = await open()
   const t = db.transaction(['folders', 'requests'], 'readwrite')
   ids.forEach((id) => t.objectStore('folders').delete(id))
   deleteWhere(t.objectStore('requests'), (r: RequestDef) => !!r.folderId && set.has(r.folderId))
   await done(t)
-}
+})
 
 /** Global variables (available in every request). */
 export async function getGlobals(): Promise<KV[]> {
   const db = await open()
   return secretsOf.globals((await wrap<KV[] | undefined>(db.transaction('meta').objectStore('meta').get('globals'))) ?? [], await unsealer())
 }
-export const putGlobals = inFlight(async (g: KV[]) => put('meta', await secretsOf.globals(g, await sealer()), 'globals'))
+export const putGlobals = inTurn(async (g: KV[]) => put('meta', await secretsOf.globals(g, await sealer()), 'globals'))
 
 /**
  * Writes and removes records in one transaction: all of them or none. Everything is sealed first (waiting would end the
- * transaction), and writes that started earlier are let finish, so none of them lands on top. `check` runs right before
+ * transaction). It has its turn like every write, so an earlier one never lands on top. `check` runs right before
  * the transaction, in the same moment; what it throws stops it.
  */
-export async function applyRecords(puts: Change[], deletes: Change[], check: () => void = () => {}): Promise<void> {
+export const applyRecords = inTurn(async (puts: Change[], deletes: Change[], check: () => void = () => {}): Promise<void> => {
   const f = await sealer()
   const sealed = await Promise.all(puts.map((c): Promise<unknown> => {
     if (c.kind === 'globals') return secretsOf.globals(c.after as KV[], f)
@@ -128,7 +131,6 @@ export async function applyRecords(puts: Change[], deletes: Change[], check: () 
   const names = [...new Set([...puts, ...deletes].map((c) => stores[c.kind]))]
   if (!names.length) return
   const db = await open()
-  while (writing.size) await Promise.allSettled([...writing])
   check()
   const t = db.transaction(names, 'readwrite')
   const finished = done(t)
@@ -137,7 +139,7 @@ export async function applyRecords(puts: Change[], deletes: Change[], check: () 
     deletes.forEach((c) => t.objectStore(stores[c.kind]).delete(c.id))
   } catch (e) { finished.catch(() => {}); t.abort(); throw e }
   await finished
-}
+})
 
 /** Small UI state kept between sessions (open tabs...). */
 export async function getMeta<T>(key: string): Promise<T | undefined> {
@@ -153,7 +155,7 @@ export async function listHistory(): Promise<HistoryEntry[]> {
 }
 
 /** Adds an entry and trims history to the newest HISTORY_LIMIT entries. */
-export async function addHistory(plain: HistoryEntry) {
+export const addHistory = inTurn(async (plain: HistoryEntry) => {
   const e = await secretsOf.history(plain, await sealer())
   const db = await open()
   const t = db.transaction('history', 'readwrite')
@@ -163,11 +165,11 @@ export async function addHistory(plain: HistoryEntry) {
   const extra = keys.length - HISTORY_LIMIT
   for (let i = 0; i < extra; i++) store.delete(keys[i])
   await done(t)
-}
+})
 
-export async function clearHistory() {
+export const clearHistory = inTurn(async () => {
   const db = await open(); const t = db.transaction('history', 'readwrite'); t.objectStore('history').clear(); await done(t)
-}
+})
 
 export async function getSettings(): Promise<Settings> {
   const db = await open()
@@ -176,10 +178,10 @@ export async function getSettings(): Promise<Settings> {
   return { ...s, mcpHostToken: s.mcpHostToken ? await f(s.mcpHostToken) : '', clientCerts: await Promise.all((s.clientCerts ?? []).map(async (c) => ({ ...c, key: await f(c.key) }))) }
 }
 /** Client-certificate private keys and the MCP endpoint token are sealed like other secrets. */
-export async function putSettings(s: Settings) {
+export const putSettings = inTurn(async (s: Settings) => {
   const f = await sealer()
   await put('meta', { ...s, mcpHostToken: s.mcpHostToken ? await f(s.mcpHostToken) : '', clientCerts: await Promise.all(s.clientCerts.map(async (c) => ({ ...c, key: await f(c.key) }))) }, 'settings')
-}
+})
 
 /**
  * The cookie jars (desktop), by environment, sealed as a whole: cookies are often session secrets. Versions up to 0.1
@@ -197,16 +199,16 @@ export async function getCookieJars(legacyKey: string): Promise<Record<string, S
   return Array.isArray(old) && old.length ? { [legacyKey]: old as StoredCookie[] } : {}
 }
 /** The old list stays a list (an empty one), so going back to an older version still starts. */
-export async function putCookieJars(jars: Record<string, StoredCookie[]>) {
+export const putCookieJars = inTurn(async (jars: Record<string, StoredCookie[]>) => {
   const f = await sealer()
   await put('meta', await f(JSON.stringify(jars)), 'cookieJars')
   if (await getMeta('cookies')) await put('meta', await f('[]'), 'cookies')
-}
+})
 export async function putLegacyCookiesForTests(list: StoredCookie[]) { await put('meta', await (await sealer())(JSON.stringify(list)), 'cookies') }
 
 /** Writes a whole workspace (imports) in one transaction. */
 async function putManyNow(plain: { collections?: Collection[]; folders?: Folder[]; requests?: RequestDef[]; environments?: Environment[]; flows?: Flow[]; spaces?: () => Space[] }) {
-  if (plain.flows?.length) for (const f of plain.flows) await putFlow(f)
+  if (plain.flows?.length) for (const f of plain.flows) await putFlowNow(f)
   const f = await sealer()
   const data = {
     collections: plain.collections && await Promise.all(plain.collections.map((c) => secretsOf.collection(c, f))),
@@ -228,13 +230,13 @@ async function putManyNow(plain: { collections?: Collection[]; folders?: Folder[
   await finished
 }
 
-export const putMany = inFlight(putManyNow)
+export const putMany = inTurn(putManyNow)
 
 /** Open tabs (drafts included), with their secrets sealed like saved requests. */
-export async function putOpenTabs(drafts: RequestDef[], active: number, spaces?: (string | null)[]) {
+export const putOpenTabs = inTurn(async (drafts: RequestDef[], active: number, spaces?: (string | null)[]) => {
   const f = await sealer()
   await put('meta', { tabs: await Promise.all(drafts.map((d) => secretsOf.request(d, f))), active, spaces }, 'tabs')
-}
+})
 /** `spaces[i]` is the workspace tab i belongs to (missing in data saved before workspaces had their own tabs). */
 export async function getOpenTabs(): Promise<{ tabs: RequestDef[]; active: number; spaces?: (string | null)[] } | undefined> {
   const saved = await getMeta<{ tabs: RequestDef[]; active: number; spaces?: (string | null)[] }>('tabs')
@@ -292,7 +294,7 @@ export async function getBackup(id: string): Promise<BackupData | null> {
 }
 
 /** Replaces the whole workspace with `data` in one transaction. */
-export async function replaceAll(data: BackupData) {
+export const replaceAll = inTurn(async (data: BackupData) => {
   const f = await sealer()
   const sealed = {
     collections: await Promise.all(data.collections.map((c) => secretsOf.collection(c, f))),
@@ -310,7 +312,7 @@ export async function replaceAll(data: BackupData) {
   t.objectStore('meta').put(sealed.globals, 'globals')
   if (data.flows) { t.objectStore('flows').clear(); for (const x of data.flows) t.objectStore('flows').put(x) }
   await done(t)
-}
+})
 
 // ---------- schedules ----------
 import type { Schedule, ScheduleRun } from './schedules'
@@ -340,9 +342,9 @@ export async function getVaultRecord(spaceId: string): Promise<VaultRecord | und
   if (!v) return undefined
   try { return JSON.parse(await unseal(await key(), v)) as VaultRecord } catch { return undefined }
 }
-export async function putVaultRecord(spaceId: string, rec: VaultRecord | undefined) {
+export const putVaultRecord = inTurn(async (spaceId: string, rec: VaultRecord | undefined) => {
   await put('meta', rec ? await seal(await key(), JSON.stringify(rec)) : undefined, `secretsVault:${spaceId}`)
-}
+})
 export type FolderState = Record<string, string> | 'force'
 export const getFolderState = (key: string) => getMeta<FolderState>(`folder:${key}`)
 export const putFolderState = (key: string, v: FolderState | undefined) => put('meta', v, `folder:${key}`)
@@ -350,8 +352,9 @@ export const putFolderState = (key: string, v: FolderState | undefined) => put('
 // ---------- flows ----------
 import type { Flow } from './flows'
 export const listFlows = () => all<Flow>('flows')
-export const putFlow = (f: Flow) => put('flows', f)
-export const deleteFlow = (id: string) => del('flows', id)
+const putFlowNow = (f: Flow) => put('flows', f)
+export const putFlow = inTurn(putFlowNow)
+export const deleteFlow = inTurn((id: string) => del('flows', id))
 
 // ---------- MCP sign-ins (tokens; sealed, never exported) ----------
 import type { McpSignIn } from './mcpAuth'
@@ -360,7 +363,7 @@ export async function getMcpSignIns(): Promise<McpSignIn[]> {
   if (!sealedList) return []
   try { return JSON.parse(await (await unsealer())(sealedList)) } catch { return [] }
 }
-export async function putMcpSignIns(list: McpSignIn[]) { await put('meta', await (await sealer())(JSON.stringify(list)), 'mcpSignIns') }
+export const putMcpSignIns = inTurn(async (list: McpSignIn[]) => { await put('meta', await (await sealer())(JSON.stringify(list)), 'mcpSignIns') })
 
 // ---------- assistant connections (keys sealed like other secrets, never exported) ----------
 import { normalizeConnection, type Connection } from './assistant/connections'
@@ -382,7 +385,7 @@ export async function getConnections(): Promise<Connection[]> {
   }
   return out
 }
-export async function putConnections(list: Connection[]) {
+export const putConnections = inTurn(async (list: Connection[]) => {
   const f = await sealer()
   const stored = await getMeta<unknown[]>(CONNECTIONS)
   const old = new Map<string, string>()
@@ -392,7 +395,7 @@ export async function putConnections(list: Connection[]) {
     // An unreadable key keeps its stored ciphertext until a key is set or removed on purpose.
     key: keyLost && !c.key ? (old.get(c.id) ?? '') : await f(c.key),
   }))), CONNECTIONS)
-}
+})
 
 // ---------- assistant chats (one sealed record per chat; this device only, never exported or backed up) ----------
 const CHAT_INDEX = 'assistantChatIndex'
