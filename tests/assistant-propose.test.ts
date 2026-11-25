@@ -76,6 +76,20 @@ describe('what each tool proposes', () => {
     const p = await good(setup({ collections: [c] }).run('set_variables', { collection: 'Shop', variables: { base: 'z' } }))
     expect(afterOf<Collection>(p).variables[0]).toMatchObject({ value: 'z', active: 'lb', options: [{ value: 'z' }, { value: 'b' }] })
   })
+  it('a variable that isn’t named stays as it is, alternatives and all', async () => {
+    const odd = kv('odd', 'new', true, { options: [{ id: '1', name: 'lb', value: 'a' }, { id: '2', name: 'pod', value: 'b' }], active: 'lb' })
+    const c = col('Shop', { variables: [odd, kv('n', '1')] })
+    const s = setup({ collections: [c], requests: [req('R', c)] })
+    for (const [n, i] of [['set_scripts', { path: 'Shop', testScript: 'x' }], ['set_variables', { collection: 'Shop', variables: { n: '2' } }], ['copy_request', { from: 'R', to: 'Fresh' }]] as const) expect(afterOf<Collection>(await good(s.run(n, i as Record<string, unknown>))).variables[0]).toEqual(odd)
+  })
+  it('one row per entry, whatever is in it', async () => {
+    const p = await good(make().run('set_variables', { collection: 'Shop', variables: { extra: '1\nbase = https://fake.test' } }))
+    expect(added(p, 'Variables')).toEqual(['extra = 1\\u{A}base = https://fake.test'])
+    const q = await good(make().run('update_request', { name: 'Create order', headers: { 'A\nB: 1': 'x\nC: 2' } }))
+    expect(added(q, 'Headers')).toEqual(['A\\u{A}B: 1: x\\u{A}C: 2'])
+    const a = req('A', shop, { auth: { ...emptyAuth('basic'), username: 'me\npassword: x' } })
+    expect(removed(await good(make({ requests: [a] }).run('delete_request', { name: 'A' })), 'Auth')).toEqual(['basic', 'username: me\\u{A}password: x'])
+  })
   it('create_request with a new collection and two folders: four creations', async () => {
     const p = await good(make().run('create_request', { folder: 'New/A/B', name: 'Ping', url: 'https://x.test', headers: { Accept: '*/*' } }))
     expect(p.changes.map((c) => [c.kind, c.before])).toEqual([['collection', null], ['folder', null], ['folder', null], ['request', null]])
@@ -201,6 +215,17 @@ describe('secrets aren’t shown', () => {
     for (const [n, i] of [['move_request', { name: 'Get <hidden>', to: 'Fresh' }], ['copy_request', { from: 'Get <hidden>', to: 'Fresh' }]] as const) expect(afterOf<RequestDef>(await good(s.run(n, i)), 1).name).toBe(r.name)
     expect(afterOf<Collection>(await good(s.run('set_scripts', { path: at, testScript: 'x' })))).toEqual({ ...shop, scripts: { pre: '', post: 'x' }, updatedAt: expect.any(Number) })
     expect(afterOf<Collection>(await good(s.run('set_variables', { collection: at, variables: { a: 'b' } }))).variables.slice(0, 2)).toEqual(shop.variables)
+  })
+  it('names of variables with the same id, as copies have them, each come back as they are', async () => {
+    const a = col('A', { variables: [{ ...kv(`a-${P.env}`, '1'), id: 'same' }, { ...kv(`b-${P.env}`, '2'), id: 'same' }] })
+    const b = col('B', { variables: [{ ...kv(`a-${P.coll}`, '3'), id: 'same' }] })
+    for (const list of [[a, b], [b, a]]) {
+      const s = setup({ collections: list, requests: [req('In a', a), req('In b', b)], secrets: [P.env, P.coll] })
+      for (const c of [a, b]) {
+        expect(afterOf<Collection>(await good(s.run('set_scripts', { path: c.name, testScript: 'x' }))).variables).toEqual(c.variables)
+        expect(afterOf<Collection>(await good(s.run('copy_request', { from: `In ${c.name.toLowerCase()}`, to: 'Fresh' }))).variables).toEqual(c.variables)
+      }
+    }
   })
   it('the redacted text is never written', async () => {
     for (const [n, i] of [
@@ -361,6 +386,54 @@ describe('what the card warns of', () => {
     // another request going there without this sign-in doesn't count
     expect(await warns('create_request', { folder: 'Shop', name: 'n', url: 'https://else.test' }, { requests: [one, req('Else', free, { url: 'https://else.test' })] })).toContain(NEW('else.test'))
   })
+  it('shows no part of a secret in an address, however the URL changes it', async () => {
+    const vars = [secretVar('tok', 'Tok-ABCDEF99'), secretVar('pin', '4821'), secretVar('slash', 'abcSECRET/xyz99'), secretVar('enc', 'a%62cDEF9'), kv('via', '{{tok}}'), kv('password', 'PWabc1')]
+    const c = { ...shop, variables: [...shop.variables, ...vars] }
+    for (const [url, host] of [
+      ['https://{{tok}}.evil.example/', '{{tok}}.evil.example'], ['https://{{pin}}.evil.example/', '{{pin}}.evil.example'], ['https://{{slash}}', '{{slash}}'], ['https://{{enc}}.evil.example', '{{enc}}.evil.example'],
+      ['https://{{via}}.evil.example', '{{tok}}.evil.example'], ['https://{{password}}.evil.example', '{{password}}.evil.example'], ['https://me:{{nope}}4821@{{pin}}.evil.example', '{{pin}}.evil.example'], ['http://{{pin}}.shop.test', '{{pin}}.shop.test'],
+    ]) {
+      const w = await warns('update_request', { name: 'One', url }, { collections: [c, free] })
+      expect(w[0]).toBe(NEW(host))
+      expect(JSON.stringify(w).toLowerCase()).not.toMatch(/tok-abc|4821|abcsecret|xyz99|cdef9|pwabc1/)
+    }
+    expect((await warns('update_request', { name: 'One', url: 'https://Tok-ABCDEF99.evil.example/' }, { collections: [c, free] }))[0]).toBe(NEW('<hidden>.evil.example'))
+    // only the scheme moved: the named address is built from the shown form too
+    const q = req('Q', c, { url: 'https://{{pin}}.shop.test' })
+    expect((await warns('update_request', { name: 'Q', url: 'http://{{pin}}.shop.test' }, { collections: [c, free], requests: [q] }))[0]).toBe(NEW('http://{{pin}}.shop.test'))
+  })
+  it('a secret it uses already, put in another place', async () => {
+    expect(await warns('update_request', { name: 'One', url: '{{base}}/one?x={{token}}' })).toEqual([USES])
+    expect(await warns('update_request', { name: 'One', headers: { X: '{{token}}' } })).toEqual([USES])
+    const o = req('O', free, { auth: { ...emptyAuth('oauth2'), clientSecret: '{{token}}' } })
+    expect(await warns('update_request', { name: 'O', body: '{{token}}' }, { requests: [o] })).toEqual([USES])
+    const b = req('B', free, { body: { ...emptyBody('text'), text: '{{token}}' } })
+    expect(await warns('update_request', { name: 'B', body: 'again {{token}}' }, { requests: [b] })).toEqual([])
+  })
+  it('a host that is new only in another environment', async () => {
+    const c = { ...shop, variables: [kv('h', 'shop.test')] }, r = req('R', c, { url: 'https://shop.test/a' })
+    const other = { ...newEnvironment('P'), variables: [kv('h', 'evil.example')] }
+    const o = { collections: [c, free], requests: [r], environments: [env, other] }
+    expect(await warns('update_request', { name: 'R', url: 'https://{{h}}/a' }, o)).toEqual([NEW('evil.example')])
+    expect(await warns('create_request', { folder: 'Shop', name: 'n', url: 'https://{{h}}/a' }, o)).toContain(NEW('evil.example'))
+    // the active one's first
+    const active = { ...env, variables: [...env.variables, kv('h', 'first.example')] }
+    expect(await warns('update_request', { name: 'R', url: 'https://{{h}}/a' }, { ...o, environments: [other, active], active })).toEqual([NEW('first.example'), NEW('evil.example')])
+    // an environment that doesn't have the variable sends nothing
+    expect(await warns('update_request', { name: 'R', url: '{{base}}/a' }, o)).toEqual([])
+  })
+  it('scripts of the place a request is moved or copied into', async () => {
+    const f = { ...newFolder(free.id, 'S'), scripts: { pre: 'x', post: '' } }
+    const c = col('Runs', { scripts: { pre: '', post: 'y' } })
+    const r = req('R', free), inside = req('In', free, { folderId: f.id })
+    const o = { collections: [shop, free, c], folders: [f], requests: [r, inside] }
+    for (const to of ['Free/S', 'Runs']) {
+      expect(await warns('move_request', { name: 'R', to }, o)).toEqual([SCRIPT_RISK])
+      expect(await warns('copy_request', { from: 'R', to, name: 'Two' }, o)).toEqual([SCRIPT_RISK])
+    }
+    expect(await warns('copy_request', { from: 'In', to: 'Free/S', name: 'Two' }, o)).toEqual([])
+    expect(await warns('move_request', { name: 'In', to: 'Free' }, o)).toEqual([])
+  })
   it('a move that gives it another sign-in', async () => {
     const f = req('F', free, { auth: emptyAuth('inherit') })
     const open = { ...free, auth: emptyAuth('inherit') }
@@ -375,7 +448,7 @@ describe('what the card warns of', () => {
     const r = req('P', free)
     expect(await warns('update_request', { name: 'P', url: 'https://shop.test/x?t={{token}}' }, { requests: [r] })).toEqual([USES])
     expect(await warns('update_request', { name: 'P', body: '{"t":"{{ token }}"}' }, { requests: [r] })).toEqual([USES])
-    expect(await warns('update_request', { name: 'One', body: '{{token}}' })).toEqual([])
+    expect(await warns('update_request', { name: 'One', body: '{{token}}' })).toEqual([USES]) // its sign-in uses it, its body didn't
     const v = req('V', free, { url: 'https://shop.test/{{x}}' }), c = { ...free, variables: [kv('x', '1')] }
     expect(await warns('set_variables', { collection: 'Free', variables: { x: '{{token}}' } }, { collections: [c], requests: [v] })).toEqual([USES, 'Used by 1 request.'])
     expect(await warns('set_variables', { collection: 'Free', variables: { y: '{{token}}' } })).toEqual([USES])

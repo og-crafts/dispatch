@@ -100,7 +100,6 @@ export async function propose(name: string, input: Record<string, unknown>, ctx:
 
   // What it would save, with the real names back, and nothing but the open workspace.
   const colOf = byId(real.collections), folderOf = byId(real.folders), requestOf = byId(real.requests)
-  const keyOf = new Map(real.collections.flatMap((c) => c.variables.map((v) => [v.id, v.key] as const)))
   const nameBack = (now: string, was: { name: string } | undefined) => (was && now === cl.clean(was.name) ? was.name : now)
   const changes: Change[] = []
   const add = (kind: Change['kind'], id: string, before: Rec | null, after: Rec | null) => { if (canonical(before) !== canonical(after)) changes.push(structuredClone({ kind, id, before, after })) }
@@ -111,10 +110,15 @@ export async function propose(name: string, input: Record<string, unknown>, ctx:
     if (c.workspaceId !== OPEN) return outside
     const was = colOf.get(c.id)
     if (!was && c.name.includes(HIDDEN)) return hiddenBack
+    // a new one has the variables of the collection its request comes from
+    const pool = [...((was ?? (found && colOf.get(found.collectionId ?? '')))?.variables ?? [])]
     const variables = c.variables.map((v) => {
-      const key = keyOf.get(v.id)
-      return inStep(key !== undefined && v.key === cl.clean(key) ? { ...v, key } : v)
+      const i = pool.findIndex((x) => x.id === v.id && cl.clean(x.key) === v.key)
+      const back = i < 0 ? v : { ...v, key: pool.splice(i, 1)[0].key }
+      return name === 'set_variables' && Object.hasOwn((input.variables as object) ?? {}, back.key) ? inStep(back) : back
     })
+    const keys = new Set(real.collections.flatMap((x) => x.variables).map((v) => v.key))
+    if (variables.some((v) => v.key.includes(HIDDEN) && !keys.has(v.key))) return hiddenBack
     add('collection', c.id, was ?? null, { ...c, name: nameBack(c.name, was), workspaceId: was ? was.workspaceId : ctx.spaceId, variables })
   }
   for (const f of got.folders) {
@@ -257,7 +261,8 @@ function badVariables(input: Record<string, unknown>, vars: KV[], cl: Cleaner): 
 
 const isSecret = (v: KV, cl: Cleaner) => !!v.secret || JSON.stringify(cl.deep(v)) !== JSON.stringify(v)
 
-const LABELS: Record<string, string> = { url: 'URL', params: 'URL', docs: 'docs text', scripts: 'script', auth: 'sign-in' }
+const SCRIPT_RISK = 'Scripts run when this is sent. They can read variables, including secrets, and send requests.'
+const LABELS: Record<string, string> = { url: 'URL', params: 'URL', docs: 'docs text', scripts: 'script', auth: 'sign-in', headers: 'list of headers', variables: 'list of variables' }
 /** The first part of a record whose hidden text would be replaced or removed, or null. */
 function lost(before: Rec, after: Rec, cl: Cleaner): string | null {
   if (Array.isArray(before)) return hiddenGone(before, cl.deep(before), after, 'variables') ? 'variables' : null
@@ -272,7 +277,7 @@ function hiddenGone(b: unknown, shown: unknown, a: unknown, at: string, key = ''
   if (Array.isArray(b)) {
     return b.some((x, i) => {
       const id = (x as { id?: unknown } | null)?.id
-      const y = !Array.isArray(a) ? undefined : id === undefined ? a[i] : a.find((z) => z?.id === id)
+      const y = !Array.isArray(a) ? undefined : id === undefined ? a[i] : a.find((z) => canonical(z) === canonical(x as Rec)) ?? a.find((z) => z?.id === id) // ids can repeat
       // a header may be replaced by a lone variable
       if (at === 'headers' && y && IS_VAR.test(y.value)) return false
       return hiddenGone(x, (shown as unknown[])[i], y, at)
@@ -346,10 +351,11 @@ function fieldsOf(c: Change, before: World, after: World, d: Draft, cl: Cleaner)
 }
 
 const placeText = (w: World, collectionId: string | null, folderId: string | null, cl: Cleaner, made: Set<string>) =>
-  [...w.collections.filter((c) => c.id === collectionId), ...folderChain(w.folders, folderId).reverse()].map((x) => (made.has(x.id) ? x.name : cl.clean(x.name))).join(' / ')
+  [...w.collections.filter((c) => c.id === collectionId), ...folderChain(w.folders, folderId).reverse()].map((x) => oneLine(made.has(x.id) ? x.name : cl.clean(x.name))).join(' / ')
 
+/** One row per entry: a line break in one is drawn, so it can't look like another. */
 const rows = (l: KV[], shown: KV[], exact: (v: KV) => boolean, sep: string) =>
-  l.map((v, i) => { const x = exact(v) ? v : shown[i]; return `${v.enabled === false ? '(off) ' : ''}${x.key}${sep}${x.value}` }).join('\n')
+  l.map((v, i) => { const x = exact(v) ? v : shown[i]; return `${v.enabled === false ? '(off) ' : ''}${oneLine(x.key)}${sep}${oneLine(x.value)}` }).join('\n')
 const variablesText = (l: KV[], exact: Exact, cl: Cleaner) => rows(l, cl.deep(l), (v) => !v.secret && exact.variables?.get(v.key) === v.value, ' = ')
 
 function requestTexts(real: RequestDef, w: World, exact: Exact, cl: Cleaner, made: Set<string>): [string, string][] {
@@ -369,7 +375,7 @@ function requestTexts(real: RequestDef, w: World, exact: Exact, cl: Cleaner, mad
 function authText(a: Auth, cl: Cleaner): string {
   if (a.kind === 'inherit') return ''
   const of = a as unknown as Record<string, unknown>
-  return [a.kind, ...(AUTH_FIELDS[a.kind] ?? []).filter((k) => of[k]).map((k) => `${k}: ${AUTH_SECRETS.has(k) && !IS_VAR.test(String(of[k])) ? HIDDEN : cl.clean(String(of[k]))}`)].join('\n')
+  return [a.kind, ...(AUTH_FIELDS[a.kind] ?? []).filter((k) => of[k]).map((k) => `${k}: ${AUTH_SECRETS.has(k) && !IS_VAR.test(String(of[k])) ? HIDDEN : oneLine(cl.clean(String(of[k])))}`)].join('\n')
 }
 
 // ---- warnings ----
@@ -379,12 +385,12 @@ const on = (l: KV[]) => l.filter((x) => x.enabled !== false)
 const collectionOf = (r: RequestDef, w: World) => w.collections.find((c) => c.id === r.collectionId) ?? null
 const authOf = (r: RequestDef, w: World) => { const a = effectiveAuth(r, collectionOf(r, w), folderChain(w.folders, r.folderId)); return a && a.kind !== 'none' && a.kind !== 'inherit' ? a : null }
 
-/** Every text that is filled in when the request is sent. */
-function sentTexts(r: RequestDef, w: World): string[] {
+/** Every text that is filled in when the request is sent, by where it goes. */
+function sentTexts(r: RequestDef, w: World): Record<string, string[]> {
   const b = r.body
   const body = b.kind === 'none' || b.kind === 'binary' ? [] : FIELD_BODIES.includes(b.kind) ? on(b.fields).flatMap((f) => [f.key, f.value]) : [b.text, ...(b.kind === 'graphql' ? [b.graphqlVariables] : [])]
   const own = r.protocol === 'socketio' ? r.sio : r.protocol === 'http' || r.protocol === 'sse' ? null : r[r.protocol]
-  return [r.url, ...[...on(r.headers), ...r.pathVars].flatMap((h) => [h.key, h.value]), ...body, ...strings(authOf(r, w)), ...strings(own)]
+  return { url: [r.url], path: r.pathVars.map((v) => v.value), headers: on(r.headers).flatMap((h) => [h.key, h.value]), body, auth: strings(authOf(r, w)), own: strings(own) }
 }
 
 /** The variables a text can come to use, through other variables too, in whichever environment. */
@@ -400,10 +406,14 @@ function reach(texts: string[], collectionId: string | null, w: World, r?: Reque
   }
   return out
 }
-const usesOf = (r: RequestDef, w: World) => reach(sentTexts(r, w), r.collectionId, w, r)
+const usesOf = (r: RequestDef, w: World) => reach(Object.values(sentTexts(r, w)).flat(), r.collectionId, w, r)
 /** The secret ones by name, with what tells one `token` from another. */
 const secretsIn = (vars: Map<string, KV[]>, cl: Cleaner) =>
   new Map([...vars].flatMap(([n, vs]) => { const s = vs.filter((v) => isSecret(v, cl)); return s.length ? [[n, JSON.stringify(s.map((v) => v.value))] as const] : [] }))
+
+/** The same by place: a secret put where it wasn't is a new use, also when another place has it. */
+const secretPlaces = (r: RequestDef, w: World, cl: Cleaner) =>
+  new Map(Object.entries(sentTexts(r, w)).flatMap(([place, texts]) => [...secretsIn(reach(texts, r.collectionId, w, r), cl)].map(([n, sig]) => [`${place} ${n}`, { n, sig }] as const)))
 
 const fill = (s: string, scope: Map<string, string>) => {
   let out = s
@@ -411,23 +421,36 @@ const fill = (s: string, scope: Map<string, string>) => {
   for (let i = 0; i < 5 && out.length < 10_000; i++) out = out.replace(/\{\{\s*([^{}\s]+)\s*\}\}/g, (m, n: string) => scope.get(n) ?? m)
   return out
 }
-interface Address { key: string; host: string }
-/** Where a URL leads, or how it starts when that can't be told. */
-function addressOf(url: string, scope: Map<string, string>): Address | null {
-  const t = withScheme(fill(url, scope))
-  if (!t) return null
-  const lead = /^[a-z][a-z0-9+.-]*:\/\/[^/\\?#]*/i.exec(t)?.[0] ?? splitUrl(t).base
-  const asWritten = { key: lead, host: lead.replace(/^https?:\/\/(?=.*\{\{)/i, '') }
-  if (lead.includes('{{')) return asWritten
-  try { const u = new URL(t); return { key: `${u.protocol}//${u.host}`, host: u.host || lead } } catch { return asWritten }
+/** `key` is for comparing only: it can hold secrets. */
+interface Address { key: string; url: string; environment: Environment | null; resolved: boolean }
+const leadOf = (t: string) => /^[a-z][a-z0-9+.-]*:\/\/[^/\\?#]*/i.exec(t)?.[0] ?? splitUrl(t).base
+/** Scheme and host as a URL parser sees them; null when there is something left to fill in or it isn't a URL. */
+const parsed = (t: string): { key: string; host: string } | null => {
+  if (leadOf(t).includes('{{')) return null
+  try { const u = new URL(t); return u.host ? { key: `${u.protocol}//${u.host}`, host: u.host } : null } catch { return null }
 }
-/** Where a request and its sign-in are sent, in each of these environments. */
-function addresses(r: RequestDef, w: World, environments: (Environment | null)[]): Address[] {
+/** Where a request and its sign-in are sent in an environment, or how the URL starts when that can't be told. */
+function addresses(r: RequestDef, w: World, environment: Environment | null): Address[] {
   const a = authOf(r, w)
-  return environments.flatMap((environment) => {
-    const scope = scopeFor({ collection: collectionOf(r, w), environment, globals: w.globals, handoff: r.handoff?.variables ?? null })
-    return [r.url, ...(a?.kind === 'oauth2' ? [a.tokenUrl, a.authUrl] : [])].flatMap((u) => addressOf(u, scope) ?? [])
+  const scope = scopeFor({ collection: collectionOf(r, w), environment, globals: w.globals, handoff: r.handoff?.variables ?? null })
+  return [r.url, ...(a?.kind === 'oauth2' ? [a.tokenUrl, a.authUrl] : [])].flatMap((url) => {
+    const t = withScheme(fill(url, scope))
+    const to = parsed(t)
+    return t ? [{ key: to?.key ?? leadOf(t), url, environment, resolved: !!to }] : []
   })
+}
+/**
+ * An address as the person may see it: secret variables stay as {{name}}, and the text is cleaned before a URL parser
+ * can change it, because a secret in lower case or cut short isn't recognised any more.
+ */
+function shownAddress(a: Address, r: RequestDef, w: World, cl: Cleaner): { key: string; host: string } {
+  const scope = new Map<string, string>()
+  for (const l of [w.globals, r.handoff?.variables ?? [], collectionOf(r, w)?.variables ?? [], a.environment?.variables ?? []]) {
+    for (const v of on(l)) { if (isSecret(v, cl)) scope.delete(v.key.trim()); else scope.set(v.key.trim(), v.value) }
+  }
+  const t = cl.clean(withScheme(fill(a.url, scope)))
+  const lead = leadOf(t).replace(/\/\/.*@/s, '//')
+  return parsed(t) ?? { key: lead, host: lead.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '') }
 }
 
 /** Whether something secret goes along: a sign-in, a header by its name, a hidden text, a secret variable. */
@@ -439,22 +462,29 @@ function carriesSecret(r: RequestDef, w: World, cl: Cleaner): boolean {
 
 function newAddresses(r: RequestDef, was: RequestDef | undefined, before: World, after: World, cl: Cleaner): string[] {
   const signIn = authOf(r, after)
-  let known: Address[]
-  // The same text leads elsewhere only where a variable changed, in whichever environment; another text is judged in the active one.
-  const same = was && was.url === r.url
-  const now = addresses(r, after, same ? [after.active, null, ...after.environments] : [after.active])
-  if (was) {
-    const other = canonical(signIn as unknown as Rec | null) !== canonical(authOf(was, before) as unknown as Rec | null)
-    known = signIn && other ? [] : addresses(was, before, same ? [before.active, null, ...before.environments] : [before.active])
-  } else {
+  const same = (a: Auth | null) => canonical(a as unknown as Rec | null) === canonical(signIn as unknown as Rec | null)
+  // each environment against itself before the change, the active one first
+  const environments = [after.active, ...[null, ...after.environments].filter((e) => e !== after.active)]
+  const fresh: { a: Address; known: { x: RequestDef; a: Address }[] }[] = environments.flatMap((e) => {
+    const old = e && (before.environments.find((x) => x.id === e.id) ?? null)
     // a new request: where its sign-in (or, without one, anything here) goes already
-    known = before.requests.filter((x) => !signIn || canonical(authOf(x, before) as unknown as Rec | null) === canonical(signIn as unknown as Rec)).flatMap((x) => addresses(x, before, [before.active]))
-  }
-  const fresh = now.filter((a) => !known.some((k) => k.key === a.key))
+    const from = was ? (signIn && !same(authOf(was, before)) ? [] : [was]) : before.requests.filter((x) => !signIn || same(authOf(x, before)))
+    const known = from.flatMap((x) => {
+      const there = addresses(x, before, old)
+      // not sent there so far: what the active environment makes of it isn't new
+      return [...there, ...(there.some((a) => !a.resolved) ? addresses(x, before, before.active) : [])].map((a) => ({ x, a }))
+    })
+    // in another environment than the active one, a URL with something left to fill in isn't sent
+    return addresses(r, after, e).filter((a) => (a.resolved || e === after.active) && !known.some((k) => k.a.key === a.key)).map((a) => ({ a, known }))
+  })
   if (!fresh.length || !carriesSecret(r, after, cl)) return []
-  // the active environment's, when it resolves there; the same host on another scheme is named with it
-  const told = fresh.filter((a) => !a.host.includes('{{'))
-  return (told.length ? told : fresh).map((a) => (known.some((k) => k.host === a.host) ? a.key : a.host))
+  // when it leads somewhere in one environment, that says more than how it starts in one where it doesn't
+  const told = fresh.some((f) => f.a.resolved) ? fresh.filter((f) => f.a.resolved) : fresh
+  return told.map(({ a, known }) => {
+    const s = shownAddress(a, r, after, cl)
+    // the same host on another scheme is named with it
+    return known.some((k) => shownAddress(k.a, k.x, before, cl).host === s.host) ? s.key : s.host
+  })
 }
 
 function warningsOf(d: Draft, before: World, after: World, schedules: Schedule[], cl: Cleaner): string[] {
@@ -470,10 +500,17 @@ function warningsOf(d: Draft, before: World, after: World, schedules: Schedule[]
     if (!now) continue
     const old = (c.before ?? (c.kind === 'request' ? d.sources?.get(c.id) : null)) as typeof now | null | undefined
     const changed = (['pre', 'post'] as const).filter((k) => now.scripts[k] !== (old?.scripts[k] ?? ''))
-    if (changed.some((k) => !isEmpty(now.scripts[k]))) out.add('Scripts run when this is sent. They can read variables, including secrets, and send requests.')
+    if (changed.some((k) => !isEmpty(now.scripts[k]))) out.add(SCRIPT_RISK)
     if (changed.length && c.kind !== 'request') ran = new Set([...(ran ?? []), ...itemsOf(after, c.kind === 'folder' ? (now as Folder).collectionId : c.id, c.kind === 'folder' ? c.id : null)])
   }
   if (ran) out.add(`Runs for ${plural(ran.size, 'request')}.`)
+
+  // Moved or copied to where other scripts run for it.
+  const runsFor = (r: RequestDef, w: World) => [...folderChain(w.folders, r.folderId), ...w.collections.filter((c) => c.id === r.collectionId)].filter((x) => !isEmpty(x.scripts.pre) || !isEmpty(x.scripts.post)).map((x) => x.id)
+  for (const r of after.requests) {
+    const o = d.changes.some((c) => c.id === r.id) && origin(r)
+    if (o && (o.collectionId !== r.collectionId || o.folderId !== r.folderId) && runsFor(r, after).some((id) => !runsFor(o, before).includes(id))) out.add(SCRIPT_RISK)
+  }
 
   // A change of anything else than requests can reach them all.
   const tables = d.changes.filter((c) => c.kind === 'collection' || c.kind === 'environment' || c.kind === 'globals')
@@ -484,8 +521,8 @@ function warningsOf(d: Draft, before: World, after: World, schedules: Schedule[]
   const uses = (n: string) => out.add(`Uses {{${safe(n)}}}, which is secret.`)
   for (const r of reached) {
     const o = origin(r)
-    const old = o ? secretsIn(usesOf(o, before), cl) : new Map<string, string>()
-    for (const [n, sig] of secretsIn(usesOf(r, after), cl)) if (old.get(n) !== sig) uses(n)
+    const old = o && secretPlaces(o, before, cl)
+    for (const [place, { n, sig }] of secretPlaces(r, after, cl)) if (old?.get(place)?.sig !== sig) uses(n)
   }
   const changedNames: { name: string; collectionId: string | null }[] = []
   for (const c of tables) {
