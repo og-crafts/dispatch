@@ -44,7 +44,7 @@ see the privacy policy.
   blocks. Requests branch on “ok”/“failed”; live status per block and a run log. Run them in the app,
   with `dispatch-run flow`, or from an AI assistant (`run_flow` over MCP). Flows are part of backups and exports.
 
-- Assistant (desktop; after 0.2.0): stuck on why a test fails or what an old script does? Ask right inside Dispatch, with
+- Assistant (desktop): stuck on why a test fails or what an old script does? Ask right inside Dispatch, with
   a model you connect (your own Anthropic or OpenAI key, an address you choose, or one running on this computer, such as
   Ollama). It reads your requests, scripts and variables, explains them, and can propose changes: a new test, a fixed
   script, values moved into variables. You see each change first, and it is made only when you press Apply. You can undo
