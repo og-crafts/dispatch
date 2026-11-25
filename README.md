@@ -10,7 +10,9 @@ runner, load tests, mocks and docs all in the same free app, and collections as 
 No account, no sync. Collections, environments and history stay in this device's storage. Besides the requests you
 send, Dispatch sends nothing unless you opt in to anonymous usage and error reports (asked on first launch; see
 docs/TELEMETRY.md). The desktop app also asks GitHub for new versions on start and once a day; it tells you first, no
-workspace data is sent, and Settings turns it off.
+workspace data is sent, and Settings turns it off. If you add a model to the optional assistant (below), what you ask it,
+and what it reads to answer, goes to that model and nowhere else; we receive none of it. Not everything is hidden from it:
+see the privacy policy.
 
 ## Features
 
@@ -41,6 +43,13 @@ workspace data is sent, and Settings turns it off.
 - Flows: a canvas where you wire saved requests together with If, Script, Set variable, For each, Delay and End
   blocks. Requests branch on “ok”/“failed”; live status per block and a run log. Run them in the app,
   with `dispatch-run flow`, or from an AI assistant (`run_flow` over MCP). Flows are part of backups and exports.
+
+- Assistant (desktop; after 0.2.0): stuck on why a test fails or what an old script does? Ask right inside Dispatch, with
+  a model you connect (your own Anthropic or OpenAI key, an address you choose, or one running on this computer, such as
+  Ollama). In this version it reads your requests, scripts and variables, explains them and suggests scripts to copy; it
+  doesn't change or send anything. Off until you add a connection. Secrets Dispatch knows are hidden from it, but it can't
+  recognise every secret and ordinary data isn't hidden. Chats and keys stay sealed on the device, out of backups and
+  folders. See https://dispatch.ogcrafts.cloud/privacy/#assistant.
 
 **Requests**
 - HTTP with params (kept in sync with the URL), `:path` variables, headers, and bodies: JSON, text, XML, HTML,

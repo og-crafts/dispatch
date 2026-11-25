@@ -3,7 +3,8 @@
 Every request, folder and collection can have two scripts: **Before request** runs just before it is sent, **After
 response (tests)** runs when the response arrives. Collection scripts run first, then folder scripts, then the request's
 own. Scripts are plain JavaScript (`await` works at the top level) and run in a sandbox with no access to your saved
-data; `console.log` output shows in the Console.
+data; `console.log` output shows in the Console. On desktop, the Dispatch assistant can explain a script and suggest one written with `dx`
+for you to copy in; it can't edit or run it (see the privacy policy for what it reads).
 
 ```js
 // After response

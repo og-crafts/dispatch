@@ -80,6 +80,35 @@ about each, without naming or disparaging anyone.
   `grpc.rs` — gRPC (tonic + prost-reflect + protox); `mcp_host.rs` — local MCP endpoint (127.0.0.1 only,
   bearer token, refuses Origin and foreign Host headers, POST only) that relays JSON-RPC to the frontend
   (`src/ui/mcpHost.ts`, turned on in Settings → AI assistants).
+- The built-in assistant (desktop only, `transport.unrestricted`): `src/core/assistant/` (`connections.ts` kinds, address
+  rules, consent, `withBaseUrl`; `gate.ts` the gate; `tools.ts` offered tools, `allSecrets`, system prompt; `loop.ts` the
+  turn loop with call/time limits; `providers/` Anthropic + OpenAI-compatible streams; `nativeFetch.ts` to Rust; `chats.ts`),
+  `src/ui/assistant/` (`useAssistant.ts` the hook, panel, settings, dialogs, `binding.ts`, `store.ts`) and
+  `src-tauri/src/ai.rs` (`ai_stream`: the webview's CSP can't reach AI hosts, so Rust sends and streams back). Rules to
+  keep (each was a real review finding; privacy copy on the site depends on them, update `site/build.py` privacy page
+  and the README with any change):
+  - **One gate**: a tool runs only through `runTool` (`gate.ts`): offered tools only, input checked against the schema,
+    open workspace only (a switch mid-answer refuses), read-only (`allowMethods: []`, no handoff, no flows).
+  - **One redaction exit**: everything that leaves goes through the `Redactor` built from `allSecrets` (every workspace,
+    keys, cookies, certs, history) and the result is cleaned BEFORE `handleMcp` (it cuts and pattern-hides itself, half a
+    secret could survive), then cut to size and wrapped as data with a random mark. Add a new data source = add it to
+    `allSecrets` and to `prepare`. Limits are documented honestly (can't know every secret; ordinary data isn't hidden).
+  - **Binding**: a chat, consent, summary, running job and send are tied to connection id + model + origin
+    (`binding.ts`); any change of origin clears consent, key, context size and console access (`withBaseUrl` is the only
+    way to edit an address). Keys only go to their own origin (Rust re-checks `origin`; fixed kinds keep official URLs);
+    plain http only for `localhost` and literal loopback/private IPs; proxies only for https; no redirects.
+  - **Untrusted Markdown**: model text is rendered through bounded, safe Markdown (no raw HTML, links opened only after a
+    check); tool results, names and responses are data, never instructions.
+  - **Lazy chunk, off by default**: `AssistantGate` loads the assistant only once a connection exists; with none, no
+    assistant code runs, no icon, nothing sent. Chats are sealed per workspace, never in backups, exports or folders;
+    `keepChats` (default on) and delete-all exist; deleting a workspace deletes its chats (`removeSpace` and
+    `renameSpace` use `spacesRef`, a stale list plus the orphan sweep could delete live chats).
+  - Consent is enforced in `ask()` (not `nativeFetch`) so Test and the model list work before it; they carry no workspace
+    data. The console has no workspace, so it counts as all workspaces and the consent text says so.
+  - Gotchas: read `.superpowers/sdd/2026-11-24-assistant-step-1/progress.md` (the ledger) before changing any of it: it
+    records each ruling and its cost, and the deferred minors. Stream parsing: a clean `finish_reason` completes a stream
+    without `[DONE]`; in an ambiguous stream only whole tool calls count; request ids are random and events after abort
+    are dropped. Under a loaded machine the first `App` render in tests can exceed 1 s (raise the wait, don't loosen code).
 - `tests/` — vitest (jsdom; `cli.test.ts` builds and runs the real CLI in Node; `cssTokens.test.ts` keeps each dark colour
   set equal in its two copies). Rust: `grpc::end_to_end` (a tonic server on 127.0.0.1, runs in CI) and `mcp_host` `gate()`
   tests (token, Origin, Host); `src-tauri/tests/grpc_live.rs` — live gRPC test (needs `examples/grpc`); `network_live.rs` — mTLS/proxy (needs `examples/tls`);
