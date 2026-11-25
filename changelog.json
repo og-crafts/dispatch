@@ -4,7 +4,7 @@
     {
       "version": "0.3.0",
       "date": "2026-11-25",
-      "title": "An assistant you can ask inside Dispatch, and quick edits that are always saved.",
+      "title": "An assistant you can ask inside Dispatch, and quick edits saved in the order you made them.",
       "changes": [
         "**Assistant** (desktop, optional): ask about your requests, scripts and tests inside Dispatch. Connect a model with your own key, or one that runs on this computer. There is none until you add a connection, and your workspace goes to a host that isn’t this computer only after you allow that host.",
         "**Changes you approve:** the assistant can propose edits to requests, scripts, collections and variables. Each shows as a card with what would change; nothing is written until you press Apply, and you can undo it until Dispatch closes. It can’t send or run anything itself; an applied script runs when you send the request.",
