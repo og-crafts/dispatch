@@ -2,6 +2,18 @@
   "_comment": "Newest release first. Add an entry for every release before tagging (tests/about.test.tsx checks the top one matches package.json). Items use `code` and **bold** only.",
   "releases": [
     {
+      "version": "0.3.0",
+      "date": "2026-11-25",
+      "title": "An assistant you can ask inside Dispatch, and quick edits that are always saved.",
+      "changes": [
+        "**Assistant** (desktop, optional): ask about your requests, scripts and tests inside Dispatch. Connect a model with your own key, or one that runs on this computer. There is none until you add a connection, and your workspace goes to a host that isn’t this computer only after you allow that host.",
+        "**Changes you approve:** the assistant can propose edits to requests, scripts, collections and variables. Each shows as a card with what would change; nothing is written until you press Apply, and you can undo it until Dispatch closes. It can’t send or run anything itself; an applied script runs when you send the request.",
+        "**Saving:** quick edits land in the order you made them. Before, an older save could finish last and replace a newer one, or bring back something you had just deleted.",
+        "**Secrets and AI assistants:** collection variables you marked secret stay hidden whatever their name, and known secrets are hidden in responses, test results and errors that assistants get back.",
+        "**Update notice** (desktop): a new version shows in the top bar until you install or dismiss it, and the update check answers sooner on networks where one of the download addresses can’t be reached. Dispatch tells you once before its first check, and you can turn checks off in Settings."
+      ]
+    },
+    {
       "version": "0.2.0",
       "date": "2026-11-24",
       "title": "Extract values into variables, a Secrets section, and cookies for each environment.",

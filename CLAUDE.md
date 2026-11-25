@@ -248,7 +248,13 @@ focus on the URL at all, both fixed in #50. gRPC over the internet couldn't be c
 9000/9001 time out from the homelab and the Predator) and grpc.postman-echo.com fails the TLS handshake
 ("InvalidContentType") with the old crates on `main` exactly as with #53, so TLS behaves as before; the local
 end-to-end and grpc-js tests cover plaintext.
-**Resume here (2026-11-24, read first): Dispatch 0.2.0 is OUT.** #86 merged, tag `v0.2.0` on `main` ec241ec, CI green
+**Resume here (2026-11-25, read first): 0.3.0 is being prepared** on `release/0.3.0-prep` (version bump, changelog). On `main`
+since 0.2.0: #90 and #91 (secrets in responses, update notice), #92 and #93 (built-in assistant steps 1 and 2), #95 (saves in
+order), #94 (tighter secret hiding). Next, each with the owner's OK: merge the prep PR, tag `v0.3.0` on `main`, the owner
+publishes the draft, then `docs/RELEASING.md` "After publishing" and the first recorded in-app update (0.2.0 -> 0.3.0).
+Not checked so far: a cloud model with the assistant, LM Studio, macOS and Linux by hand.
+
+**Earlier (2026-11-24): Dispatch 0.2.0 is OUT.** #86 merged, tag `v0.2.0` on `main` ec241ec, CI green
 on every job incl. updater; the owner published it as **Latest**. Site published from the tag (`VITE_DISPATCH_CHANNEL=release`),
 `site/release.json` on `main` matches, ogcrafts.cloud `apps.json` 0.2.0. Not yet recorded: the first in-app update
 (0.1.0 -> 0.2.0) on a real machine. The Product Hunt kit is refreshed for 0.2.0 (8 slides, new `03-extract.png`).

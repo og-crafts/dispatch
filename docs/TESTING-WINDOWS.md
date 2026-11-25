@@ -1,10 +1,10 @@
-# Testing Dispatch 0.2.0 on Windows
+# Testing Dispatch 0.3.0 on Windows
 
 Instructions for a tester (a person or an AI agent) on a Windows 10/11 machine. Work through each section, record
 **PASS / FAIL / BLOCKED** for every numbered check, and write the results into a report (template at the end).
 
 Dispatch is OGCrafts' local-first API client: a desktop app (Tauri 2, WebView2), a web build and a command-line
-tool, `dispatch-run`. You are testing **`v0.2.0`** (0.1.0 was the first release of Dispatch by OGCrafts). It passes automated tests on Linux, Windows and macOS in CI, and parts of it were
+tool, `dispatch-run`. You are testing **`v0.3.0`** (0.1.0 was the first release of Dispatch by OGCrafts). It passes automated tests on Linux, Windows and macOS in CI, and parts of it were
 clicked through on one Windows 11 PC, but most of it has never been tried by hand on Windows. Expect to find real
 bugs; that's the point.
 
@@ -48,7 +48,7 @@ cd dispatch           # stay on main: it has the demo login page and example fil
 npm ci
 npm run build:cli          # builds dist-cli\dispatch-run.mjs
 mkdir ..\installers
-gh release download v0.2.0 --repo og-crafts/dispatch -p "*x64-setup.exe" -p "*x64_en-US.msi" -D ..\installers
+gh release download v0.3.0 --repo og-crafts/dispatch -p "*x64-setup.exe" -p "*x64_en-US.msi" -D ..\installers
 ```
 
 The release starts as a **draft**, visible only to accounts with write access to the repo, and is then published
@@ -77,7 +77,7 @@ What the demo API offers:
 
 ## 1. Install, first launch, uninstall
 
-1.1. Double-click `Dispatch_0.2.0_x64-setup.exe`. SmartScreen will warn because the installer isn't code-signed
+1.1. Double-click `Dispatch_0.3.0_x64-setup.exe`. SmartScreen will warn because the installer isn't code-signed
      yet: click "More info" → "Run anyway". Record the exact warning text. Then expect:
    - no administrator (UAC) prompt;
    - a small borderless dark card (no title bar, no buttons) with the logo, "Installing Dispatch" and a thin amber
@@ -109,7 +109,7 @@ What the demo API offers:
    3. Reopen it. History, open tabs and settings must still be there.
 
 1.6. *(Do this at the very end.)* Uninstall from Settings → Apps and confirm it's gone from the Start menu. Run the
-     setup once more with `/WIZARD` (`.\Dispatch_0.2.0_x64-setup.exe /WIZARD`): the classic installer pages must
+     setup once more with `/WIZARD` (`.\Dispatch_0.3.0_x64-setup.exe /WIZARD`): the classic installer pages must
      appear instead of the small card. Uninstall again. Then
      install the `.msi` instead, launch it once, and uninstall it too. The msi installs for all users, so it needs
      administrator rights (a UAC prompt; a non-elevated `msiexec /qn` fails with Error 1925). Record whether your
@@ -437,7 +437,7 @@ Run these from the repo folder in PowerShell.
      can send one. Right-click a request → **Hand to AI assistant…** puts a copy in the assistant's inbox.
 
 8.8. **Coming from a 0.5.x preview** (only if one was installed before): the preview can't update to this version. Export a
-     backup from the preview (☰ → Export backup), uninstall it, install 0.2.0 and import the backup. Record whether
+     backup from the preview (☰ → Export backup), uninstall it, install 0.3.0 and import the backup. Record whether
      everything came back.
 
 ## 9. New in 0.2.0
@@ -457,10 +457,10 @@ Run these from the repo folder in PowerShell.
 9.5. **Restart:** close Dispatch and open it again. The extracted variable, the secret, both environments' cookies and
      the new names are all still there.
 
-9.6. **Update from 0.1.0:** with 0.1.0 installed and a cookie in the jar, install 0.2.0 over it. Everything is still
-     there, and the cookie is in the environment that was selected.
+9.6. **Update from 0.1.0 or 0.2.0:** with the older version installed and a cookie in the jar, install this version over it. Everything is still
+     there, and (from 0.1.0) the cookie is in the environment that was selected.
 
-## 10. The Dispatch assistant (builds after 0.2.0)
+## 10. The Dispatch assistant (new in 0.3.0)
 
 Needs the desktop app. Use Ollama (https://ollama.com) with a small model that can call tools (for example `qwen3:8b`)
 if you can; the local model keeps everything on the computer. Without it, do 10.1 and 10.7 only. Use a workspace with made-up data for 10.8 to 10.13: they change it. Never type a real key
@@ -532,7 +532,7 @@ comment (drag them into the comment box, or `gh issue comment <number> --repo og
 failure, titled `[Windows] <problem>`, and link it from the report.
 
 ```markdown
-# Dispatch 0.2.0 — Windows test report
+# Dispatch 0.3.0 — Windows test report
 
 - Date / tester:
 - Windows version (winver) and build:
