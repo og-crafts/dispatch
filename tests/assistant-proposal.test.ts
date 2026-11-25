@@ -80,6 +80,15 @@ describe('tool classes and what is offered', () => {
   })
 })
 
+describe('the chat’s own offering', () => {
+  it('has each name once, with the chat’s parameter tools', () => {
+    const t = offeredTools(conn({ readLogs: true })), names = t.map((x) => x.name)
+    expect(new Set(names).size).toBe(names.length)
+    expect(workspaceTools('open', false).map((x) => x.name)).not.toContain('apply_parameters')
+    expect(Object.keys((t.find((x) => x.name === 'apply_parameters')!.inputSchema as { properties: object }).properties)).toContain('where')
+  })
+})
+
 describe('outside assistants’ tool texts', () => {
   it('stay as they were (editable workspace)', () => { expect(workspaceTools('X')).toMatchInlineSnapshot(`
     [
@@ -348,6 +357,51 @@ describe('outside assistants’ tool texts', () => {
           "type": "object",
         },
         "name": "set_scripts",
+      },
+      {
+        "description": "List what is written into a request in your own workspace ("assistant/…") or the user’s workspace “X” and could be moved into {{variables}} (base URL, tokens, API keys, passwords, IDs in the path, values that a variable already has), one per line: id · what · the variable · new or existing · secret. No values are shown. Use the ids and the batch with apply_parameters.",
+        "inputSchema": {
+          "properties": {
+            "name": {
+              "description": "Its path, like "assistant/Orders/Create order".",
+              "type": "string",
+            },
+          },
+          "required": [
+            "name",
+          ],
+          "type": "object",
+        },
+        "name": "suggest_parameters",
+      },
+      {
+        "description": "Move values that suggest_parameters listed into variables. Dispatch moves the values itself, also the ones you can’t see. New variables go to the request’s collection; tokens, keys and passwords become secret variables.",
+        "inputSchema": {
+          "properties": {
+            "batch": {
+              "description": "The batch suggest_parameters gave.",
+              "type": "string",
+            },
+            "choose": {
+              "additionalProperties": {
+                "type": "string",
+              },
+              "description": "The ids to move, each with the name for its variable, or "" for the suggested name.",
+              "type": "object",
+            },
+            "name": {
+              "description": "The request, as for suggest_parameters.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "name",
+            "batch",
+            "choose",
+          ],
+          "type": "object",
+        },
+        "name": "apply_parameters",
       },
     ]
   `) })
@@ -618,6 +672,51 @@ describe('outside assistants’ tool texts', () => {
           "type": "object",
         },
         "name": "set_scripts",
+      },
+      {
+        "description": "List what is written into a request in your own workspace ("assistant/…") and could be moved into {{variables}} (base URL, tokens, API keys, passwords, IDs in the path, values that a variable already has), one per line: id · what · the variable · new or existing · secret. No values are shown. Use the ids and the batch with apply_parameters.",
+        "inputSchema": {
+          "properties": {
+            "name": {
+              "description": "Its path, like "assistant/Orders/Create order".",
+              "type": "string",
+            },
+          },
+          "required": [
+            "name",
+          ],
+          "type": "object",
+        },
+        "name": "suggest_parameters",
+      },
+      {
+        "description": "Move values that suggest_parameters listed into variables. Dispatch moves the values itself, also the ones you can’t see. New variables go to the request’s collection; tokens, keys and passwords become secret variables.",
+        "inputSchema": {
+          "properties": {
+            "batch": {
+              "description": "The batch suggest_parameters gave.",
+              "type": "string",
+            },
+            "choose": {
+              "additionalProperties": {
+                "type": "string",
+              },
+              "description": "The ids to move, each with the name for its variable, or "" for the suggested name.",
+              "type": "object",
+            },
+            "name": {
+              "description": "The request, as for suggest_parameters.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "name",
+            "batch",
+            "choose",
+          ],
+          "type": "object",
+        },
+        "name": "apply_parameters",
       },
     ]
   `) })

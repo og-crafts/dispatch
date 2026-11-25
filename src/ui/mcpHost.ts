@@ -1,5 +1,6 @@
 import type { RunSummary } from '../core/runner'
 import { useEffect, useRef, useState } from 'react'
+import { ParameterBatches } from '../core/assistant/batches'
 import { handleMcp } from '../core/mcpHandler'
 import { ASSISTANT_SPACE, spaceOf } from '../core/types'
 import { isDesktop } from '../core/transport'
@@ -44,6 +45,8 @@ export function useMcpHost(ws: WorkspaceApi): McpHostStatus {
     void (async () => {
       const { invoke } = await import('@tauri-apps/api/core')
       const { listen } = await import('@tauri-apps/api/event')
+      // Here already when a call needs it: waiting for it, a call would work on an app that has moved on.
+      void import('../core/assistant/parameters').catch(() => {})
       unlisten = await listen<{ id: number; body: string }>('mcp-host-request', async (ev) => {
         const { id, body } = ev.payload
         let answer: string | null
@@ -94,6 +97,9 @@ async function answerOne(body: string, ws: WorkspaceApi): Promise<string | null>
   return r ? JSON.stringify(r) : null
 }
 
+/** What suggest_parameters suggested lately, until Dispatch closes. */
+const batches = new ParameterBatches()
+
 /** What the endpoint serves, from the app as it is now (exported for tests). */
 export function mcpOptions(ws: WorkspaceApi) {
   const ownCols = ws.allCollections.filter((c) => spaceOf(c) === ASSISTANT_SPACE.id)
@@ -113,6 +119,7 @@ export function mcpOptions(ws: WorkspaceApi) {
     logs: ws.settings.mcpHostLogs ? { logs: () => ws.logs, history: () => ws.history } : undefined,
     workspace: ws.settings.mcpHostWorkspace ? {
       collections: ownCols,
+      batches,
       editable,
       save: ws.saveAssistant,
       // Only where assistants may write; deletes go to the trash like any delete, so the user can undo.

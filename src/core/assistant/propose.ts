@@ -95,7 +95,7 @@ export async function propose(name: string, input: Record<string, unknown>, ctx:
   let got: AssistantChanges = { collections: [], folders: [], requests: [] }
   let gone: string[] = []
   const [reply, failed] = await workspaceCall(name, input, {
-    w: { collections: [], editable: { name: 'the open workspace', workspaceId: OPEN, collections }, save: async (c) => { got = c }, remove: async (ids) => { gone = ids } },
+    w: { batches: ctx.batches, collections: [], editable: { name: 'the open workspace', workspaceId: OPEN, collections }, save: async (c) => { got = c }, remove: async (ids) => { gone = ids } },
     folders, requests, allCollections: collections, allowMethods: [], lookup,
   })
   if (failed) return refuse(reply)

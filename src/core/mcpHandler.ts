@@ -1,8 +1,8 @@
 /**
  * The MCP tools Dispatch offers to AI assistants: list_requests, send_request, run_collection, and run_flow when
  * there are flows, and get_request; with the assistant's own workspace on (desktop), also create/update/copy/move/
- * delete_request and set_variables there, and in the open workspace when the user lets assistants edit it
- * (mcpWorkspace.ts). Transport-free (one JSON-RPC message in, one reply out), so the same handler serves
+ * delete_request, set_variables, set_scripts, suggest_parameters and apply_parameters there, and in the open workspace when
+ * the user lets assistants edit it (mcpWorkspace.ts). Transport-free (one JSON-RPC message in, one reply out), so the same handler serves
  * `dispatch-run mcp` over stdio and the desktop app's local MCP endpoint over HTTP.
  */
 import type { ImportResult } from './backup'
@@ -43,6 +43,7 @@ export interface McpServeOptions {
 }
 
 const BODY_LIMIT = 20_000
+const PARAMETER_TOOLS = ['suggest_parameters', 'apply_parameters']
 
 export function mcpTools(flowNames: string[] = [], multi = false, ownWorkspace = false, editable?: string, envNames?: string[]) {
   return [
@@ -117,12 +118,14 @@ export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | nul
   const text = (t: string, isError = false) => reply({ content: [{ type: 'text', text: t }], ...(isError ? { isError: true } : {}) })
   if (msg.id === undefined) return null
   const { cols, multi, col, own, items, pathOf, colOf, lookup } = finder(o)
-  /** Hides secrets in what goes back: every one Dispatch knows, plus any this send or run just made. */
+  /** Every secret Dispatch knows, and these variables'. */
+  const known = (vars: KV[] = []) => knownSecrets({
+    environments: [...o.ws.environments, ...(o.environment ? [o.environment] : [])], globals: [...o.globals, ...vars],
+    collections: [...o.ws.collections, ...own], folders: o.ws.folders, requests: o.ws.requests, extra: [o.settings.mcpHostToken],
+  })
+  /** Hides secrets in what goes back, also any this send or run just made. */
   const redactor = (fresh: { vars?: (KV[] | null | undefined)[]; auth?: object } = {}) => new Redactor([
-    ...knownSecrets({
-      environments: [...o.ws.environments, ...(o.environment ? [o.environment] : [])], globals: [...o.globals, ...(fresh.vars ?? []).flatMap((v) => v ?? [])],
-      collections: [...o.ws.collections, ...own], folders: o.ws.folders, requests: o.ws.requests, extra: [o.settings.mcpHostToken],
-    }),
+    ...known((fresh.vars ?? []).flatMap((v) => v ?? [])),
     ...Object.entries(fresh.auth ?? {}).flatMap(([k, v]) => (typeof v === 'string' && AUTH_SECRETS.has(k) ? [v] : [])),
   ])
   const canFlow = !!(o.engine || o.hooks?.runFlow)
@@ -218,7 +221,11 @@ export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | nul
         return text(t, isError)
       }
       if (WORKSPACE_TOOL_NAMES.includes(name) && multi && o.workspace) {
-        const [t, isError] = await workspaceCall(name, args, { w: o.workspace, folders: o.ws.folders, requests: o.ws.requests, allCollections: [...cols, ...own], allowMethods: o.allowMethods, lookup })
+        const allCollections = [...cols, ...own]
+        const parameters = PARAMETER_TOOLS.includes(name) ? { world: { ...o, ws: { ...o.ws, collections: allCollections } }, known: known() } : undefined
+        const [t, isError] = await workspaceCall(name, args, { w: o.workspace, folders: o.ws.folders, requests: o.ws.requests, allCollections, allowMethods: o.allowMethods, lookup, parameters })
+        // So that no one can try, value by value, whether a batch still fits.
+        if (!isError && name !== 'suggest_parameters') o.workspace.batches.clear()
         return text(t, isError)
       }
       return fail(-32602, `Unknown tool ${name}`)
