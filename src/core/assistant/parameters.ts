@@ -17,7 +17,7 @@ import { type Auth, type Collection, emptyAuth, emptyBody, type Environment, kv,
 import { paramsFromUrl, splitUrl } from '../url'
 import { interpolate } from '../vars'
 import { cleaner } from './clean'
-import { secretName } from './places'
+import { PLAIN, secretName } from './places'
 import { canonical, type Change } from './proposal'
 import { badVariables, BODY_FIELDS, type Cleaner, cleanWorld, type Draft, held, inStep, leftEmpty, light, lost, oneLine, type ProposeContext, type Refused } from './propose'
 
@@ -374,7 +374,7 @@ export function setEnvironmentVariables(input: Record<string, unknown>, ctx: Pro
   return {
     tool: 'set_environment_variables', title: `Change the variables of “${env.name}”`,
     changes: canonical(env) === canonical(after) ? [] : structuredClone([{ kind: 'environment' as const, id: env.id, before: env, after }]),
-    reply: `Environment “${env.name}”: ${[done.length ? `set ${done.join(', ')}` : '', empty.length ? `made ${empty.join(', ')}, secret and empty for the person to fill in` : '', drop.length ? `removed ${drop.join(', ')}` : ''].filter(Boolean).join('; ')}.`,
+    reply: `Environment “${env.name}”: ${[done.length ? `set ${done.join(', ')}` : '', empty.length ? `made ${empty.join(', ')}, secret and empty for the person to fill in` : '', drop.length ? `removed ${drop.join(', ')}` : ''].filter(Boolean).join('; ')}.${empty.length ? ` A name like this is treated as a secret. ${PLAIN}` : ''}`,
     exact: { variables: new Map(set) }, notes: empty.map(leftEmpty),
   }
 }

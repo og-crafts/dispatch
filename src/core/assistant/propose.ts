@@ -18,7 +18,7 @@ import { namesIn } from '../vars'
 import { cleaner } from './clean'
 import type { ToolContext } from './gate'
 import { applyParameters, setEnvironmentVariables } from './parameters'
-import { literalIn, withoutLiterals } from './places'
+import { literalIn, PLAIN, withoutLiterals } from './places'
 import { canonical, type Change, type Field, type Line, type Proposal, type Rec } from './proposal'
 import { allSecrets, toolClass } from './tools'
 
@@ -175,10 +175,10 @@ export async function propose(name: string, input: Record<string, unknown>, ctx:
     ...(name === 'set_variables' ? { variables: new Map(pairs(call.variables)) } : {}),
   }
   return proposalOf(ctx, w, cl, { tool: name, title: titleOf(name, changes, sources), changes, exact, sources, notes: empty.map(leftEmpty),
-    reply: empty.length ? `${reply} Made ${empty.join(', ')}, secret and empty for the person to fill in.` : reply })
+    reply: empty.length ? `${reply} Made ${empty.join(', ')}, secret and empty for the person to fill in: a name like this is treated as a secret. ${PLAIN}` : reply })
 }
 /** Said on the card. */
-export const leftEmpty = (k: string) => `Dispatch leaves “${k}” empty for you to fill in.`
+export const leftEmpty = (k: string) => `Dispatch leaves “${k}” empty for you to fill in: a name like this is treated as a secret. A plain value can go in a variable with another name.`
 
 /** Checks done and records final: what the card draws and warns of. */
 export async function proposalOf(ctx: ProposeContext, w: McpServeOptions, cl: Cleaner, d: Draft): Promise<Proposal | Refused> {

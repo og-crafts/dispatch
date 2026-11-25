@@ -116,7 +116,7 @@ describe('what the chat may still write under a secret’s name', () => {
     expect(r.text).not.toContain('made-up-value')
     expect(r.text).toContain('secret and empty for the person to fill in')
     expect(m.ws.collections[0].variables).toMatchObject([{ key: 'api_token', value: '', secret: true }, { key: 'plain', value: '1' }, { key: 'ref_token', value: '{{plain}}' }])
-    expect(m.cards[0].warnings).toContain('Dispatch leaves “api_token” empty for you to fill in.')
+    expect(m.cards[0].warnings).toContain('Dispatch leaves “api_token” empty for you to fill in: a name like this is treated as a secret. A plain value can go in a variable with another name.')
     expect(JSON.stringify({ ...m.cards[0], basis: '' })).not.toContain('made-up-value')
   })
   it('one that is there is the person’s to fill in, whatever its value', async () => {
@@ -150,6 +150,29 @@ describe('what the chat may still write under a secret’s name', () => {
     const m = mk({ headers: [kv('Ocp-Apim-Subscription-Key', 'readable-1'), kv('A', '1')] })
     expect((await m.call('update_request', { name: 'Shop/Mine', headers: { 'Ocp-Apim-Subscription-Key': 'readable-1', A: '2' } })).isError).toBe(false)
     expect((await m.call('update_request', { name: 'Shop/Mine', headers: { 'Ocp-Apim-Subscription-Key': 'readable-2', A: '2' } })).isError).toBe(true)
+  })
+  it('an ordinary name that counts as a secret’s: the words lead to a way that works', async () => {
+    const m = mk(), advice = 'use a {{variable}} with another name'
+    const url = (q: string) => m.call('update_request', { name: 'Shop/Mine', url: `https://shop.test/?${q}` })
+    const refusals = [await url('max_tokens=98765'), await m.call('update_request', { name: 'Shop/Mine', headers: { className: '98765' } })]
+    for (const r of refusals) {
+      expect(r.isError).toBe(true)
+      expect(r.text).toContain('is treated as a secret')
+      expect(r.text).toContain(advice)
+      expect(r.text).not.toContain('98765')
+    }
+    const same = await m.call('set_variables', { collection: 'Shop', variables: { max_tokens: '98765' } })
+    expect(same.text).toContain(advice)
+    expect(same.text).not.toContain('98765')
+    expect(m.cards[0].warnings.join()).toContain('is treated as a secret')
+    expect(m.cards[0].warnings.join()).toContain('another name')
+    const env = await m.call('set_environment_variables', { variables: { page_token: '98765' } })
+    expect(env.text).toContain(advice)
+    expect((await m.call('set_variables', { collection: 'Shop', variables: { limit: '100' } })).isError).toBe(false)
+    expect((await url('max_tokens={{limit}}')).isError).toBe(false)
+    const t = await m.read('Shop/Mine')
+    expect(t).toContain('?max_tokens={{limit}}')
+    expect(t).toContain('limit = 100')
   })
   it('a refusal says the same to a right and a wrong value', async () => {
     const m = mk({ headers: [kv('X-Token', SECRET)] })

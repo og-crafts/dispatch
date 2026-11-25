@@ -408,7 +408,7 @@ describe('set_environment_variables', () => {
   it('a new one with a secret’s name is secret and empty, whatever value came', async () => {
     const p = await good(set({ environment: 'Prod', variables: { apiToken: 'made-up-value' } }))
     expect(varsOf(p)).toMatchObject([{ key: 'apiToken', value: '', secret: true, enabled: true }])
-    expect(p.warnings).toEqual(['Dispatch leaves “apiToken” empty for you to fill in.'])
+    expect(p.warnings).toEqual(['Dispatch leaves “apiToken” empty for you to fill in: a name like this is treated as a secret. A plain value can go in a variable with another name.'])
     expect(JSON.stringify(p)).not.toContain('made-up-value')
     expect(p.reply).toContain('apiToken')
   })
