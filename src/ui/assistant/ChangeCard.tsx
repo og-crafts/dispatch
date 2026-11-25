@@ -31,12 +31,15 @@ function pieces(s: string): string[] {
   return out
 }
 
+/** A text whole, in pieces when it's very long. */
+const Whole = ({ s }: { s: string }) => <>{s.length <= PIECE ? s : pieces(s).map((p, i) => <span key={i} className="piece">{p}</span>)}</>
+
 function Row({ l }: { l: Line }) {
   if (l.type === 'gap') return <span className="aiLine gap">{l.text}</span>
   return (
     <span className={`aiLine ${l.type}`}>
       <span className="sign" aria-hidden="true">{SIGN[l.type]}</span>{l.type !== 'same' && <span className="sr">{SPOKEN[l.type]}</span>}
-      {l.text.length <= PIECE ? <span className="text">{l.text}</span> : <span className="text">{pieces(l.text).map((p, i) => <span key={i} className="piece">{p}</span>)}</span>}
+      <span className="text"><Whole s={l.text} /></span>
     </span>
   )
 }
@@ -59,16 +62,21 @@ function firstOf(fields: Field[], most: number, chars: number): Part[] {
   return out
 }
 
-/** Draws fields, folded when they are long. `onAll` hears once everything is drawn (at once for short ones). */
-function Diff({ fields, onAll, onOpen }: { fields: Field[]; onAll?: () => void; onOpen: () => void }) {
+const lengthOf = (l: string[]) => l.reduce((n, s) => n + s.length, 0)
+const NONE: string[] = []
+/** Warnings are usually a few short lines, which don't count in the fold. */
+const LONG_TEXTS = 2000
+/** Draws fields, folded when they are long. `more`: texts shown elsewhere that count. `onAll` hears once everything is drawn (at once for short ones). */
+function Diff({ fields, more = NONE, onAll, onOpen }: { fields: Field[]; more?: string[]; onAll?: () => void; onOpen: () => void }) {
   const size = useMemo(() => ({
-    lines: fields.reduce((n, f) => n + f.lines.length, 0),
-    chars: fields.reduce((n, f) => n + f.lines.reduce((m, l) => m + l.text.length, 0), 0),
-  }), [fields])
+    lines: fields.reduce((n, f) => n + f.lines.length, more.length > FOLD_LINES ? more.length : 0),
+    chars: fields.reduce((n, f) => n + f.lines.reduce((m, l) => m + l.text.length, 0), lengthOf(more) > LONG_TEXTS ? lengthOf(more) : 0),
+  }), [fields, more])
   const fold = size.lines > FOLD_LINES || size.chars > FOLD_CHARS
   /** Lines that may be drawn; 0 while folded. */
   const [drawn, setDrawn] = useState(0)
   const all = !fold || drawn >= size.lines
+  useEffect(() => setDrawn(0), [fields])
   useEffect(() => {
     if (!drawn || drawn >= size.lines) return
     const t = setTimeout(() => setDrawn((n) => n + PART_LINES), 30)
@@ -113,15 +121,19 @@ export const ChangeCard = memo(function ChangeCard({ card: c, open, act }: { car
   const me = useRef<HTMLDivElement>(null)
   const [all, setAll] = useState(false)
   const decides = c.state === 'waiting', undoes = c.state === 'applied'
-  // Buttons that just came, moved or changed wait; the key says which ones are ready.
-  const key = `${id} ${decides ? 'decide' : undoes ? 'undo' : ''} ${open} ${all}`
-  const [ready, setReady] = useState('')
+  /** Of what is different now, which is above Undo. */
+  const [now, setNow] = useState<'' | 'drawing' | 'all'>('')
+  // Buttons that just came, moved or changed wait: they are ready for what is there now, not for what was.
+  const key = useMemo(() => ({}), [c, open, all, now]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [ready, setReady] = useState<object | null>(null)
   useEffect(() => {
     if (!open || !(decides || undoes)) return
     const t = setTimeout(() => setReady(key), ARM_MS)
-    return () => { clearTimeout(t); setReady('') } // also when the panel is closed and opened again
+    return () => { clearTimeout(t); setReady(null) } // also when the panel is closed and opened again
   }, [key, open, decides, undoes])
-  const armed = open && ready === key
+  const armed = open && ready === key && now !== 'drawing'
+  const long = warnings.length > FOLD_LINES || lengthOf(warnings) > FOLD_CHARS
+  const risks = useMemo(() => (!long || all ? warnings : firstOf([{ label: '', lines: warnings.map((text): Line => ({ type: 'same', text })) }], FOLD_LINES, FOLD_CHARS).flatMap((p) => p.groups.flat().map((l) => l.text))), [warnings, long, all])
   const gone = cls === 'delete'
   const said = outcome(c)
   return (
@@ -129,11 +141,11 @@ export const ChangeCard = memo(function ChangeCard({ card: c, open, act }: { car
       // a key that is held down was pressed for something else
       onKeyDown={(e) => { if (e.repeat && (e.key === 'Enter' || e.key === ' ') && (e.target as Element).closest('button')) e.preventDefault() }}>
       <h3>{short(title)}</h3>
-      <Diff fields={fields} onAll={() => setAll(true)} onOpen={() => me.current?.focus()} />
-      {warnings.length > 0 && <ul className="aiRisks">{warnings.map((w, i) => <li key={i}>{short(w)}</li>)}</ul>}
+      <Diff fields={fields} more={warnings} onAll={() => setAll(true)} onOpen={() => me.current?.focus()} />
+      {warnings.length > 0 && <ul className="aiRisks">{risks.map((w, i) => <li key={i}><Whole s={w} /></li>)}</ul>}
       {gone && (decides || undoes || c.state === 'applying') && <p className="muted small">You can undo this until Dispatch closes.</p>}
       {said && <p className={`aiOutcome small ${c.state === 'expired' || (undoes && c.text) ? 'warnLine' : 'muted'}`}>{said}</p>}
-      {undoes && c.now && <div className="aiNow"><p className="muted small">Since it was applied, this has changed:</p><Diff fields={c.now} onOpen={() => me.current?.focus()} /></div>}
+      {undoes && c.now && <div className="aiNow"><p className="muted small">Since it was applied, this has changed:</p><Diff fields={c.now} onAll={() => setNow('all')} onOpen={() => { setNow('drawing'); me.current?.focus() }} /></div>}
       {decides && <div className="actions">
         <button type="button" className={`btn small ${gone ? 'danger' : 'primary'}`} disabled={!armed || !all} aria-describedby={all ? undefined : `${at}-rest`} onClick={() => void act.current.approve(id)}>{gone ? 'Delete' : 'Apply'}</button>
         <button type="button" className="btn small" disabled={!armed} onClick={() => act.current.reject(id)}>Reject</button>

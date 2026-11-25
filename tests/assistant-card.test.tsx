@@ -1,9 +1,11 @@
 /** The card: what the person sees and clicks before the assistant may change anything. */
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import * as db from '../src/core/db'
 import { newConnection, type Connection } from '../src/core/assistant/connections'
 import type { Line, Proposal } from '../src/core/assistant/proposal'
+import { oneLine } from '../src/core/assistant/propose'
 import { newRequest } from '../src/core/types'
 import type { WorkspaceApi } from '../src/ui/useWorkspace'
 import AssistantPanel from '../src/ui/assistant/AssistantPanel'
@@ -300,6 +302,74 @@ describe('hearing of it', () => {
     r.rerender(el(false))
     expect(within(slot).getByRole('button', { name: 'Assistant, answering' })).toBeTruthy()
     r.unmount(); slot.remove()
+  })
+})
+
+describe('round 1', () => {
+  const node = () => screen.getByTestId('assistant-said').firstElementChild
+  it('a second proposal with the same title is announced as something new', () => {
+    const p = panel({ cards: [card()] })
+    const first = node(), words = said()
+    expect(first).not.toBeNull()
+    p.set({ cards: [card({ state: 'rejected' })] })
+    p.set({ cards: [card({ state: 'rejected' }), card({}, proposal({ id: 'q' }))] })
+    expect(said()).toBe(words)
+    expect(node()).not.toBe(first)
+  })
+
+  it('so is the same refused undo, but not a drawing of the panel', () => {
+    const p = panel({ cards: [card({ state: 'applied' })] })
+    const no = () => card({ state: 'applied', text: 'This changed meanwhile, so nothing was undone.' })
+    p.set({ cards: [no()] })
+    const first = node()
+    p.set({ streamed: 'x' })
+    expect(node()).toBe(first)
+    p.set({ cards: [no()] })
+    expect(said()).toBe('This changed meanwhile, so nothing was undone.')
+    expect(node()).not.toBe(first)
+  })
+
+  it('a warning is never cut', () => {
+    const w = `Its sign-in would go to a new address: ${'a.'.repeat(3000)}evil.test.`
+    panel({ cards: [card({}, proposal({ warnings: [w] }))] })
+    expect(cards()[0].querySelector('.aiRisks li')!.textContent).toBe(w)
+  })
+
+  it('very long warnings count in the fold: Apply waits until they were shown whole', () => {
+    const w = `Uses {{${'x'.repeat(30_000)}}}, which is secret.`
+    panel({ cards: [card({}, proposal({ warnings: [RISK, w] }))] })
+    wait()
+    expect(cards()[0].textContent).toContain(RISK)
+    expect(b('Apply')!.disabled).toBe(true)
+    fireEvent.click(b(/^Show all [\d,]+ characters$/)!)
+    expect(cards()[0].querySelectorAll('.aiRisks li')[1].textContent).toBe(w)
+    wait()
+    expect(b('Apply')!.disabled).toBe(false)
+  })
+
+  it('a pile of combining marks shows as codes, and a line paints nothing outside itself', () => {
+    expect(oneLine('e\u0301')).toBe('e\u0301')
+    expect(oneLine(`a${'\u0336'.repeat(4)}`)).toBe(`a${'\u0336'.repeat(4)}`)
+    expect(oneLine(`a${'\u0336'.repeat(7)}b`)).toBe(`a${'\u0336'.repeat(4)}${'\\u{336}'.repeat(3)}b`)
+    const css = readFileSync('src/ui/app.css', 'utf8')
+    expect(/\.aiLine \{[^}]*overflow: clip/.test(css)).toBe(true)
+    expect(/\.aiCard :is\(h3, h4, p, li\) \{[^}]*overflow: clip/.test(css)).toBe(true)
+  })
+
+  it('Undo waits again when a refused undo’s difference comes or is opened above it', () => {
+    const p = panel({ cards: [card({ state: 'applied' })] })
+    wait()
+    expect(b('Undo')!.disabled).toBe(false)
+    p.set({ cards: [card({ state: 'applied', text: 'No.', now: [{ label: 'Body', lines: many(6000) }] })] })
+    expect(b('Undo')!.disabled).toBe(true)
+    wait()
+    expect(b('Undo')!.disabled).toBe(false)
+    fireEvent.click(b('Show all 6,000 lines')!)
+    expect(b('Undo')!.disabled).toBe(true)
+    wait(40); wait(40); wait(400)
+    expect(b('Undo')!.disabled).toBe(true) // the last part came less than 500 ms ago
+    wait(200)
+    expect(b('Undo')!.disabled).toBe(false)
   })
 })
 

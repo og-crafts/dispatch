@@ -52,8 +52,11 @@ export const held = (what: string) => `The ${what} holds a secret you weren’t 
 const isEmpty = (s: string) => !s.trim()
 const plural = (n: number, what: string) => `${n} ${what}${n === 1 ? '' : 's'}`
 
-/** Control, zero-width and direction characters as codes, so text can't look like something else. Lines and tabs stay. */
-const drawn = (s: string) => s.replace(/(?![\n\t])[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/gu, (c) => `\\u{${c.codePointAt(0)!.toString(16).toUpperCase()}}`)
+const code = (c: string) => `\\u{${c.codePointAt(0)!.toString(16).toUpperCase()}}`
+/** Control, zero-width and direction characters as codes, so text can't look like something else. Lines and tabs stay, and
+ *  as many marks on one character as scripts use; a pile of them could cover what is next to it. */
+const drawn = (s: string) => s.replace(/(?![\n\t])[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/gu, code)
+  .replace(/(\p{M}{4})(\p{M}+)/gu, (_m, some: string, more: string) => some + [...more].map(code).join(''))
 /** For one line: a name in a title or a warning. */
 export const oneLine = (s: string) => drawn(s).replace(/[\n\t]/g, (c) => `\\u{${c.charCodeAt(0).toString(16).toUpperCase()}}`)
 

@@ -1,5 +1,5 @@
 /** The assistant's panel: the chat, what it looked up, and the box. Everything a model wrote is shown as untrusted. */
-import { Fragment, memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { reach, reachLabel } from '../../core/assistant/connections'
 import { smallContext } from '../../core/assistant/tools'
 import { useDialogs } from '../Dialogs'
@@ -11,7 +11,7 @@ import { ChangeCard, outcome } from './ChangeCard'
 import { ConsentDialog } from './ConsentDialog'
 import { MAX_W, MIN_W, usePanelLayout } from './layout'
 import { lastAnswer, plainText, proposed, stateWords, toolLine, turns, type Item, type ToolState } from './transcript'
-import type { AssistantApi, SendResult } from './useAssistant'
+import type { AssistantApi, Card, SendResult } from './useAssistant'
 
 const WIDTH_KEY = 'dispatch.assistantWidth'
 const DEFAULT_W = 380
@@ -122,7 +122,9 @@ export default function AssistantPanel({ a, ws, open, onClose }: { a: AssistantA
   const { confirm, node } = useDialogs()
   const id = useId()
   const [text, setText] = useState('')
-  const [said, setSaid] = useState('')
+  const [{ said, saidNo }, setSaidNow] = useState({ said: '', saidNo: 0 })
+  /** Each a new node, so the same words are read out again. */
+  const setSaid = useCallback((t: string) => setSaidNow((x) => (t || x.said ? { said: t, saidNo: x.saidNo + 1 } : x)), [])
   const box = useRef<HTMLTextAreaElement>(null)
   const panel = useRef<HTMLElement>(null)
   const chatsMenu = useRef<HTMLDetailsElement>(null)
@@ -172,14 +174,15 @@ export default function AssistantPanel({ a, ws, open, onClose }: { a: AssistantA
   }, [a.status, a.error]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Each card is announced once, when it can be seen; then what came of it.
-  const told = useRef(new Map<string, string>())
+  const told = useRef(new Map<string, { words: string; card: Card }>())
   useEffect(() => {
     if (!open) return
     for (const c of a.cards) {
       const { id, title, tool, cls } = c.proposal
       const before = told.current.get(id), words = outcome(c)
-      if (before === words) continue
-      told.current.set(id, words)
+      // another try that was refused in the same words is told again
+      if (before?.words === words && (before.card === c || c.state !== 'applied' || !c.text)) continue
+      told.current.set(id, { words, card: c })
       const name = /“(.*)”/s.exec(title)?.[1] ?? title
       if (c.state === 'waiting') setSaid(`The assistant proposes ${proposed(tool, name.length > 200 ? `${name.slice(0, 200)}…` : name)}. ${cls === 'delete' ? 'Delete' : 'Apply'} or reject it in the panel.`)
       else if (before !== undefined && c.state !== 'stopped' && c.state !== 'rejected' && c.state !== 'applying') setSaid(words)
@@ -322,7 +325,7 @@ export default function AssistantPanel({ a, ws, open, onClose }: { a: AssistantA
         {busy && <button type="button" className="btn small" onClick={() => { a.stop(); focusBox() }}>Stop</button>}
       </footer>
       </div>
-      <div className="sr" aria-live="polite" data-testid="assistant-said">{said}</div>
+      <div className="sr" aria-live="polite" data-testid="assistant-said">{said && <span key={saidNo}>{said}</span>}</div>
     </aside>
     {/* outside the panel, so it shows when the panel was closed meanwhile */}
     {a.pendingConsent && <ConsentDialog connection={a.pendingConsent.connection} onAllow={() => void allow()} onDecline={() => { a.declineConsent(); focusBox() }} />}
