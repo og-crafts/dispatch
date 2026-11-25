@@ -4,6 +4,7 @@
  * workspace, no value the model wasn't shown replaced or removed) and drawn for the person, with its risks.
  */
 import { diffLines, withContext } from '../diff'
+import { FAKE } from '../fake'
 import { finder, type McpServeOptions } from '../mcpHandler'
 import { ASSISTANT_PREFIX, AUTH_FIELDS, AUTH_SECRETS, type AssistantChanges, HIDDEN, workspaceCall } from '../mcpWorkspace'
 import { effectiveAuth, scopeFor } from '../prepare'
@@ -421,8 +422,11 @@ const fill = (s: string, scope: Map<string, string>) => {
   for (let i = 0; i < 5 && out.length < 10_000; i++) out = out.replace(/\{\{\s*([^{}\s]+)\s*\}\}/g, (m, n: string) => scope.get(n) ?? m)
   return out
 }
-/** `key` is for comparing only: it can hold secrets. */
-interface Address { key: string; url: string; environment: Environment | null; resolved: boolean }
+/**
+ * `key` is for comparing only: it can hold secrets. `unset`: all of the authority is one {{name}} that nothing gives a
+ * value. Anything else left to fill in still leads somewhere: dynamic names and scripts fill it, and braces can be sent.
+ */
+interface Address { key: string; source: 'url' | 'tokenUrl' | 'authUrl'; url: string; environment: Environment | null; unset: boolean }
 const leadOf = (t: string) => /^[a-z][a-z0-9+.-]*:\/\/[^/\\?#]*/i.exec(t)?.[0] ?? splitUrl(t).base
 /** Scheme and host as a URL parser sees them; null when there is something left to fill in or it isn't a URL. */
 const parsed = (t: string): { key: string; host: string } | null => {
@@ -433,11 +437,14 @@ const parsed = (t: string): { key: string; host: string } | null => {
 function addresses(r: RequestDef, w: World, environment: Environment | null): Address[] {
   const a = authOf(r, w)
   const scope = scopeFor({ collection: collectionOf(r, w), environment, globals: w.globals, handoff: r.handoff?.variables ?? null })
-  return [r.url, ...(a?.kind === 'oauth2' ? [a.tokenUrl, a.authUrl] : [])].flatMap((url) => {
+  const of = (source: Address['source'], url: string): Address[] => {
     const t = withScheme(fill(url, scope))
-    const to = parsed(t)
-    return t ? [{ key: to?.key ?? leadOf(t), url, environment, resolved: !!to }] : []
-  })
+    if (!t) return []
+    const lead = leadOf(t)
+    const only = /^[a-z][a-z0-9+.-]*:\/\/\{\{\s*([^{}\s]+)\s*\}\}$/i.exec(lead)?.[1]
+    return [{ key: parsed(t)?.key ?? lead, source, url, environment, unset: only !== undefined && !scope.has(only) && !(only in FAKE) }]
+  }
+  return [...of('url', r.url), ...(a?.kind === 'oauth2' ? [...of('tokenUrl', a.tokenUrl), ...of('authUrl', a.authUrl)] : [])]
 }
 /**
  * An address as the person may see it: secret variables stay as {{name}}, and the text is cleaned before a URL parser
@@ -469,21 +476,18 @@ function newAddresses(r: RequestDef, was: RequestDef | undefined, before: World,
     const old = e && (before.environments.find((x) => x.id === e.id) ?? null)
     // a new request: where its sign-in (or, without one, anything here) goes already
     const from = was ? (signIn && !same(authOf(was, before)) ? [] : [was]) : before.requests.filter((x) => !signIn || same(authOf(x, before)))
-    const known = from.flatMap((x) => {
-      const there = addresses(x, before, old)
-      // not sent there so far: what the active environment makes of it isn't new
-      return [...there, ...(there.some((a) => !a.resolved) ? addresses(x, before, before.active) : [])].map((a) => ({ x, a }))
-    })
-    // in another environment than the active one, a URL with something left to fill in isn't sent
-    return addresses(r, after, e).filter((a) => (a.resolved || e === after.active) && !known.some((k) => k.a.key === a.key)).map((a) => ({ a, known }))
+    const known = from.flatMap((x) => addresses(x, before, old).flatMap((a) => [
+      a,
+      // it has no address here so far: what the active environment makes of the same URL isn't new
+      ...(a.unset ? addresses(x, before, before.active).filter((b) => b.source === a.source) : []),
+    ].map((b) => ({ x, a: b }))))
+    return addresses(r, after, e).filter((a) => (!a.unset || e === after.active) && !known.some((k) => k.a.source === a.source && k.a.key === a.key)).map((a) => ({ a, known }))
   })
   if (!fresh.length || !carriesSecret(r, after, cl)) return []
-  // when it leads somewhere in one environment, that says more than how it starts in one where it doesn't
-  const told = fresh.some((f) => f.a.resolved) ? fresh.filter((f) => f.a.resolved) : fresh
-  return told.map(({ a, known }) => {
+  return fresh.map(({ a, known }) => {
     const s = shownAddress(a, r, after, cl)
     // the same host on another scheme is named with it
-    return known.some((k) => shownAddress(k.a, k.x, before, cl).host === s.host) ? s.key : s.host
+    return known.some((k) => k.a.source === a.source && shownAddress(k.a, k.x, before, cl).host === s.host) ? s.key : s.host
   })
 }
 

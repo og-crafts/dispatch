@@ -422,6 +422,45 @@ describe('what the card warns of', () => {
     // an environment that doesn't have the variable sends nothing
     expect(await warns('update_request', { name: 'R', url: '{{base}}/a' }, o)).toEqual([])
   })
+  describe('an address that isn’t all known is still an address', () => {
+    const envP = (...vars: ReturnType<typeof kv>[]) => ({ ...newEnvironment('P'), variables: vars })
+    it.each(['{{$guid}}.evil.example', '{{$randomInt}}.evil.example', '{{$timestamp}}.evil.example', '{{q}}.evil.example', '{{q}}evil.example', '{{a b}}.evil.example', '{{$randomDomainName}}', '{{constructor}}', '{{q}}{{z}}', '{{q}}:8080'])('a variable set to %s, in the active environment and outside it', async (h) => {
+      const r = req('V', shop, { url: 'https://{{host}}/x' })
+      const covered = { ...env, variables: [...env.variables, kv('host', 'shop.test')] }
+      for (const o of [{}, { environments: [covered], active: covered }]) expect(await warns('set_variables', { collection: 'Shop', variables: { host: h } }, { requests: [r], ...o })).toContain(NEW(h))
+    })
+    it('userinfo is not the host, and may hide one', async () => {
+      const r = req('V', shop, { url: 'https://{{host}}/x' })
+      const covered = { ...env, variables: [...env.variables, kv('host', 'shop.test')] }
+      for (const h of ['{{q}}@evil.example', '{{$guid}}:x@evil.example', 'me:pw@evil.example']) expect(await warns('set_variables', { collection: 'Shop', variables: { host: h } }, { requests: [r], environments: [covered], active: covered })).toContain(NEW('evil.example'))
+      expect(await warns('update_request', { name: 'One', url: 'https://{{q}}@shop.test/one' })).toContain(NEW('https://shop.test')) // what {{q}} holds can end the host
+    })
+    it('a URL that leads to a dynamic name in another environment', async () => {
+      const p = envP(kv('z', '{{$guid}}.evil.example'))
+      expect(await warns('update_request', { name: 'One', url: 'https://{{z}}/a' }, { environments: [env, p] })).toContain(NEW('{{$guid}}.evil.example'))
+    })
+    const oauth = (over: object) => ({ ...emptyAuth('oauth2'), clientSecret: '{{token}}', ...over })
+    it('a token URL that isn’t known excuses nothing else', async () => {
+      const o = req('O', free, { url: 'https://{{h}}/a', auth: oauth({ tokenUrl: 'https://{{idp}}/t' }) })
+      const e = { ...env, variables: [env.variables[1], kv('h', 'dev.test'), kv('idp', 'idp.test')] }, p = envP(kv('h', 'prod.test'))
+      expect(await warns('update_request', { name: 'O', url: 'https://dev.test/a' }, { requests: [o], environments: [e, p], active: e })).toEqual([NEW('dev.test')])
+      // nor does the one's address count for the other
+      expect(await warns('update_request', { name: 'O', url: 'https://idp.test/a' }, { requests: [o], environments: [e], active: e })).toContain(NEW('idp.test'))
+    })
+    it.each([['{{$guid}}.evil.example', '{{$guid}}.evil.example'], ['{{q}}@evil.example', 'evil.example'], ['{{q}}.evil.example', '{{q}}.evil.example'], ['me@evil.example', 'evil.example']])('a token or sign-in URL moved to %s', async (idp, host) => {
+      for (const field of ['tokenUrl', 'authUrl']) {
+        const o = req('O', shop, { auth: oauth({ [field]: 'https://{{idp}}/t' }) })
+        const covered = { ...env, variables: [...env.variables, kv('idp', 'idp.test')] }
+        for (const x of [{}, { environments: [covered], active: covered }]) expect(await warns('set_variables', { collection: 'Shop', variables: { idp } }, { requests: [o], ...x })).toContain(NEW(host))
+      }
+    })
+    it('an address known in full hides none that isn’t, the active one’s first', async () => {
+      const e = { ...env, variables: [...env.variables, kv('h', '{{$guid}}.evil.example')] }
+      expect(await warns('update_request', { name: 'One', url: 'https://{{h}}/a' }, { environments: [envP(kv('h', 'ok.example')), e], active: e })).toEqual([NEW('{{$guid}}.evil.example'), NEW('ok.example')])
+      expect(await warns('update_request', { name: 'One', url: 'https://{{h}}/a' }, { environments: [env, envP(kv('h', 'ok.example'))] })).toEqual([NEW('{{h}}'), NEW('ok.example')])
+      expect(await warns('update_request', { name: 'One', url: 'https://{{h}}/a' }, { environments: [envP(kv('h', '{{q}}.lit.example')), { ...newEnvironment('Q'), variables: [kv('h', 'ok.example')] }, e], active: e })).toEqual(['{{$guid}}.evil.example', '{{q}}.lit.example', 'ok.example'].map(NEW))
+    })
+  })
   it('scripts of the place a request is moved or copied into', async () => {
     const f = { ...newFolder(free.id, 'S'), scripts: { pre: 'x', post: '' } }
     const c = col('Runs', { scripts: { pre: '', post: 'y' } })
