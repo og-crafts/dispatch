@@ -7,7 +7,7 @@
  */
 import { FAKE } from '../fake'
 import type { McpServeOptions } from '../mcpHandler'
-import { type AssistantChanges, AUTH_FIELDS, AUTH_SECRETS, BODY_LIMIT, HIDDEN, hide, hideInText, shownText } from '../mcpWorkspace'
+import { AUTH_SECRETS, HIDDEN, hide, hideInText } from '../mcpWorkspace'
 import { knownSecrets, Redactor } from '../mcpLogs'
 import { addVariables, type KnownVar, knownVars, suggest, type Suggestion } from '../parameterize'
 import { effectiveAuth, pathVarNames, pathVarsFromUrl, prepare, scopeFor } from '../prepare'
@@ -16,11 +16,9 @@ import { SECRET_NAME } from '../share'
 import { type Auth, type Collection, emptyAuth, emptyBody, type Environment, kv, type KV, type RequestDef } from '../types'
 import { paramsFromUrl, splitUrl } from '../url'
 import { interpolate } from '../vars'
-import type { Found, ParameterBatches } from './batches'
-import { cleaner, cleanerOf } from './clean'
+import { cleaner } from './clean'
 import { canonical, type Change } from './proposal'
 import { badVariables, BODY_FIELDS, type Cleaner, cleanWorld, type Draft, held, inStep, light, lost, oneLine, type ProposeContext, type Refused } from './propose'
-export { ParameterBatches } from './batches'
 
 const text = { type: 'string' }
 export function parameterTools() {
@@ -58,6 +56,21 @@ export function parameterTools() {
   ]
 }
 
+/** `header`: which header holds it; without one, a credential is the sign-in's. */
+export interface Found extends Suggestion { header?: number }
+interface Batch { code: string; at: string; suggestions: Found[] }
+const KEPT = 10
+/** What was suggested lately, in memory only: ids mean something only while the request and the tables are as they were. */
+export class ParameterBatches {
+  private list: Batch[] = []
+  add(at: string, suggestions: Found[]): string {
+    const code = globalThis.crypto.randomUUID()
+    this.list = [...this.list, { code, at, suggestions }].slice(-KEPT)
+    return code
+  }
+  find(code: string): Batch | undefined { return this.list.find((b) => b.code === code) }
+}
+
 /** What a request's {{names}} come from, as it is sent now. */
 interface Tables { environment: Environment | null; collection: Collection | null; globals: KV[]; handoff: KV[] }
 const tablesOf = (r: RequestDef, w: McpServeOptions, active: Environment | null): Tables =>
@@ -65,20 +78,6 @@ const tablesOf = (r: RequestDef, w: McpServeOptions, active: Environment | null)
 const rowsOf = (t: Tables) => [...(t.environment?.variables ?? []), ...(t.collection?.variables ?? []), ...t.handoff, ...t.globals]
 /** The state a batch belongs to. Holds real values, so it stays here. */
 const stateOf = (r: RequestDef, t: Tables) => JSON.stringify([canonical(r), t.environment?.id, ...[t.environment?.variables, t.collection?.variables, t.globals].map((l) => canonical(l ?? []))])
-
-/**
- * A text of a request as the one who asks sees it. The first is what counts as read, and only that is replaced; the others
- * are the other ways it is shown, where nothing more may come out either.
- */
-type View = (s: string, at: 'url' | 'username' | 'text' | 'graphql' | 'header' | 'field', key?: string) => string[]
-const chatView = (cl: Cleaner): View => (s, _at, key) => [key === undefined ? cl.clean(s) : cl.deep({ key, value: s }).value]
-/** For an outside assistant: get_request shows fewer texts, and hides by pattern and name only. */
-const outsideView = (r: RequestDef, cl: Cleaner): View => (s, at, key) => {
-  const kind = r.body.kind, form = BODY_FIELDS.includes(kind)
-  const unseen = at === 'graphql' || (at === 'field' && !form) || (at === 'text' && (form || kind === 'none' || kind === 'binary' || s.length > BODY_LIMIT)) || (at === 'username' && !AUTH_FIELDS[r.auth.kind]?.includes('username'))
-  // A long body is shown only up to a point, which would move with the text before it.
-  return [unseen ? HIDDEN : chatView(cl)(s, at, key)[0], at === 'header' ? hideInText(hide(key!, s)) : at === 'field' ? hide(key!, s) : at === 'text' ? shownText(s) : at === 'url' ? hideInText(s) : s]
-}
 
 const named = (v: KV) => !!v.secret || SECRET_NAME.test(v.key)
 /** Shorter ones aren't hidden where they are in a text. */
@@ -90,24 +89,21 @@ const IS_VAR = /^\s*\{\{[^{}]+\}\}\s*$/
  * What could move. Which lines there are, their order, names and ids tell nothing about a hidden value but this: that a
  * variable marked secret is in the request. Everything else comes from what can be read (`clean` is what hides secrets
  * from the model; without one, every secret in `w` is hidden), or from a credential's place alone.
- * With `outside`, for an assistant that sees a request so and can give any variable a value, also a marked one: those match
- * nothing then, and a base URL that holds a secret stays, as get_request would show it in its variable.
  */
-export function suggestionsFor(r: RequestDef, w: McpServeOptions, clean: (s: string) => string = defaultClean(w), active: Environment | null = w.environment, outside?: View): Found[] {
+export function suggestionsFor(r: RequestDef, w: McpServeOptions, clean: (s: string) => string = defaultClean(w), active: Environment | null = w.environment): Found[] {
   const t = tablesOf(r, w, active)
   const b = r.body
   const url = clean(r.url)
-  const see: View = outside ?? ((s, _at, key) => [clean(key === undefined ? s : hide(key, s))])
   const shown = [
-    url, ...r.headers.map((h) => see(h.value, 'header', h.key)[0]), see(r.auth.username, 'username')[0],
-    ...(b.kind === 'none' || b.kind === 'binary' ? [] : BODY_FIELDS.includes(b.kind) ? b.fields.map((f) => see(f.value, 'field', f.key)[0]) : [see(b.text, 'text')[0], ...(b.kind === 'graphql' ? [see(b.graphqlVariables, 'graphql')[0]] : [])]),
+    url, ...r.headers.map((h) => clean(hide(h.key, h.value))), clean(r.auth.username),
+    ...(b.kind === 'none' || b.kind === 'binary' ? [] : BODY_FIELDS.includes(b.kind) ? b.fields.map((f) => clean(hide(f.key, f.value))) : [clean(b.text), ...(b.kind === 'graphql' ? [clean(b.graphqlVariables)] : [])]),
   ].join('\n')
   const all = [r.url, ...r.headers.map((h) => h.value), b.text, ...b.fields.map((f) => f.value), r.auth.token, r.auth.value, r.auth.username, r.auth.password].join('\n')
   const rows = rowsOf(t).filter((v) => v.enabled)
   const row = (k: KnownVar) => rows.filter((v) => v.key.trim() === k.key && v.value === k.value)
   const usable = knownVars(t.environment, t.collection, t.globals, t.handoff).filter((k) => k.value.length >= 4 && !IS_VAR.test(k.value) && NAME.test(k.key))
   // One with a secret's name that isn't marked is never offered: the model may have set it, to try a guess.
-  const marked = outside ? [] : usable.filter((k) => row(k).some((v) => v.secret) && k.value.trim().length >= KNOWN && all.includes(k.value))
+  const marked = usable.filter((k) => row(k).some((v) => v.secret) && k.value.trim().length >= KNOWN && all.includes(k.value))
   const plain = usable.filter((k) => !row(k).some(named) && shown.includes(k.value))
   const existing = usable.filter((k) => marked.includes(k) || plain.includes(k)).map((k): Found => ({ id: '', kind: 'existing', title: '', detail: '', varName: k.key, value: k.value, create: false, secret: marked.includes(k) }))
 
@@ -122,7 +118,7 @@ export function suggestionsFor(r: RequestDef, w: McpServeOptions, clean: (s: str
   const base = origin && !plain.some((k) => url.startsWith(k.value)) ? inUrl.filter((s) => s.kind === 'baseUrl').map((s): Found => ({ ...s, value: origin, secret: hideInText(origin) !== origin || !url.includes(origin) })) : []
   // Each place by itself, so that equal ones don't show as such.
   const credentials = [...r.headers.flatMap((h, header) => ask({ headers: [h] }, marked).map((s): Found => ({ ...s, header }))), ...ask({ auth: r.auth }, marked)]
-  return [...existing, ...base.filter((s) => !outside || !s.secret), ...credentials, ...inUrl.filter((s) => s.kind === 'pathId')].map((s, i) => ({ ...s, id: `${s.kind}:${i}` }))
+  return [...existing, ...base, ...credentials, ...inUrl.filter((s) => s.kind === 'pathId')].map((s, i) => ({ ...s, id: `${s.kind}:${i}` }))
 }
 const defaultClean = (w: McpServeOptions) => {
   const known = new Redactor(knownSecrets({ environments: [...w.ws.environments, ...(w.environment ? [w.environment] : [])], globals: w.globals, collections: w.ws.collections, folders: w.ws.folders, requests: w.ws.requests, extra: [w.settings.mcpHostToken] }))
@@ -144,8 +140,6 @@ export function suggestionLines(r: RequestDef, list: Found[]): string[] {
   return list.map((s) => oneLine([s.id, what(s), s.kind === 'pathId' ? `:${s.varName}` : `{{${s.varName}}}`, s.kind === 'existing' ? 'existing' : 'new', ...(s.secret ? ['secret'] : [])].join(' · ')))
 }
 
-const NOTHING = 'Nothing to move: no base URL, sign-in, key or ID written into it, and no value that a variable has.'
-
 /** The suggest_parameters tool. The gate hides, cuts and marks what it answers. */
 export function suggestParameters(input: Record<string, unknown>, ctx: ProposeContext, w: McpServeOptions): { text: string; isError: boolean } {
   const cl = cleaner(ctx, w)
@@ -154,7 +148,7 @@ export function suggestParameters(input: Record<string, unknown>, ctx: ProposeCo
   if ('error' in found) return { text: found.error, isError: true }
   const r = real.requests.find((x) => x.id === found.it.request.id)!
   const list = suggestionsFor(r, w, cl.clean, real.active)
-  if (!list.length) return { text: NOTHING, isError: false }
+  if (!list.length) return { text: 'Nothing to move: no base URL, sign-in, key or ID written into it, and no value that a variable has.', isError: false }
   return { text: [`batch: ${ctx.batches.add(stateOf(r, tablesOf(r, w, real.active)), list)}`, ...suggestionLines(r, list)].join('\n'), isError: false }
 }
 
@@ -188,10 +182,10 @@ function showsNoMore(was: string, now: string): boolean {
 }
 
 /** `s` with the value replaced, or as it is where that would show something. */
-function swapped(s: string, show: (x: string) => string[], from: Suggestion): string {
+function swapped(s: string, show: (x: string) => string, from: Suggestion): string {
   const shown = show(s), to = `{{${from.varName}}}`
-  const next = from.secret ? outside(s, from.value, to) : inShown(s, shown[0], from.value, to)
-  return next !== s && show(next).every((x, i) => showsNoMore(shown[i], x)) ? next : s
+  const next = from.secret ? outside(s, from.value, to) : inShown(s, shown, from.value, to)
+  return next !== s && showsNoMore(shown, show(next)) ? next : s
 }
 
 /** The URL with the ID replaced by its name, the first time it can be read. */
@@ -216,7 +210,7 @@ function withPathName(url: string, shown: string, value: string, name: string): 
  * The request with the chosen values moved, and the variables to make. Only those that moved anything. `signIn` is the
  * sign-in that applies: a bearer header goes to the Auth tab only where there is none and nothing kept there.
  */
-export function parameterize(r: RequestDef, chosen: Found[], cl: Cleaner, signIn: Auth | null, view: View = chatView(cl)): { request: RequestDef; create: KV[]; done: Found[] } {
+export function parameterize(r: RequestDef, chosen: Found[], cl: Cleaner, signIn: Auth | null): { request: RequestDef; create: KV[]; done: Found[] } {
   const done: Found[] = [], create: KV[] = []
   let out = r
   const did = (s: Found) => { done.push(s); if (s.create) create.push(kv(s.varName, s.value, true, s.secret ? { secret: true } : {})) }
@@ -237,19 +231,18 @@ export function parameterize(r: RequestDef, chosen: Found[], cl: Cleaner, signIn
   out = { ...out, auth, headers: headers.filter((h) => h !== null) }
   for (const s of chosen.filter((x) => x.kind === 'pathId')) {
     const shown = cl.clean(out.url), url = withPathName(out.url, shown, s.value, s.varName)
-    const was = view(out.url, 'url')
-    if (url === out.url || !showsNoMore(shown, cl.clean(url)) || !view(url, 'url').every((x, n) => showsNoMore(was[n], x))) continue
+    if (url === out.url || !showsNoMore(shown, cl.clean(url))) continue
     out = { ...out, url, pathVars: pathVarsFromUrl(url, [...out.pathVars, kv(s.varName, s.value)]), params: paramsFromUrl(url, out.params) }
     did(s)
   }
   for (const s of chosen.filter((x) => x.kind === 'existing' || x.kind === 'baseUrl').sort((a, b) => b.value.length - a.value.length)) {
-    const row = (at: 'header' | 'field') => (x: KV): KV => { const value = swapped(x.value, (v) => view(v, at, x.key), s); return value === x.value ? x : { ...x, value } }
-    const free = (v: string, at: 'url' | 'username' | 'text' | 'graphql') => swapped(v, (y) => view(y, at), s)
-    const auth: Auth = { ...out.auth, username: free(out.auth.username, 'username') }
+    const row = (x: KV): KV => { const value = swapped(x.value, (v) => cl.deep({ key: x.key, value: v }).value, s); return value === x.value ? x : { ...x, value } }
+    const free = (v: string) => swapped(v, cl.clean, s)
+    const auth: Auth = { ...out.auth, username: free(out.auth.username) }
     if (s.secret) for (const k of ['token', 'value', 'password'] as const) auth[k] = outside(auth[k], s.value, `{{${s.varName}}}`)
     const next: RequestDef = {
-      ...out, url: free(out.url, 'url'), headers: out.headers.map(row('header')), auth,
-      body: { ...out.body, text: free(out.body.text, 'text'), graphqlVariables: free(out.body.graphqlVariables, 'graphql'), fields: out.body.fields.map(row('field')) },
+      ...out, url: free(out.url), headers: out.headers.map(row), auth,
+      body: { ...out.body, text: free(out.body.text), graphqlVariables: free(out.body.graphqlVariables), fields: out.body.fields.map(row) },
     }
     if (canonical(next) === canonical(out)) continue
     out = { ...next, params: next.url === out.url ? out.params : paramsFromUrl(next.url, out.params) }
@@ -273,28 +266,23 @@ function sent(r: RequestDef, t: Tables, w: McpServeOptions): string {
 
 const CHANGED = 'The request changed. Look at the suggestions again.'
 
-type Where = 'environment' | 'collection' | 'globals'
-interface Asked {
-  r: RequestDef; t: Tables; w: McpServeOptions; batches: ParameterBatches; batch: unknown; choose: unknown; where: Where; cl: Cleaner
-  /** The cleaner that hides these too. */
-  widen(more: string[]): Cleaner
-  view?(cl: Cleaner): View
-  /** Why this one can't have this name, beyond what always holds. */
-  badName?(s: Found, name: string): string | null
-}
-interface Moved { request: RequestDef; create: KV[]; done: Found[]; after: Tables; safe: Cleaner }
-
-/** What was chosen, moved, or why not: the checks for every assistant. The refusals hold no values. */
-function moveValues(x: Asked): Moved | Refused {
+/** An apply_parameters call as a draft, or why not. The refusals hold no values. */
+export function applyParameters(input: Record<string, unknown>, ctx: ProposeContext, w: McpServeOptions, cl: Cleaner): Draft | Refused {
   const refuse = (refused: string): Refused => ({ refused })
-  const { r, t, w, cl, where } = x
-  const batch = x.batches.find(String(x.batch ?? ''))
+  const { real, lookup } = cleanWorld(w, ctx.spaceId, cl)
+  const found = lookup(String(input.name ?? ''))
+  if ('error' in found) return refuse(found.error)
+  const r = real.requests.find((x) => x.id === found.it.request.id)!
+  if (ctx.unsaved(r.id)) return refuse(`Save or discard your changes to “${oneLine(found.it.request.name)}” first.`)
+  const t = tablesOf(r, w, real.active)
+  const batch = ctx.batches.find(String(input.batch ?? ''))
   if (!batch || batch.at !== stateOf(r, t)) return refuse(CHANGED)
+  const where = String(input.where)
   if (!['environment', 'collection', 'globals'].includes(where)) return refuse('Say where: environment, collection or globals.')
 
   const taken = new Set([...rowsOf(t).map((v) => v.key.trim()), ...pathNames(r)])
   const chosen: Found[] = []
-  for (const [id, as] of Object.entries((x.choose as Record<string, string>) ?? {})) {
+  for (const [id, as] of Object.entries((input.choose as Record<string, string>) ?? {})) {
     const s = batch.suggestions.find((x) => x.id === id)
     if (!s) return refuse(`There is no suggestion “${id}”. Look at the suggestions again.`)
     const name = as === '' ? s.varName : String(as)
@@ -302,8 +290,6 @@ function moveValues(x: Asked): Moved | Refused {
       if (name !== s.varName) return refuse(`“${id}” is already a variable, so it keeps its name: choose it with "".`)
     } else {
       if (!NAME.test(name) || name in FAKE || (s.kind === 'pathId' && !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(name))) return refuse(`“${name}” can’t be a name here: no spaces or braces, not empty, and in the path only letters, digits, _ and -.`)
-      const bad = x.badName?.(s, name)
-      if (bad) return refuse(bad)
       if (taken.has(name)) return refuse(`“${name}” is already used there. Choose another name.`)
       taken.add(name)
     }
@@ -313,8 +299,8 @@ function moveValues(x: Asked): Moved | Refused {
   if (where === 'environment' && !t.environment && chosen.some((s) => s.create)) return refuse('No environment is active, so pick the collection or the globals.')
 
   // What moves is hidden from here on, also where it wasn't known to be a secret before.
-  const safe = x.widen(chosen.filter((s) => s.secret).map((s) => s.value))
-  const { request, create, done } = parameterize(r, chosen, safe, signInOf(r, t, w), x.view?.(safe))
+  const safe = cleaner({ ...ctx, secrets: () => [...ctx.secrets(), ...chosen.filter((s) => s.secret).map((s) => s.value)] }, w)
+  const { request, create, done } = parameterize(r, chosen, safe, signInOf(r, t, w))
   if (!done.length) return refuse('These can’t be moved here without showing a secret.')
   // Rule: a hidden value may move, but none is lost. What was swapped is put back before comparing.
   const values = new Map(done.map((s) => [s.varName, s.value]))
@@ -323,6 +309,7 @@ function moveValues(x: Asked): Moved | Refused {
   const gone = lost({ ...r, auth: mapped(r.auth, back) }, { ...r, auth, pathVars: request.pathVars }, cl)
   if (gone) return refuse(held(gone))
 
+  const changes: Change[] = [{ kind: 'request', id: r.id, before: r, after: { ...request, updatedAt: Date.now() } }]
   const after: Tables = { ...t }
   if (create.length) {
     const rows = where === 'environment' ? t.environment!.variables : where === 'collection' ? t.collection!.variables : t.globals
@@ -331,68 +318,20 @@ function moveValues(x: Asked): Moved | Refused {
     if (where === 'environment') after.environment = { ...t.environment!, variables: got.rows, updatedAt: Date.now() }
     else if (where === 'collection') after.collection = { ...t.collection!, variables: got.rows, updatedAt: Date.now() }
     else after.globals = got.rows
-  }
-  if (sent(request, after, w) !== sent(r, t, w)) return refuse('That would change what this request sends.')
-  return { request: { ...request, updatedAt: Date.now() }, create, done, after, safe }
-}
-
-const doneReply = (name: string, m: Moved, place: string) =>
-  `“${name}” now uses ${m.done.map((s) => (s.kind === 'pathId' ? `:${s.varName}` : `{{${s.varName}}}`)).join(', ')}.${m.create.length ? ` New in ${place}: ${m.create.map((v) => v.key).join(', ')}.` : ''}`
-
-/** An apply_parameters call as a draft, or why not. */
-export function applyParameters(input: Record<string, unknown>, ctx: ProposeContext, w: McpServeOptions, cl: Cleaner): Draft | Refused {
-  const { real, lookup } = cleanWorld(w, ctx.spaceId, cl)
-  const found = lookup(String(input.name ?? ''))
-  if ('error' in found) return { refused: found.error }
-  const r = real.requests.find((x) => x.id === found.it.request.id)!
-  if (ctx.unsaved(r.id)) return { refused: `Save or discard your changes to “${oneLine(found.it.request.name)}” first.` }
-  const t = tablesOf(r, w, real.active)
-  const where = String(input.where) as Where
-  const m = moveValues({ r, t, w, batches: ctx.batches, batch: input.batch, choose: input.choose, where, cl, widen: (more) => cleaner({ ...ctx, secrets: () => [...ctx.secrets(), ...more] }, w) })
-  if ('refused' in m) return m
-  const { request, create, done, after, safe } = m
-
-  const changes: Change[] = [{ kind: 'request', id: r.id, before: r, after: request }]
-  if (create.length) {
     changes.push(where === 'environment' ? { kind: 'environment', id: t.environment!.id, before: t.environment, after: after.environment }
       : where === 'collection' ? { kind: 'collection', id: t.collection!.id, before: t.collection, after: after.collection }
         : { kind: 'globals', id: 'globals', before: t.globals, after: after.globals })
   }
+  if (sent(request, after, w) !== sent(r, t, w)) return refuse('That would change what this request sends.')
   const place = where === 'environment' ? `variables of the environment “${t.environment?.name}”` : where === 'collection' ? `variables of the collection “${t.collection?.name}”` : 'the globals'
+  const names = done.map((s) => (s.kind === 'pathId' ? `:${s.varName}` : `{{${s.varName}}}`)).join(', ')
   return {
     tool: 'apply_parameters', title: `Move values of “${r.name}” into ${create.length ? place : 'variables'}`, changes: structuredClone(changes), cleaner: safe,
-    reply: doneReply(r.name, m, place),
+    reply: `“${r.name}” now uses ${names}.${create.length ? ` New in ${place}: ${create.map((v) => v.key).join(', ')}.` : ''}`,
     // a scheme and a variable, nothing hidden: shown as it is
     exact: { headers: new Map(request.headers.filter((h, i) => h.value !== r.headers[i]?.value && /^bearer \{\{[^{}\s]+\}\}$/i.test(h.value)).map((h) => [h.key.toLowerCase(), h.value])) },
     moved: new Map(done.filter((s) => s.kind !== 'pathId').map((s) => [s.varName, s.value])),
   }
-}
-
-// ---- outside assistants (mcpWorkspace.ts): no one approves, so nothing may come out of it but the move itself ----
-
-/** `w` has the assistant's own collections too. `label`: the request's path. `known`: every secret the endpoint hides. */
-export interface Outside { r: RequestDef; label: string; w: McpServeOptions; known: string[]; batches: ParameterBatches; save(c: AssistantChanges): Promise<void> }
-
-/** The two tools of an outside assistant, for a request it may write to. New variables go to the request's collection. */
-export async function outsideParameters(name: string, args: Record<string, unknown>, x: Outside): Promise<[string, boolean]> {
-  const cl = cleanerOf(x.known)
-  const { r, w } = x
-  const t = tablesOf(r, w, w.environment)
-  if (name === 'suggest_parameters') {
-    const list = suggestionsFor(r, w, cl.clean, w.environment, outsideView(r, cl))
-    return [list.length ? [`batch: ${x.batches.add(stateOf(r, t), list)}`, ...suggestionLines(r, list).map(cl.clean)].join('\n') : NOTHING, false]
-  }
-  const choose = args.choose ?? {}
-  if (typeof choose !== 'object' || Array.isArray(choose) || Object.values(choose).some((v) => typeof v !== 'string')) return ['“choose” must be an object of ids, each with a name or "".', true]
-  if (JSON.stringify(choose).includes(HIDDEN)) return [`${HIDDEN} stands for a secret you weren’t shown, so it can’t be a name.`, true]
-  const m = moveValues({
-    r, t, w, batches: x.batches, batch: args.batch, choose, where: 'collection', cl, widen: (more) => cleanerOf([...x.known, ...more]), view: (safe) => outsideView(r, safe),
-    // get_request hides a variable by its name
-    badName: (s, n) => (s.secret && hide(n, 'x') !== HIDDEN ? `“${n}” holds a secret, so it needs a name that says so, with token, password, secret or apiKey in it.` : null),
-  })
-  if ('refused' in m) return [cl.clean(m.refused), true]
-  await x.save({ collections: m.create.length ? [m.after.collection!] : [], folders: [], requests: [m.request] })
-  return [m.safe.clean(doneReply(x.label, m, `the variables of the collection “${t.collection!.name}”`)), false]
 }
 const mapped = (a: Auth, f: (s: string) => string) => Object.fromEntries(Object.entries(a).map(([k, v]) => [k, AUTH_SECRETS.has(k) ? f(String(v)) : v])) as unknown as Auth
 

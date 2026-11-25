@@ -10,9 +10,7 @@
  * "assistant/Inbox" with their note (RequestDef.handoff). list_requests flags it; the assistant reviews it with
  * get_request, fixes it with update_request / set_variables and files it with move_request, which clears the flag.
  */
-import type { ParameterBatches } from './assistant/batches'
 import { effectiveAuth } from './prepare'
-import type { McpServeOptions } from './mcpHandler'
 import { folderChain } from './runtime'
 import type { RunItem } from './runner'
 import { SECRET_NAME } from './share'
@@ -39,12 +37,10 @@ export interface AssistantWorkspace {
   /** The open workspace, when the user lets assistants edit it. Its collections are among the user's (no prefix). */
   editable?: { name: string; workspaceId: string; collections: Collection[] }
   save(c: AssistantChanges): Promise<void>
-  /** What suggest_parameters suggested lately. */
-  batches: ParameterBatches
   remove(requestIds: string[]): Promise<void>
 }
 
-export const WORKSPACE_TOOL_NAMES = ['create_request', 'update_request', 'copy_request', 'move_request', 'delete_request', 'set_variables', 'set_scripts', 'suggest_parameters', 'apply_parameters']
+export const WORKSPACE_TOOL_NAMES = ['create_request', 'update_request', 'copy_request', 'move_request', 'delete_request', 'set_variables', 'set_scripts']
 
 const IS_VAR = /^\s*\{\{[^{}]+\}\}\s*$/
 /** Pre-request and tests scripts (Dispatch's dx API: dx.env.set, test(), expect(), dx.response.json() …; pm.* also runs). */
@@ -148,27 +144,6 @@ export function workspaceTools(editable?: string, own = true) {
         required: ['path'],
       },
     },
-    // the chat has its own two, which also say where
-    ...(own ? [
-      {
-        name: 'suggest_parameters',
-        description: `List what is written into a request in ${yours} and could be moved into {{variables}} (base URL, tokens, API keys, passwords, IDs in the path, values that a variable already has), one per line: id · what · the variable · new or existing · secret. No values are shown. Use the ids and the batch with apply_parameters.`,
-        inputSchema: { type: 'object', properties: { name: { type: 'string', description: `Its path, like "${ex('Orders/Create order')}".` } }, required: ['name'] },
-      },
-      {
-        name: 'apply_parameters',
-        description: 'Move values that suggest_parameters listed into variables. Dispatch moves the values itself, also the ones you can’t see. New variables go to the request’s collection; tokens, keys and passwords become secret variables.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            name: { type: 'string', description: 'The request, as for suggest_parameters.' },
-            batch: { type: 'string', description: 'The batch suggest_parameters gave.' },
-            choose: { type: 'object', additionalProperties: { type: 'string' }, description: 'The ids to move, each with the name for its variable, or "" for the suggested name.' },
-          },
-          required: ['name', 'batch', 'choose'],
-        },
-      },
-    ] : []),
   ]
 }
 
@@ -190,8 +165,6 @@ export interface WorkspaceCallContext {
   allowMethods: string[]
   /** Finds any request by the path list_requests shows (user's or assistant's). */
   lookup(path: string): { it: RunItem; path: string } | { error: string }
-  /** For the parameter tools: what is served, the assistant's own collections too, and every secret the endpoint hides. */
-  parameters?: { world: McpServeOptions; known: string[] }
 }
 
 /** A named value, hidden when the name looks secret (an auth scheme in front stays). */
@@ -275,11 +248,6 @@ const bodyHasSecret = (b: RequestDef['body']) =>
 /** Refusal when a change would overwrite a value the assistant was only shown as <hidden>. */
 const keepsSecret = (what: string) => `The ${what} holds a secret you were shown as ${HIDDEN}; rewriting it would lose that secret, so it was left as it is. Ask the user to move the secret into a {{variable}} first, then change it.`
 
-/** Longer bodies are cut in get_request. */
-export const BODY_LIMIT = 20_000
-/** A body as get_request shows it. */
-export const shownText = (t: string) => hideInText(t.length > BODY_LIMIT ? `${t.slice(0, BODY_LIMIT)}\n… (cut)` : t)
-
 /** get_request: one request in full, secrets hidden. */
 export function describeRequest(found: { it: RunItem; path: string }, x: { allCollections: Collection[]; folders: Folder[] }): string {
   const r = found.it.request
@@ -300,7 +268,7 @@ export function describeRequest(found: { it: RunItem; path: string }, x: { allCo
   if (b.kind === 'none') lines.push('Body: none')
   else if (b.kind === 'urlencoded' || b.kind === 'formdata') lines.push(`Body (${b.kind}):\n${b.fields.map((f) => `  ${f.key}=${hide(f.key, f.value)}`).join('\n')}`)
   else if (b.kind === 'binary') lines.push('Body: a file')
-  else lines.push(`Body (${b.kind}):\n${shownText(b.text)}`)
+  else lines.push(`Body (${b.kind}):\n${hideInText(b.text.length > 20_000 ? `${b.text.slice(0, 20_000)}\n… (cut)` : b.text)}`)
   if (r.scripts.pre.trim()) lines.push(`Pre-request script:\n${hideInText(r.scripts.pre)}`)
   if (r.scripts.post.trim()) lines.push(`Tests script:\n${hideInText(r.scripts.post)}`)
   // Scripts that also run for it, from its folders and collection (change them with set_scripts).
@@ -420,15 +388,6 @@ export async function workspaceCall(name: string, args: any, x: WorkspaceCallCon
     // "No auth" needs no mention.
     if (auth.kind !== 'none') notes.push(`the ${auth.kind} auth it inherited was copied onto it`)
     return structuredClone(auth)
-  }
-
-  if (name === 'suggest_parameters' || name === 'apply_parameters') {
-    const r = own(args.name)
-    if (typeof r === 'string') return [r, true]
-    if (!x.parameters) return [`Unknown tool ${name}`, true]
-    // loaded when used: the rest of the endpoint doesn't need it
-    const { outsideParameters } = await import('./assistant/parameters')
-    return outsideParameters(name, args, { r, label: label(r), w: x.parameters.world, known: x.parameters.known, batches: x.w.batches, save: x.w.save })
   }
 
   if (name === 'create_request') {

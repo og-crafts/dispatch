@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ParameterBatches } from '../src/core/assistant/batches'
-import { handleMcp, type McpServeOptions } from '../src/core/mcpHandler'
+import { handleMcp } from '../src/core/mcpHandler'
 import type { Transport } from '../src/core/transport'
-import { ASSISTANT_SPACE, type Collection, type Environment, type KV, type RequestDef, defaultSettings, emptyAuth, emptyBody, kv, newCollection, newEnvironment, newFolder, newRequest } from '../src/core/types'
+import { ASSISTANT_SPACE, type Collection, type RequestDef, defaultSettings, kv, newCollection, newFolder, newRequest } from '../src/core/types'
 import { type AssistantChanges, hide, hideInText } from '../src/core/mcpWorkspace'
 
 /** The desktop app's MCP endpoint serves every collection in the workspace and saves what a send changed. */
@@ -103,7 +102,7 @@ describe('MCP assistant workspace', () => {
     const o = {
       ws: { source: 'dispatch' as const, collections: [shop], folders: [orders], requests: [items, probe], environments: [], flows: [], warnings: [] },
       environment: null, globals: [], settings: defaultSettings, transport, pipeline: {}, allowMethods: ['GET', 'HEAD'], version: 'test', allCollections: true,
-      workspace: withWorkspace ? { batches: new ParameterBatches(), collections: own, save: async (c: AssistantChanges) => { saved.push(c) }, remove: async (ids: string[]) => { removed.push(ids) } } : undefined,
+      workspace: withWorkspace ? { collections: own, save: async (c: AssistantChanges) => { saved.push(c) }, remove: async (ids: string[]) => { removed.push(ids) } } : undefined,
     }
     const call = (name: string, args: object) => handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, o)
     const tools = async () => (await handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, o)).result.tools.map((t: { name: string }) => t.name)
@@ -252,7 +251,6 @@ describe('MCP assistant inbox and editable workspaces', () => {
       ws: { source: 'dispatch' as const, collections: [shop, ...extraCollections], folders: [orders], requests: [items, handed, ...extraRequests], environments: [], flows: [], warnings: [] },
       environment: null, globals: [], settings: defaultSettings, transport, pipeline: {}, allowMethods: [], version: 'test', allCollections: true,
       workspace: {
-        batches: new ParameterBatches(),
         collections: [inbox], save: async (c: AssistantChanges) => { saved.push(c) }, remove: async (ids: string[]) => { removed.push(ids) },
         ...(editable ? { editable: { name: 'Work', workspaceId: 'w1', collections: [shop, ...extraCollections] } } : {}),
       },
@@ -436,7 +434,7 @@ describe('MCP assistant scripts', () => {
     const o = {
       ws: { source: 'dispatch' as const, collections: [shop], folders: [admin], requests: [probe], environments: [], flows: [], warnings: [] },
       environment: null, globals: [], settings: defaultSettings, transport, pipeline: {}, allowMethods: [], version: 'test', allCollections: true,
-      workspace: { batches: new ParameterBatches(), collections: [lab], save: async (c: AssistantChanges) => { saved.push(c) }, remove: async () => {} },
+      workspace: { collections: [lab], save: async (c: AssistantChanges) => { saved.push(c) }, remove: async () => {} },
     }
     const call = (name: string, args: object) => handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, o)
     return { call, saved }
@@ -494,321 +492,5 @@ describe('hiding secrets in text', () => {
     expect(hide('Access-Control-Allow-Headers', 'Authorization, X-Api-Key')).toBe('Authorization, X-Api-Key')
     expect(hide('Authorization', 'Bearer abc123456')).toBe('Bearer <hidden>')
     expect(hide('X-Credentials', 'abc')).toBe('<hidden>')
-  })
-})
-
-/** suggest_parameters and apply_parameters: what "AI can edit" already allows, and nobody approves each change. */
-describe('MCP parameter tools', () => {
-  const TOKEN = 'plant-token-AAAA1', KEY = 'plant-apikey-BBBB2'
-  const secretVar = (k: string, v: string) => kv(k, v, true, { secret: true })
-  const shop = (over: Partial<Collection> = {}) => ({ ...newCollection('Shop'), workspaceId: 'w1', ...over })
-  const req = (c: Collection, over: Partial<RequestDef> = {}) => newRequest({ name: 'Order', url: 'https://shop.test/users/12345/x', collectionId: c.id, sort: 1, headers: [kv('Authorization', `Bearer ${TOKEN}`), kv('X-API-Key', KEY)], ...over })
-  interface O { collections?: Collection[]; own?: Collection[]; requests?: RequestDef[]; env?: Environment | null; globals?: KV[]; edit?: boolean; workspace?: boolean; all?: boolean; transport?: Transport; folders?: ReturnType<typeof newFolder>[] }
-  /** Like the app: what is saved is there for the next call. */
-  const setup = (x: O) => {
-    const saved: AssistantChanges[] = []
-    const all = x.collections ?? [], own = x.own ?? []
-    const transport: Transport = x.transport ?? { label: 't', unrestricted: true, send: async () => ({ status: 200, statusText: 'OK', headers: [], body: '{}', binary: false, size: 2, timeMs: 1 }) }
-    const put = <T extends { id: string }>(list: T[], add: T[]) => { for (const a of add) { const i = list.findIndex((y) => y.id === a.id); if (i < 0) list.push(a); else list[i] = a } }
-    const workspace: McpServeOptions['workspace'] = {
-      batches: new ParameterBatches(), collections: own, editable: x.edit === false ? undefined : { name: 'Work', workspaceId: 'w1', collections: all },
-      save: async (c) => { saved.push(c); for (const y of c.collections) put(own.some((z) => z.id === y.id) || y.workspaceId === ASSISTANT_SPACE.id ? own : all, [y]); put(o.ws.folders, c.folders); put(o.ws.requests, c.requests) },
-      remove: async () => {},
-    }
-    const o: McpServeOptions = {
-      ws: { source: 'dispatch', collections: all, folders: x.folders ?? [], requests: x.requests ?? [], environments: x.env ? [x.env] : [], flows: [], warnings: [] },
-      environment: x.env ?? null, globals: x.globals ?? [], settings: defaultSettings, transport, pipeline: {}, allowMethods: [], version: 't', allCollections: x.all ?? true,
-      workspace: x.workspace === false ? undefined : workspace,
-    }
-    const raw = (name: string, args: object) => handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, o)
-    const call = async (name: string, args: object) => { const r = await raw(name, args); return { text: r.result?.content[0].text as string, bad: !!r.result?.isError } }
-    const tools = async () => (await handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, o)).result.tools as { name: string; description: string; inputSchema: { properties: object } }[]
-    const suggest = async (name = 'Shop/Order') => {
-      const r = await call('suggest_parameters', { name })
-      const lines = r.text.split('\n').filter((l) => l.includes(' · ')).map((l) => l.split(' · '))
-      return { ...r, lines, batch: /batch: (\S+)/.exec(r.text)?.[1] ?? '', id: (what: string) => lines.find((l) => l.slice(0, 3).join(' ').includes(what))?.[0] ?? `no ${what}` }
-    }
-    const move = async (what: Record<string, string>, name = 'Shop/Order') => {
-      const s = await suggest(name)
-      return call('apply_parameters', { name, batch: s.batch, choose: Object.fromEntries(Object.entries(what).map(([w, n]) => [s.id(w), n])) })
-    }
-    return { o, workspace, saved, raw, call, tools, suggest, move }
-  }
-  const NAMES = ['suggest_parameters', 'apply_parameters']
-
-  it('are offered only with the workspace on, and never to dispatch-run mcp', async () => {
-    const c = shop(), r = req(c)
-    expect((await setup({ collections: [c], requests: [r] }).tools()).map((t) => t.name)).toEqual(expect.arrayContaining(NAMES))
-    for (const off of [{ workspace: false }, { workspace: false, all: false }, { all: false }]) {
-      const s = setup({ collections: [c], requests: [r], ...off })
-      const names = (await s.tools()).map((t) => t.name)
-      for (const n of [...NAMES, 'set_environment_variables']) {
-        expect(names).not.toContain(n)
-        expect((await s.raw(n, { name: 'Shop/Order' })).error.message).toContain('Unknown tool')
-      }
-    }
-    const on = setup({ collections: [c], requests: [r] })
-    expect((await on.tools()).map((t) => t.name)).not.toContain('set_environment_variables')
-    expect((await on.raw('set_environment_variables', {})).error.message).toContain('Unknown tool')
-    expect(Object.keys((await on.tools()).find((t) => t.name === 'apply_parameters')!.inputSchema.properties)).toEqual(['name', 'batch', 'choose'])
-    expect((await on.tools()).find((t) => t.name === 'apply_parameters')!.description).not.toContain('person decides')
-  })
-
-  it('move what was picked to the collection, in one save, with no value in any reply', async () => {
-    const c = shop(), r = req(c, { auth: { ...emptyAuth('basic'), username: 'ann', password: 'plant-pass-CCCC3' }, headers: [kv('X-API-Key', KEY)] })
-    const { suggest, move, saved } = setup({ collections: [c], requests: [r], env: newEnvironment('Dev') })
-    const s = await suggest()
-    expect(s.bad).toBe(false)
-    expect(s.lines.map((l) => l.slice(1))).toEqual([['base URL', '{{baseUrl}}', 'new'], ['API key in the header X-API-Key', '{{apiKey}}', 'new', 'secret'], ['sign-in password', '{{password}}', 'new', 'secret'], ['ID in the path', ':userId', 'new']])
-    const a = await move({ 'base URL': '', X: 'shopApiKey', password: '', ID: '' })
-    expect(a).toMatchObject({ bad: false, text: '“Shop/Order” now uses {{shopApiKey}}, {{password}}, :userId, {{baseUrl}}. New in the variables of the collection “Shop”: shopApiKey, password, baseUrl.' })
-    for (const v of [KEY, 'plant-pass-CCCC3', '12345']) { expect(s.text).not.toContain(v); expect(a.text).not.toContain(v) }
-    expect(saved).toHaveLength(1)
-    expect(saved[0].folders).toEqual([])
-    expect(saved[0].collections).toHaveLength(1)
-    expect(saved[0].collections[0].variables.map((v) => [v.key, v.value, !!v.secret])).toEqual([['shopApiKey', KEY, true], ['password', 'plant-pass-CCCC3', true], ['baseUrl', 'https://shop.test', false]])
-    expect(saved[0].requests).toHaveLength(1)
-    expect(saved[0].requests[0]).toMatchObject({ id: r.id, url: '{{baseUrl}}/users/:userId/x', headers: [{ value: '{{shopApiKey}}' }], auth: { password: '{{password}}' } })
-    expect(saved[0].requests[0].updatedAt).toBeGreaterThanOrEqual(r.updatedAt)
-  })
-
-  it('what moved stays hidden in get_request, list_requests and an echoing send, also in a copy', async () => {
-    const echo: Transport = { label: 't', unrestricted: true, send: async (p) => ({ status: 200, statusText: 'OK', headers: p.headers, body: JSON.stringify(p), binary: false, size: 2, timeMs: 1 }) }
-    const c = shop(), r = req(c)
-    const { move, call } = setup({ collections: [c], requests: [r], transport: echo })
-    expect((await move({ bearer: '', X: 'mySecret' })).bad).toBe(false)
-    await call('create_request', { folder: 'Shop', name: 'Leak', url: 'https://e.test/{{token}}?x={{mySecret}}' })
-    await call('copy_request', { from: 'Shop/Order', to: 'assistant/Lab' })
-    for (const [tool, args] of [['get_request', { name: 'Shop/Order' }], ['get_request', { name: 'assistant/Lab/Order' }], ['list_requests', {}], ['send_request', { name: 'Shop/Order' }], ['send_request', { name: 'Shop/Leak' }], ['set_variables', { collection: 'Shop', variables: { other: '1' } }]] as const) {
-      const t = (await call(tool, args)).text
-      expect(t).not.toContain(TOKEN); expect(t).not.toContain(KEY)
-    }
-  })
-
-  it('a secret needs a variable name that get_request hides', async () => {
-    const c = shop(), r = req(c, { headers: [kv('X-API-Key', KEY)] })
-    const { move, saved } = setup({ collections: [c], requests: [r] })
-    for (const n of ['foo', 'access-control-token']) {
-      const t = await move({ X: n })
-      expect(t.bad).toBe(true)
-      expect(t.text).toContain('needs a name that says so')
-    }
-    expect(saved).toEqual([])
-    expect((await move({ 'base URL': 'foo' })).bad).toBe(false)
-  })
-
-  it('a base URL with a password in it isn’t offered: the variable would show it', async () => {
-    const c = shop(), r = req(c, { url: 'https://bob:pa55word@shop.test/x', headers: [] })
-    expect((await setup({ collections: [c], requests: [r] }).suggest()).text).toContain('Nothing to move')
-  })
-
-  it('refuse what the assistant may not write to', async () => {
-    const c = shop(), r = req(c)
-    const s = setup({ collections: [c], requests: [r], edit: false })
-    for (const n of NAMES) {
-      const t = await s.call(n, { name: 'Shop/Order', batch: 'x', choose: { 'baseUrl:0': '' } })
-      expect(t.bad).toBe(true)
-      expect(t.text).toContain('which you can’t change')
-    }
-    expect((await s.call('suggest_parameters', { name: 'Shop/Nope' })).text).toContain('No request named')
-    // turned off between the two
-    const on = setup({ collections: [c], requests: [r] })
-    const got = await on.suggest()
-    on.workspace!.editable = undefined
-    expect((await on.call('apply_parameters', { name: 'Shop/Order', batch: got.batch, choose: { [got.id('base')]: '' } })).text).toContain('which you can’t change')
-    expect([...s.saved, ...on.saved]).toEqual([])
-  })
-
-  it('work in the assistant’s own workspace, with its own collection', async () => {
-    const lab = { ...newCollection('Lab'), workspaceId: ASSISTANT_SPACE.id, variables: [kv('tenant', 'acme-prod')] }
-    const other = shop(), r = req(lab, { name: 'Probe', url: 'https://lab.test/acme-prod' })
-    const { suggest, move, saved } = setup({ collections: [other], own: [lab], requests: [r], edit: false })
-    expect((await suggest('assistant/Lab/Probe')).lines.map((l) => l[2])).toEqual(['{{tenant}}', '{{baseUrl}}', '{{token}}', '{{apiKey}}'])
-    expect((await move({ bearer: '', tenant: '' }, 'assistant/Lab/Probe')).text).toContain('“assistant/Lab/Probe” now uses')
-    expect(saved[0].collections.map((c) => [c.id, c.workspaceId])).toEqual([[lab.id, ASSISTANT_SPACE.id]])
-    expect(saved[0].collections[0].variables.map((v) => v.key)).toEqual(['tenant', 'token'])
-    expect(saved[0].requests[0].url).toBe('https://lab.test/{{tenant}}')
-  })
-
-  it('only existing variables: the collection isn’t saved', async () => {
-    const c = shop({ variables: [kv('tenant', 'acme-prod')] }), r = req(c, { url: 'https://shop.test/acme-prod', headers: [] })
-    const { move, saved } = setup({ collections: [c], requests: [r] })
-    expect((await move({ tenant: '' })).text).toBe('“Shop/Order” now uses {{tenant}}.')
-    expect(saved[0].collections).toEqual([])
-  })
-
-  it('a stale batch, another request’s batch and an unknown one are refused', async () => {
-    const c = shop(), r = req(c), r2 = req(c, { name: 'Other' })
-    const s = setup({ collections: [c], requests: [r, r2] })
-    const got = await s.suggest()
-    const apply = (over: object = {}) => s.call('apply_parameters', { name: 'Shop/Order', batch: got.batch, choose: { [got.id('base')]: '' }, ...over })
-    const CHANGED = 'The request changed. Look at the suggestions again.'
-    expect(await apply({ name: 'Shop/Other' })).toEqual({ bad: true, text: CHANGED })
-    expect(await apply({ batch: 'nope' })).toEqual({ bad: true, text: CHANGED })
-    s.o.ws.requests[0] = { ...r, url: 'https://shop.test/y' }
-    expect(await apply()).toEqual({ bad: true, text: CHANGED })
-    expect(s.saved).toEqual([])
-    s.o.ws.requests[0] = r
-    s.o.environment = { ...newEnvironment('E'), variables: [kv('a', 'b')] }
-    expect(await apply()).toEqual({ bad: true, text: CHANGED })
-  })
-
-  it('a batch ends with any change the assistant makes: it can’t try whether a guess puts things back', async () => {
-    const c = shop({ variables: [secretVar('pin', '4711')] }), r = req(c)
-    const s = setup({ collections: [c], requests: [r] })
-    const got = await s.suggest()
-    await s.call('set_variables', { collection: 'Shop', variables: { pin: '0000' } })
-    const answer = async (pin: string) => { await s.call('set_variables', { collection: 'Shop', variables: { pin } }); return s.call('apply_parameters', { name: 'Shop/Order', batch: got.batch, choose: { none: '' } }) }
-    expect(await answer('4711')).toEqual(await answer('1234'))
-  })
-
-  it('bad input is refused, and <hidden> is never a name', async () => {
-    const c = shop(), r = req(c)
-    const s = setup({ collections: [c], requests: [r] })
-    const got = await s.suggest()
-    for (const choose of [undefined, null, 'x', ['x'], {}, { [got.id('base')]: 1 }, { [got.id('base')]: null }, { [got.id('base')]: 'a b' }, { 'nope:9': '' }, { [got.id('base')]: '<hidden>' }]) {
-      const t = await s.call('apply_parameters', { name: 'Shop/Order', batch: got.batch, choose })
-      expect(t.bad).toBe(true)
-    }
-    expect(s.saved).toEqual([])
-  })
-
-  it('a save that fails changes nothing and says so', async () => {
-    const c = shop(), r = req(c)
-    const s = setup({ collections: [c], requests: [r] })
-    s.workspace!.save = async () => { throw new Error('disk full') }
-    await expect(s.move({ bearer: '' })).rejects.toThrow('disk full')
-    expect(c.variables).toEqual([])
-  })
-
-  it('in the app: one batch list per session, and the request and its collection are stored together', async () => {
-    const { act, cleanup, renderHook, waitFor } = await import('@testing-library/react')
-    const db = await import('../src/core/db')
-    const { useWorkspace } = await import('../src/ui/useWorkspace')
-    const { mcpOptions } = await import('../src/ui/mcpHost')
-    await db.resetForTests()
-    const c = newCollection('Shop'), r = req(c)
-    await db.putCollection(c); await db.putRequest(r)
-    await db.putSettings({ ...(await db.getSettings()), mcpHostWorkspace: true })
-    const transport: Transport = { label: 't', unrestricted: true, send: async () => { throw new Error('must not send') } }
-    const h = renderHook(() => useWorkspace({ transport })).result
-    await waitFor(() => expect(h.current.ready).toBe(true))
-    await act(() => h.current.setSpaceAi(h.current.activeSpaceId, true))
-    const call = async (name: string, args: object) => { let t: any; await act(async () => { t = await handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, mcpOptions(h.current) as McpServeOptions) }); return t.result.content[0].text as string }
-    const s = await call('suggest_parameters', { name: 'Shop/Order' })
-    const id = /^bearer:\d+/m.exec(s)![0], batch = /batch: (\S+)/.exec(s)![1]
-    const put = vi.spyOn(db, 'putMany')
-    put.mockRejectedValueOnce(new Error('disk full'))
-    const choose = { [id]: '' }
-    await expect(call('apply_parameters', { name: 'Shop/Order', batch, choose })).rejects.toThrow('disk full')
-    expect([h.current.collections[0].variables, h.current.requests[0].headers]).toEqual([[], r.headers])
-    expect(await call('apply_parameters', { name: 'Shop/Order', batch, choose })).toContain('now uses {{token}}')
-    expect(put).toHaveBeenCalledTimes(2)
-    expect((await db.listCollections()).find((x) => x.id === c.id)!.variables).toMatchObject([{ key: 'token', value: TOKEN, secret: true }])
-    expect((await db.listRequests())[0].auth).toMatchObject({ kind: 'bearer', token: '{{token}}' })
-    expect(await call('apply_parameters', { name: 'Shop/Order', batch, choose })).toBe('The request changed. Look at the suggestions again.')
-    await act(() => h.current.setSpaceAi(h.current.activeSpaceId, false))
-    expect(await call('suggest_parameters', { name: 'Shop/Order' })).toContain('which you can’t change')
-    put.mockRestore(); cleanup()
-  })
-
-  describe('tell nothing about hidden values', () => {
-    /** The answers to every try are the same, whatever the hidden value is. */
-    const same = async (f: (hidden: string) => Promise<unknown>, a: string, b: string) => expect(await f(a)).toEqual(await f(b))
-    const bare = (t: string) => t.replace(/batch: \S+/, 'batch')
-
-    it('a secret variable the assistant sets to a guess matches nothing hidden', async () => {
-      // set_variables keeps the secret mark, so it can choose the value of a marked one
-      for (const place of [(v: string) => ({ headers: [kv('X-API-Key', v)] }), (v: string) => ({ headers: [kv('X-Session', v)] }), (v: string) => ({ auth: { ...emptyAuth('bearer'), token: v }, headers: [] }), (v: string) => ({ headers: [], body: { ...emptyBody('json'), text: `{"password":"${v}"}` } })]) {
-        await same(async (hidden) => {
-          const c = shop({ variables: [secretVar('mark', 'old-old-old')] }), r = req(c, { url: '{{u}}', ...place(hidden) })
-          const s = setup({ collections: [c], requests: [r], env: { ...newEnvironment('E'), variables: [secretVar('envMark', 'guess-a')] }, globals: [secretVar('gMark', 'guess-a')] })
-          await s.call('set_variables', { collection: 'Shop', variables: { mark: 'guess-a' } })
-          return bare((await s.suggest()).text)
-        }, 'guess-a-and-more', 'something-else-x')
-      }
-    })
-
-    it('a plain one neither, also where get_request shows nothing', async () => {
-      for (const place of [
-        (v: string) => ({ headers: [kv('X-API-Key', v)] }),
-        (v: string) => ({ body: { ...emptyBody('graphql'), text: '{ a }', graphqlVariables: `{"x":"${v}"}` } }),
-        (v: string) => ({ body: { ...emptyBody('none'), text: v } }),
-        (v: string) => ({ body: { ...emptyBody('json'), text: '{}', fields: [kv('x', v)] } }),
-        (v: string) => ({ auth: { ...emptyAuth('bearer'), token: '{{t}}', username: v } }),
-        (v: string) => ({ body: { ...emptyBody('text'), text: 'a'.repeat(20_000) + v } }),
-        (v: string) => ({ params: [kv('x', v, false)], body: { ...emptyBody('urlencoded'), fields: [kv('password', v)] } }),
-      ]) {
-        for (const url of ['https://shop.test/guess-a', 'https://shop.test/']) await same(async (hidden) => {
-          const c = shop({ variables: [kv('guess', 'guess-a')] }), r = req(c, { url, headers: [], ...place(hidden) })
-          const s = setup({ collections: [c], requests: [r] })
-          const text = bare((await s.suggest()).text)
-          const a = await s.move({ guess: '' })
-          return [text, a, (await s.call('get_request', { name: 'Shop/Order' })).text]
-        }, 'guess-a-and-more', 'something-else-x')
-      }
-    })
-
-    it('what can’t be read isn’t replaced', async () => {
-      const c = shop({ variables: [kv('guess', 'guess-a')] })
-      const r = req(c, { url: 'https://shop.test/guess-a', headers: [], body: { ...emptyBody('graphql'), text: '{ a }', graphqlVariables: '{"x":"guess-a"}' }, auth: { ...emptyAuth('bearer'), username: 'guess-a' } })
-      const { move, saved } = setup({ collections: [c], requests: [r] })
-      expect((await move({ guess: '' })).bad).toBe(false)
-      expect(saved[0].requests[0]).toMatchObject({ url: 'https://shop.test/{{guess}}', body: { graphqlVariables: '{"x":"guess-a"}' }, auth: { username: 'guess-a' } })
-      // left over from another body type
-      for (const kind of ['json', 'none', 'binary', 'urlencoded'] as const) {
-        const form = kind === 'urlencoded', c2 = shop({ variables: [kv('guess', 'guess-a')] })
-        const body = { ...emptyBody(kind), text: kind === 'json' ? '{}' : 'guess-a', fields: form ? [] : [kv('x', 'guess-a')] }
-        const s = setup({ collections: [c2], requests: [req(c2, { url: 'https://shop.test/guess-a', headers: [], body })] })
-        expect((await s.move({ guess: '' })).bad).toBe(false)
-        expect(s.saved[0].requests[0].body).toEqual(body)
-      }
-    })
-
-    it('a value Dispatch knows as a secret, here or in the assistant’s own workspace, isn’t offered or shown', async () => {
-      const lab = { ...newCollection('Lab'), workspaceId: ASSISTANT_SPACE.id, variables: [secretVar('s2', 'known-secret-8')] }
-      const c = shop({ variables: [kv('p', 'known-secret-9'), kv('q', 'known-secret-8'), kv('r', 'plain-9')] }), r = req(c, { url: 'https://shop.test/known-secret-9/known-secret-8/plain-9', headers: [] })
-      const s = await setup({ collections: [c], own: [lab], requests: [r], globals: [secretVar('g', 'known-secret-9')] }).suggest()
-      expect(s.lines.map((l) => l[2])).toEqual(['{{r}}', '{{baseUrl}}'])
-    })
-
-    it('replacing text around a secret never uncovers it, also one Dispatch knows from elsewhere', async () => {
-      // With the name in front gone, get_request (which hides by name) would show the value.
-      for (const place of [
-        { url: 'https://shop.test/a?token=known-secret-9' },
-        { url: 'https://shop.test/', headers: [kv('X-Note', 'a token=known-secret-9')] },
-        { url: 'https://shop.test/', headers: [], body: { ...emptyBody('text'), text: 'token=known-secret-9' } },
-        { url: 'https://shop.test/', headers: [], body: { ...emptyBody('json'), text: '{"token=": 1, "token":"known-secret-9"}' } },
-      ]) {
-        const c = shop({ variables: [kv('cut', 'token='), kv('cut2', '"token"')] })
-        const r = req(c, { headers: [], ...place })
-        const { suggest, call } = setup({ collections: [c], requests: [r], globals: [secretVar('g', 'known-secret-9')] })
-        const s = await suggest()
-        expect(s.lines.length).toBeGreaterThan(0)
-        await call('apply_parameters', { name: 'Shop/Order', batch: s.batch, choose: Object.fromEntries(s.lines.filter((l) => l[2].startsWith('{{cut')).map((l) => [l[0], ''])) })
-        for (const t of [await call('get_request', { name: 'Shop/Order' }), await call('list_requests', {})]) expect(t.text).not.toContain('known-secret-9')
-      }
-    })
-
-    it('a long body isn’t shifted past where get_request cuts it', async () => {
-      const body = `${'a'.repeat(19_985)} short "password":"plant-long-FFFF6"`
-      const c = shop({ variables: [kv('aVeryLongNameForAShortValue', 'short')] }), r = req(c, { headers: [], url: 'https://short.test/', body: { ...emptyBody('text'), text: body } })
-      const { move, saved } = setup({ collections: [c], requests: [r] })
-      await move({ aVeryLong: '' })
-      expect(saved[0].requests[0].body.text).toBe(body)
-      // and one that would grow past it
-      const grows = `${'a'.repeat(19_950)} short "password":"plant-long-FFFF6"`
-      const r2 = req(c, { headers: [], url: 'https://short.test/', body: { ...emptyBody('text'), text: grows } })
-      const two = setup({ collections: [c], requests: [r2] })
-      await two.move({ aVeryLong: '' })
-      expect(two.saved[0].requests[0].body.text).toBe(grows)
-    })
-
-    it('suggestions work out from what get_request shows, not what it hides', async () => {
-      const c = shop({ variables: [kv('tenant', 'acme-prod')] }), r = req(c, { url: 'https://shop.test/acme-prod', headers: [kv('X-Token', 'acme-prod-1'), kv('X-Tenant', 'acme-prod')] })
-      const { move, saved } = setup({ collections: [c], requests: [r] })
-      await move({ tenant: '' })
-      expect(saved[0].requests[0].headers.map((h) => h.value)).toEqual(['acme-prod-1', '{{tenant}}'])
-    })
   })
 })

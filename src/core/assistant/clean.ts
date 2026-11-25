@@ -24,12 +24,7 @@ export function secretsNow(ctx: From, w: McpServeOptions): string[] {
 
 /** `also`: secrets that may not be known any more, such as those from before a change. */
 export function cleaner(ctx: From, w: McpServeOptions, also: string[] = []): { clean(s: string): string; deep<T>(v: T): T } {
-  return cleanerOf([...secretsNow(ctx, w), ...also])
-}
-
-/** The cleaner that hides these. */
-export function cleanerOf(secrets: string[]): { clean(s: string): string; deep<T>(v: T): T } {
-  const redact = new Redactor(secrets)
+  const redact = new Redactor([...secretsNow(ctx, w), ...also])
   const clean = (s: string) => redact.clean(s)
   const deep = <T>(v: T, key = ''): T => {
     if (typeof v === 'string') return (/^(id|kind|method)$|Id$/.test(key) ? v : clean(v)) as T
