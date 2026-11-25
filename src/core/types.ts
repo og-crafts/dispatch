@@ -288,6 +288,8 @@ export interface Settings {
   shareUsage: boolean
   /** Opt-in: reports of Dispatch's own errors (Sentry). */
   shareErrors: boolean
+  /** Keep assistant chats on this device (per workspace, sealed). Off stores nothing new. */
+  keepChats: boolean
 }
 
 export interface ClientCert {
@@ -305,7 +307,7 @@ export const defaultSettings: Settings = {
   proxyUrl: '', proxyBypass: 'localhost, 127.0.0.1', clientCerts: [], caCerts: [], activeSpaceId: 'default', spaceEnv: {},
   mcpHostEnabled: false, mcpHostPort: 4320, mcpHostToken: '', mcpHostMethods: 'GET,HEAD', mcpHostWorkspace: false, mcpHostLogs: false,
   autoUpdateCheck: true,
-  telemetryAsked: false, shareUsage: false, shareErrors: false,
+  telemetryAsked: false, shareUsage: false, shareErrors: false, keepChats: true,
 }
 
 let counter = 0

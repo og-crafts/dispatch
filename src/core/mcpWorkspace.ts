@@ -175,18 +175,64 @@ const AUTH_FIELDS: Partial<Record<Auth['kind'], string[]>> = {
   oauth2: ['grant', 'tokenUrl', 'authUrl', 'clientId', 'clientSecret', 'scope', 'accessToken'],
   jwt: ['algorithm', 'secret', 'headerPrefix'], awsv4: ['accessKey', 'secretKey', 'region', 'service'],
 }
-const JWT = /\beyJ[\w-]{5,}\.[\w-]{5,}\.[\w-]{5,}/g
 const AUTH_SCHEME = /\b((?:Bearer|Basic|Digest|Token)\s+)(?!\{\{)[A-Za-z0-9._~+/=-]{8,}/g
-/** Free text with secret-looking values hidden: URL passwords, JWTs, auth-scheme values, and "secret": "…" / secret=… pairs. */
-export function hideInText(s: string): string {
-  return s
-    // user:password@host in URLs
-    .replace(/(\/\/[^/\s:@{}]+:)(?!\{\{)([^@/\s]+)@/g, (_m, pre: string) => `${pre}${HIDDEN}@`)
-    .replace(JWT, HIDDEN)
-    .replace(AUTH_SCHEME, (_m, pre: string) => `${pre}${HIDDEN}`)
-    .replace(/("([^"\\]+)"\s*:\s*)"((?:[^"\\]|\\.)*)"/g, (m, pre: string, k: string, v: string) => (v && !IS_VAR.test(v) && SECRET_NAME.test(k) ? `${pre}"${HIDDEN}"` : m))
-    .replace(/([?&;\s]|^)([\w.-]+)=([^&;?\s"'<>,]+)/g, (m, pre: string, k: string, v: string) => (!IS_VAR.test(v) && SECRET_NAME.test(k) ? `${pre}${k}=${HIDDEN}` : m))
+
+/** A part of a text: from, up to (not including). */
+export type Span = [number, number]
+
+/** Where JWTs are: /\beyJ[\w-]{5,}\.[\w-]{5,}\.[\w-]{5,}/g, but linear (that regex takes minutes on "-eyJaaaaa" × 1 MB). */
+function jwtSpans(s: string): Span[] {
+  const out: Span[] = []
+  for (const run of s.matchAll(/[\w.-]+/g)) {
+    const segs = run[0].split('.')
+    let at = run.index // where segs[i] begins
+    for (let i = 0; i + 2 < segs.length; i++) {
+      const seg = segs[i]
+      // the first word-starting eyJ has the most after it, so only that one can matter
+      const p = segs[i + 1].length >= 5 && segs[i + 2].length >= 5 ? seg.search(/\beyJ/) : -1
+      if (p >= 0 && seg.length - p - 3 >= 5) {
+        const end = at + seg.length + 1 + segs[i + 1].length + 1 + segs[i + 2].length
+        out.push([at + p, end])
+        at = end + 1
+        i += 2
+      } else at += seg.length + 1
+    }
+  }
+  return out
 }
+
+/** The hidden part of each match of `re`: `part` gives its offset and length in the match, or null to leave the match. */
+const spansOf = (re: RegExp, part: (m: RegExpMatchArray) => [number, number] | null) => (s: string): Span[] => {
+  const out: Span[] = []
+  for (const m of s.matchAll(re)) {
+    const x = part(m)
+    if (x) out.push([m.index! + x[0], m.index! + x[0] + x[1]])
+  }
+  return out
+}
+
+/** What looks secret, each looked for in what the one before it left. */
+export const SECRET_PATTERNS: ((s: string) => Span[])[] = [
+  // user:password@host in URLs
+  spansOf(/(\/\/[^/\s:@{}]+:)(?!\{\{)([^@/\s]+)@/g, (m) => [m[1].length, m[2].length]),
+  jwtSpans,
+  spansOf(AUTH_SCHEME, (m) => [m[1].length, m[0].length - m[1].length]),
+  // "secret": "…"
+  spansOf(/("([^"\\]+)"\s*:\s*)"((?:[^"\\]|\\.)*)"/g, (m) => (m[3] && !IS_VAR.test(m[3]) && SECRET_NAME.test(m[2]) ? [m[1].length + 1, m[3].length] : null)),
+  // secret=…
+  spansOf(/([?&;\s]|^)([\w.-]+)=([^&;?\s"'<>,]+)/g, (m) => (!IS_VAR.test(m[3]) && SECRET_NAME.test(m[2]) ? [m[1].length + m[2].length + 1, m[3].length] : null)),
+]
+
+/** `s` with each span (in order, not overlapping) as <hidden>. */
+export function hideSpans(s: string, spans: Span[]): string {
+  if (!spans.length) return s
+  let out = '', at = 0
+  for (const [a, b] of spans) { out += s.slice(at, a) + HIDDEN; at = b }
+  return out + s.slice(at)
+}
+
+/** Free text with secret-looking values hidden: URL passwords, JWTs, auth-scheme values, and "secret": "…" / secret=… pairs. */
+export const hideInText = (s: string): string => SECRET_PATTERNS.reduce((t, find) => hideSpans(t, find(t)), s)
 const hasHidden = (...xs: unknown[]) => xs.some((x) => x !== undefined && x !== null && JSON.stringify(x).includes(HIDDEN))
 /** True when get_request showed part of this text as <hidden>, so the assistant can't rewrite it without losing that part. */
 const hasSecretText = (t: string) => hideInText(t) !== t

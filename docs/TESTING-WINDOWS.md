@@ -432,7 +432,7 @@ Run these from the repo folder in PowerShell.
      GitHub: **Turn off** must untick Settings → General → Check for new versions automatically. If a newer release
      exists, **Update to X** appears in the top bar after a restart and stays until it is installed or dismissed.
 
-8.7. **AI assistants** (optional; needs Claude Desktop, Claude Code or another MCP client): Settings → AI
+8.7. **AI assistants through MCP** (optional; the assistant inside Dispatch is section 10; needs Claude Desktop, Claude Code or another MCP client): Settings → AI
      assistants → turn the local endpoint on and follow the on-screen steps. The assistant lists your requests and
      can send one. Right-click a request → **Hand to AI assistant…** puts a copy in the assistant's inbox.
 
@@ -459,6 +459,44 @@ Run these from the repo folder in PowerShell.
 
 9.6. **Update from 0.1.0:** with 0.1.0 installed and a cookie in the jar, install 0.2.0 over it. Everything is still
      there, and the cookie is in the environment that was selected.
+
+## 10. The Dispatch assistant (builds after 0.2.0)
+
+Needs the desktop app. Use Ollama (https://ollama.com) with a small model that can call tools (for example `qwen3:8b`)
+if you can; the local model keeps everything on the computer. Without it, do 10.1 and 10.7 only. Never type a real key
+into this guide's tests: use a fake one (`sk-test-0000000000000000`) wherever a key is needed.
+
+10.1. **Nothing without a connection:** on a fresh profile there is no assistant icon in the top bar, and Settings → AI
+      assistants says "No connections yet". (Developer tools' network tab, if you open it, shows no request to an AI host.)
+
+10.2. **Add and Test:** Settings → AI assistants → **+ Add connection** → kind *OpenAI-compatible address*, address
+      `http://localhost:11434/v1`, **Load models**, pick one, Save. The row shows **Local**. **Test** must show
+      Reachable, Streams, Calls tools, Answers (a model that can't call tools says it works for text only). Try also an
+      address with `http://` and a name that isn't local (`http://example.com/v1`): Save must refuse it.
+
+10.3. **First question and consent:** the Assistant icon appears in the top bar; open it and ask "What requests are in
+      this workspace?". For the local model no consent question appears. Add a second connection of kind *OpenAI*
+      with the fake key: asking with it first asks you to allow `api.openai.com`; choose **Not now**: nothing is sent, the
+      question stays unanswered. (Don't allow it unless you really use that key.)
+
+10.4. **It reads and explains:** ask the local model what a request's after-response script does, and why a test fails.
+      The answer is based on the real workspace, tool lookups show in the chat, and it offers script text to copy; it
+      never says it changed or sent anything. Ask it to "send the login request": it must say it can't.
+
+10.5. **Stop:** ask a long question ("describe every request in detail") and press **Stop** while it writes. The answer
+      stops, "Stopped" shows, and you can send another message afterwards.
+
+10.6. **Secrets hidden:** make an environment variable `token` with a secret value (Secret ticked) and a plain variable
+      `note` containing a made-up bearer value. Ask "What are the values of my variables?". The secret shows as
+      `<hidden>` or is refused, never as the real value. Record what happens with `note`: ordinary data is not hidden,
+      and that is expected. Tick **May read the console and send history** and ask about the last response: the consent
+      text must say the console covers all workspaces (only shown for a host that isn't this computer).
+
+10.7. **Chats and deleting:** close and reopen Dispatch: the chat list in the panel still has your chats. Export a backup
+      (☰ → Export backup) and search the file for a phrase from a chat: it must not be there; the same for a linked
+      workspace folder. Settings → AI assistants: untick **Keep chats on this device**, ask something: it is not kept
+      after a restart. Tick it again and press **Delete all chats**: the list is empty. Remove a connection: its key
+      is gone (editing a new one starts empty).
 
 ## Report template
 

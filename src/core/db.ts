@@ -317,3 +317,107 @@ export async function getMcpSignIns(): Promise<McpSignIn[]> {
   try { return JSON.parse(await (await unsealer())(sealedList)) } catch { return [] }
 }
 export async function putMcpSignIns(list: McpSignIn[]) { await put('meta', await (await sealer())(JSON.stringify(list)), 'mcpSignIns') }
+
+// ---------- assistant connections (keys sealed like other secrets, never exported) ----------
+import { normalizeConnection, type Connection } from './assistant/connections'
+const CONNECTIONS = 'assistantConnections'
+export async function getConnections(): Promise<Connection[]> {
+  const stored = await getMeta<unknown[]>(CONNECTIONS)
+  if (!Array.isArray(stored)) return []
+  const f = await unsealer()
+  const out: Connection[] = []
+  for (const x of stored) {
+    if (!x || typeof x !== 'object') continue
+    const c = x as Connection
+    if (c.kind !== 'anthropic' && c.kind !== 'openai' && c.kind !== 'compatible') continue
+    if (typeof c.id !== 'string' || typeof c.baseUrl !== 'string') continue
+    const key = typeof c.key === 'string' ? await f(c.key) : ''
+    // A saved key that won't open (another device's key) reads as '' and is flagged; it is never sent blank as if set.
+    const { keyLost: _drop, ...rest } = c
+    out.push(normalizeConnection({ ...rest, key, ...(c.key && !key ? { keyLost: true as const } : {}) }))
+  }
+  return out
+}
+export async function putConnections(list: Connection[]) {
+  const f = await sealer()
+  const stored = await getMeta<unknown[]>(CONNECTIONS)
+  const old = new Map<string, string>()
+  if (Array.isArray(stored)) for (const x of stored) { const o = x as Connection | null; if (o && typeof o.id === 'string' && typeof o.key === 'string' && o.key) old.set(o.id, o.key) }
+  await put('meta', await Promise.all(list.map(async ({ keyLost, ...c }) => ({
+    ...c,
+    // An unreadable key keeps its stored ciphertext until a key is set or removed on purpose.
+    key: keyLost && !c.key ? (old.get(c.id) ?? '') : await f(c.key),
+  }))), CONNECTIONS)
+}
+
+// ---------- assistant chats (one sealed record per chat; this device only, never exported or backed up) ----------
+const CHAT_INDEX = 'assistantChatIndex'
+const chatKey = (id: string) => `assistantChat:${id}`
+/** What can be listed without opening any chat: ids, workspace and time are not secret; the title and messages are sealed. */
+export interface ChatIndexEntry { id: string; spaceId: string; updatedAt: number }
+export const sealText = async (s: string) => (await sealer())(s)
+export const unsealText = async (s: string) => (await unsealer())(s)
+async function readIndex(store: IDBObjectStore): Promise<ChatIndexEntry[]> {
+  const v = await wrap<unknown>(store.get(CHAT_INDEX))
+  if (!Array.isArray(v)) return []
+  // A bad time reads as the oldest, so the record stays findable (and is the first to go), never orphaned.
+  return v.filter((e): e is ChatIndexEntry => !!e && typeof (e as ChatIndexEntry).id === 'string' && typeof (e as ChatIndexEntry).spaceId === 'string')
+    .map((e) => ({ id: e.id, spaceId: e.spaceId, updatedAt: Number.isFinite(e.updatedAt) ? e.updatedAt : 0 }))
+}
+export const getChatIndex = async (): Promise<ChatIndexEntry[]> => { const db = await open(); return readIndex(db.transaction('meta').objectStore('meta')) }
+export const getChatRecord = (id: string) => getMeta<string>(chatKey(id))
+const CHAT_KEYS = IDBKeyRange.bound('assistantChat:', 'assistantChat:\uffff')
+/**
+ * Stores one sealed chat and trims the workspace to `keep` newest, in one transaction (the text is sealed before,
+ * since sealing is async). Returns whether the chat is stored afterwards: false when the workspace no longer exists
+ * (so a late save can't bring chats back), the id belongs to another workspace, or it is older than the `keep` kept.
+ */
+export async function putChatRecord(entry: ChatIndexEntry, sealed: string, keep: number): Promise<boolean> {
+  const db = await open()
+  const t = db.transaction('meta', 'readwrite')
+  const store = t.objectStore('meta')
+  try {
+    const spaces = await wrap<Space[] | undefined>(store.get('spaces'))
+    const known = entry.spaceId === DEFAULT_SPACE.id || (Array.isArray(spaces) && spaces.some((x) => x.id === entry.spaceId))
+    const all = await readIndex(store)
+    if (!known || all.some((e) => e.id === entry.id && e.spaceId !== entry.spaceId)) { t.abort(); await done(t).catch(() => {}); return false }
+    entry = { ...entry, updatedAt: Number.isFinite(entry.updatedAt) ? entry.updatedAt : 0 }
+    const index = all.filter((e) => e.id !== entry.id)
+    index.push(entry)
+    store.put(sealed, chatKey(entry.id))
+    const mine = index.filter((e) => e.spaceId === entry.spaceId).sort((a, b) => b.updatedAt - a.updatedAt)
+    const drop = new Set(mine.slice(keep).map((e) => e.id))
+    drop.forEach((id) => store.delete(chatKey(id)))
+    store.put(index.filter((e) => !drop.has(e.id)), CHAT_INDEX)
+    await done(t)
+    return !drop.has(entry.id)
+  } catch (e) { try { t.abort() } catch { /* already finished */ } throw e }
+}
+/**
+ * Removes chats the test picks, whether or not their records can be read. With `everything`, every chat key is
+ * removed by a key-range scan too, so a damaged index can't leave records behind.
+ */
+export async function removeChatRecords(test: (e: ChatIndexEntry) => boolean, everything = false) {
+  const db = await open()
+  const t = db.transaction('meta', 'readwrite')
+  const store = t.objectStore('meta')
+  const index = await readIndex(store)
+  if (everything) { store.delete(CHAT_KEYS); store.put([], CHAT_INDEX) } else {
+    for (const e of index) if (test(e)) store.delete(chatKey(e.id))
+    store.put(index.filter((e) => !test(e)), CHAT_INDEX)
+  }
+  await done(t)
+}
+/** Removes chats whose workspace is no longer listed. Does nothing when the list can't be read. */
+export async function removeChatsOfMissingSpaces() {
+  const db = await open()
+  const t = db.transaction('meta', 'readwrite')
+  const store = t.objectStore('meta')
+  const spaces = await wrap<unknown>(store.get('spaces'))
+  if (!Array.isArray(spaces) || !spaces.length || !spaces.every((x) => x && typeof (x as Space).id === 'string')) { await done(t); return }
+  const ids = new Set([DEFAULT_SPACE.id, ...(spaces as Space[]).map((x) => x.id)])
+  const index = await readIndex(store)
+  const gone = index.filter((e) => !ids.has(e.spaceId))
+  if (gone.length) { gone.forEach((e) => store.delete(chatKey(e.id))); store.put(index.filter((e) => ids.has(e.spaceId)), CHAT_INDEX) }
+  await done(t)
+}

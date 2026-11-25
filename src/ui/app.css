@@ -1008,3 +1008,80 @@ body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: 
 @media (max-width: 1000px) { .updateTo { display: none; } }
 .updateNotice { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--outline); background: var(--sunken); font-size: 13px; }
 @media (max-width: 760px) { .updateNotice { flex-wrap: wrap; } }
+
+/* ---------- Dispatch assistant ---------- */
+.connections { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 8px; }
+.connections > li { border: 1px solid var(--outline); border-radius: var(--radius); padding: 8px 12px; background: var(--surface); min-width: 0; }
+.connection { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.connectionText { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
+.connectionChecks { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; margin-right: 12px; }
+.connectionMessage { min-height: 64px; }
+.connectionDialog .toggle { padding-left: 0; margin-left: 0; justify-content: flex-start; }
+
+.connectionDialog .actions.end { position: sticky; bottom: -20px; margin: 0 -20px -20px; padding: 12px 20px; background: var(--surface-solid); }
+.addConnection + .auth { margin-top: 16px; }
+
+/* The panel: right of the work area; over it on narrower windows. */
+.aiSlot { display: contents; }
+.aiIcon { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.aiIcon.on { color: var(--ink); background: var(--raised); }
+.assistant { grid-area: ai; position: relative; z-index: 25; width: var(--ai-w, 380px); max-width: 100%; min-height: 0; min-width: 0; display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--outline); border-radius: 14px; }
+.assistant[hidden] { display: none; }
+.assistant .resizer { right: auto; left: -9px; }
+.aiMiddle { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.aiHead { flex: none; position: relative; z-index: 2; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 4px 8px; padding: 12px 8px 8px 16px; border-bottom: 1px solid var(--divider, var(--outline)); }
+.aiHead h2 { margin: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.aiTitle > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aiBar { grid-column: 1 / -1; display: flex; align-items: center; gap: 4px; margin-left: -8px; min-width: 0; }
+.aiBar select { min-width: 0; max-width: 55%; padding: 4px 8px; font-size: 12.5px; text-overflow: ellipsis; }
+.aiBar .menu > summary { color: var(--ink); }
+.menuList.aiChats { left: 0; right: auto; width: 260px; max-width: calc(var(--ai-w, 380px) - 24px); max-height: min(320px, 50vh); overflow: auto; }
+.aiChats ul { list-style: none; margin: 0; padding: 0; }
+.aiChats li { display: flex; align-items: center; border-radius: 6px; }
+.aiChats li:hover, .aiChats li:focus-within { background: var(--sunken); }
+.aiChats p { margin: 0; }
+.aiChat { flex: 1; min-width: 0; border: 0; background: none; color: var(--ink); font: inherit; font-size: 13px; text-align: left; padding: 8px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aiChat[aria-current] { font-weight: 600; }
+.aiNote { flex: none; margin: 0; padding: 8px 16px; background: var(--primary-soft); color: var(--ink); }
+.aiLog { flex: 1 1 0; min-height: 64px; overflow: auto; overflow-wrap: anywhere; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.aiLog > * { flex: none; max-width: 100%; min-width: 0; }
+.aiMsg.from-you { align-self: flex-end; max-width: 88%; padding: 8px 12px; border-radius: 12px; background: var(--raised); }
+.aiText, .markdown.plain { white-space: pre-wrap; unicode-bidi: plaintext; }
+.aiTool { display: flex; align-items: center; gap: 8px; margin: 0; }
+.aiTool > span:last-child { min-width: 0; }
+.aiEmpty { margin: auto; text-align: center; max-width: 260px; }
+.aiLog .markdown > :first-child { margin-top: 0; } .aiLog .markdown > :last-child { margin-bottom: 0; }
+.aiLog .markdown :is(h2, h3, h4) { font-size: 14px; font-weight: 600; margin: 16px 0 4px; }
+.aiLog .markdown :is(ul, ol) { padding-left: 24px; margin: 0 0 8px; }
+.aiLog .markdown table { display: block; overflow-x: auto; max-width: 100%; overflow-wrap: normal; }
+.linkBtn.address { color: var(--link); text-align: left; overflow-wrap: anywhere; unicode-bidi: isolate; }
+.codeBlock { position: relative; margin: 0 0 8px; }
+.codeBlock pre { margin: 0; padding-top: 36px; max-height: 420px; overflow: auto; overflow-wrap: normal; }
+.codeBlock pre code { background: none; padding: 0; }
+.codeBlock .btn { position: absolute; top: 4px; right: 4px; }
+.aiNotices { flex: 0 1 auto; max-height: 45%; overflow: auto; padding: 0 12px; display: grid; gap: 8px; }
+.aiNotices > * { margin: 0; } .aiNotices p { margin: 0; overflow-wrap: anywhere; }
+.aiWhy { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.aiWhy > p { flex: 1 1 100%; }
+.aiSummary textarea { width: 100%; resize: vertical; } .aiSummary .actions { margin-top: 8px; }
+.aiBottom { flex: none; border-radius: inherit; }
+.aiAsk { display: flex; align-items: flex-end; gap: 8px; padding: 12px 12px 8px; }
+.aiAsk textarea { flex: 1; min-width: 0; resize: none; max-height: 30vh; field-sizing: content; min-height: 52px; }
+.aiWho { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 0 12px; }
+.aiFoot { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px 8px 16px; overflow-wrap: anywhere; }
+[data-look^="grove"] .assistant { border-color: var(--panel-line); border-radius: var(--panel-r); box-shadow: var(--panel-shadow); }
+[data-look^="grove"] .aiAsk textarea { border-radius: 14px; }
+@media (min-width: 1200px) {
+  .app[data-assistant="beside"] { grid-template: "top top top" auto "side work ai" minmax(0, 1fr) "con con con" auto "bar bar bar" auto / auto minmax(0, 1fr) auto; }
+}
+/* over: usePanelLayout (layout.ts) */
+.app:not([data-assistant="beside"]) > .assistant { grid-area: work; justify-self: end; width: var(--ai-w, 380px); max-width: 100%; background: var(--surface-solid); box-shadow: var(--shadow); }
+[data-look^="grove"] .app:not([data-assistant="beside"]) > .assistant { border-color: var(--outline); box-shadow: var(--shadow); }
+.app:not([data-assistant="beside"]) > .assistant .resizer { left: -5px; }
+@media (max-width: 760px) { .app > .assistant.assistant { width: 100%; } .assistant .resizer { display: none; } }
+/* Low windows: what's between the head and the box scrolls; the Chats menu isn't in it, so it isn't cut. */
+@media (max-height: 560px) { .aiMiddle { overflow: auto; } .aiLog { flex: 1 0 96px; } .aiNotices { max-height: none; flex: none; } .aiHead h2 { -webkit-line-clamp: 1; }
+  .aiHead { padding-top: 6px; padding-bottom: 2px; } .aiTitle > span, .aiUsage { display: none; } .aiNote { padding-block: 4px; } .aiLog { padding-block: 8px; } .aiAsk { padding-top: 6px; padding-bottom: 4px; } .aiFoot { min-height: 32px; padding-bottom: 4px; } }
+/* With the panel beside it, the request's title row has no room for the shortcut. */
+@media (max-width: 1700px) { .app[data-assistant="beside"] .titleRow kbd { display: none; } }

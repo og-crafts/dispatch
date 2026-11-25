@@ -351,6 +351,27 @@ describe('network settings', () => {
 
 import { SseParser } from '../src/core/sse'
 describe('server-sent events', () => {
+  it('refuses an event over the limit, when there is one', () => {
+    const p = new SseParser(10)
+    expect(p.push('data: 12345\ndata: 1234\n\ndata: 1234567890\n\n').length).toBe(2)
+    p.push('data: 12345\n')
+    expect(() => p.push('data: 123456\n')).toThrow('too large')
+    // the line ends between data lines count too, so empty lines can't pile up
+    expect(() => new SseParser(10).push('data:\n'.repeat(20))).toThrow('too large')
+    expect(() => new SseParser(10).push('data: 12345\ndata: 12345\n')).toThrow('too large')
+    expect(() => new SseParser(10).push('data: 12345678901234567')).toThrow('too large')
+    expect(new SseParser().push(`data: ${'x'.repeat(5_000_000)}\n\n`).length).toBe(1)
+  })
+  it('counts a CRLF split between chunks as one line end, and gives a CR-ended event at once', () => {
+    const all = 'event: a\r\ndata: 1\r\ndata: 2\r\n\r\nevent: b\r\ndata: 3\r\n\r\n'
+    for (let i = 1; i < all.length; i++) {
+      const p = new SseParser()
+      expect([...p.push(all.slice(0, i)), ...p.push(''), ...p.push(all.slice(i))].map((e) => [e.event, e.data]), String(i)).toEqual([['a', '1\n2'], ['b', '3']])
+    }
+    const p = new SseParser()
+    expect(p.push('data: x\r\r').map((e) => e.data)).toEqual(['x'])
+    expect(p.push('data: y\r\r').map((e) => e.data)).toEqual(['y'])
+  })
   it('parses events across chunk boundaries, with ids, types, comments and multi-line data', () => {
     const p = new SseParser()
     expect(p.push(': keep-alive\nda')).toEqual([])

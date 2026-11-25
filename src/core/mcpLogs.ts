@@ -7,7 +7,7 @@
  * values, secret-named fields), plus every secret value Dispatch knows (secret or secret-named variables, auth fields,
  * sensitive headers, the MCP token), wherever it appears, e.g. a script that logged a token.
  */
-import { AUTH_SECRETS, HIDDEN, hide, hideInText } from './mcpWorkspace'
+import { AUTH_SECRETS, HIDDEN, hide, hideInText, hideSpans, SECRET_PATTERNS, type Span } from './mcpWorkspace'
 import { SECRET_NAME } from './share'
 import type { Collection, Environment, Folder, HistoryEntry, KV, LogLine, RequestDef } from './types'
 
@@ -75,14 +75,74 @@ export class Redactor {
     this.values = [...new Set(plain.flatMap((v) => [v, JSON.stringify(v).slice(1, -1), urlText(v), urlText(v).replace(/%20/g, '+')]))].sort((a, b) => b.length - a.length)
   }
   text(s: string): string {
-    let out = hideInText(s)
+    return this.known(hideInText(s))
+  }
+  /** Only the known values hidden, wherever they appear. */
+  known(s: string): string {
+    let out = s
     for (const v of this.values) if (out.includes(v)) out = out.split(v).join(HIDDEN)
     return out
+  }
+  /** Every place a known value is, overlapping ones too. */
+  private knownSpans(s: string): Span[] {
+    const out: Span[] = []
+    for (const v of this.values) for (let i = s.indexOf(v); i >= 0; i = s.indexOf(v, i + 1)) {
+      const last = out[out.length - 1]
+      if (last && last[0] <= i && i <= last[1]) last[1] = Math.max(last[1], i + v.length)
+      else out.push([i, i + v.length])
+    }
+    return out
+  }
+  /**
+   * For the built-in assistant: patterns and known values found in the same original text and all hidden, so nothing
+   * that text() or known() hides stays. Hiding one after the other lets the first take away what the second looks for
+   * (`Bearer` as a known value, or a password with a comma in it). Known limit: a known value in another form, such as
+   * base64 (outside an auth scheme) or HTML-escaped, isn't found.
+   */
+  clean(s: string): string {
+    let hidden: Span[] = [] // in `s`
+    for (const find of [...SECRET_PATTERNS, (t: string) => this.knownSpans(t)]) {
+      const now = hideSpans(s, hidden) // what text() has at this step
+      hidden = union([...hidden, ...backTo(find(now), hidden)])
+    }
+    return hideSpans(s, union([...hidden, ...this.knownSpans(s)]))
+  }
+  /** clean() for a named value (a variable, header or field); the name as it really is decides. */
+  named(k: string, v: string): string {
+    return this.clean(hide(SENSITIVE_HEADER.test(k) ? 'authorization' : k, v))
   }
   /** A header's value as an assistant may see it. */
   header(k: string, v: string): string {
     return SENSITIVE_HEADER.test(k) ? hide('authorization', v) : this.text(hide(k, v))
   }
+}
+
+/** Sorted, with overlapping spans joined (touching ones stay apart, as replacing one by one leaves them). */
+function union(spans: Span[]): Span[] {
+  const out: Span[] = []
+  for (const [a, b] of spans.sort((x, y) => x[0] - y[0] || x[1] - y[1])) {
+    const last = out[out.length - 1]
+    if (last && a < last[1]) last[1] = Math.max(last[1], b)
+    else out.push([a, b])
+  }
+  return out
+}
+
+/** Spans of hideSpans(s, hidden) as spans of `s`: one that touches a placeholder takes all that it stands for. */
+function backTo(spans: Span[], hidden: Span[]): Span[] {
+  // where each placeholder is in the shown text
+  let shift = 0
+  const marks = hidden.map(([a, b]) => { const from = a + shift; shift += HIDDEN.length - (b - a); return { from, to: from + HIDDEN.length, a, b } })
+  /** The last placeholder that begins before (or, for a span's start, at) position p. */
+  const before = (p: number, at: boolean) => {
+    let lo = 0, hi = marks.length
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (marks[mid].from < p || (at && marks[mid].from === p)) lo = mid + 1; else hi = mid }
+    return marks[lo - 1]
+  }
+  return spans.map(([x, y]): Span => {
+    const m = before(x, true), n = before(y, false)
+    return [!m ? x : x < m.to ? m.a : m.b + (x - m.to), !n ? y : y <= n.to ? n.b : n.b + (y - n.to)]
+  })
 }
 
 /** encodeURIComponent throws on half a surrogate pair. */
