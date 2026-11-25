@@ -736,7 +736,7 @@ describe('the undo list and the card', () => {
     expect(await undo(h, p)).toEqual(refused('changed'))
     expect(h.current.requests.filter((x) => x.id === r.id).map((x) => x.name)).toEqual(['Kept'])
     expect(h.current.trash).toEqual([])
-    expect((await storedRequest(r.id))!.name).toBe('Kept')
+    await waitFor(async () => expect((await storedRequest(r.id))?.name).toBe('Kept'))
   })
   it('the backup before a restore has what was applied since the click was drawn', async () => {
     const { r2 } = await seed(); const h = await mount()
