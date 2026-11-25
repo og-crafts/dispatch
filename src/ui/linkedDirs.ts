@@ -248,9 +248,10 @@ const spaceSecrets = (ws: WorkspaceApi, space: Space) => { const c = spaceConten
 /** Puts the file's secret values into this device's items (never empties a value the file doesn't mention). */
 async function applyVault(ws: WorkspaceApi, space: Space, p: VaultPayload) {
   const c = spaceContent(ws, space)
-  const r = applySecrets(p, c.environments, c.collections)
-  for (const e of r.environments) await ws.updateEnvironment(e)
-  for (const col of r.collections) await ws.updateCollection(col)
+  // Onto the records as they are now: reading the file took a moment.
+  const now = <T extends { id: string }>(kind: 'environment' | 'collection', xs: T[]) => xs.map((x) => ws.recordNow(kind, x.id) as T | null).filter((x): x is T => !!x)
+  const r = applySecrets(p, now('environment', c.environments), now('collection', c.collections))
+  await Promise.all([...r.environments.map(ws.updateEnvironment), ...r.collections.map(ws.updateCollection)])
   return r.environments.length + r.collections.length
 }
 
@@ -357,8 +358,8 @@ export async function resolveVault(ws: WorkspaceApi, fs: FolderApi, space: Space
   })
 }
 
-/** One linked folder: what the app would write there, and how files read from it come into the app. */
-interface Job { key: string; dir: string; name: string; files: FileEntry[]; space?: Space; apply(files: FileEntry[], label: string): Promise<void> }
+/** One linked folder: what the app would write there, and how files read from it come into the app (false: the app changed meanwhile). */
+interface Job { key: string; dir: string; name: string; files: FileEntry[]; space?: Space; apply(files: FileEntry[], label: string): Promise<boolean> }
 
 function jobsFor(ws: WorkspaceApi, stringify: (v: unknown) => string): Job[] {
   return [
@@ -367,7 +368,7 @@ function jobsFor(ws: WorkspaceApi, stringify: (v: unknown) => string): Job[] {
       apply: async (files, label) => {
         const r = await readSpaceFiles(ws, x, files)
         const here = <T extends { workspaceId?: string }>(i: T) => ({ ...i, workspaceId: x.id })
-        await ws.replaceSpaceContents(x.id, { ...r, collections: r.collections.map(here), environments: r.environments.map(here), flows: r.flows.map(here) }, { keepEdits: true, trashLabel: label })
+        return ws.replaceSpaceContents(x.id, { ...r, collections: r.collections.map(here), environments: r.environments.map(here), flows: r.flows.map(here) }, { keepEdits: true, trashLabel: label, ifUnchanged: true })
       },
     })),
     ...ws.allCollections.filter((c) => c.linkedDir).map((c): Job => ({
@@ -377,7 +378,7 @@ function jobsFor(ws: WorkspaceApi, stringify: (v: unknown) => string): Job[] {
         if (!files.some((f) => f.path === 'dispatch.collection.yaml')) throw new Error(`${c.linkedDir} no longer has dispatch.collection.yaml.`)
         const r = filesToCollection(files, parse, { collection: c, folders: ws.folders, requests: ws.requests })
         r.collections[0] = { ...r.collections[0], linkedDir: c.linkedDir, workspaceId: c.workspaceId }
-        await ws.replaceCollection(r, { keepEdits: true, trashLabel: label })
+        return ws.replaceCollection(r, { keepEdits: true, trashLabel: label, ifUnchanged: true })
       },
     })),
   ]
@@ -399,14 +400,15 @@ function locked<T>(key: string, fn: () => Promise<T>): Promise<T> {
  * written. Files changed on both sides stay as conflicts. Returns what came in, or null for a folder that is being
  * (re)written from scratch.
  */
-async function pullOne(fs: FolderApi, job: Job, take?: Set<string>): Promise<(Pulled & { incoming: Incoming['incoming'] }) | null> {
+async function pullOne(fs: FolderApi, job: Job, take?: Set<string>): Promise<(Pulled & { incoming: Incoming['incoming']; late?: true }) | null> {
   const state = await db.getFolderState(job.key)
   if (!state || state === 'force') return null
   const disk = await fs.read(job.dir)
   const { parse } = await yaml()
   const plan = planIncoming(disk, job.files, state, (t) => fs.hash(t), { parse, take })
   const strays = (await fs.strays?.(job.dir).catch(() => [])) ?? []
-  if (plan.incoming.length) await job.apply(applyIncoming(job.files, plan.incoming), `what the folder ${job.dir} no longer has`)
+  // The app changed while the folder was read: taking this in would put the rest back as it was. Nothing is remembered.
+  if (plan.incoming.length && !await job.apply(applyIncoming(job.files, plan.incoming), `what the folder ${job.dir} no longer has`)) return { incoming: plan.incoming, copies: plan.copies, unreadable: plan.unreadable, strays, late: true }
   const hashOf = new Map(disk.map((f) => [f.path, f.hash]))
   const known = { ...state }
   for (const f of plan.incoming) { if (f.text === null) delete known[f.path]; else known[f.path] = hashOf.get(f.path)! }
@@ -427,8 +429,9 @@ const jobFor = async (ws: WorkspaceApi, key: string) => {
 /** "Use the file's version" for one file in conflict (or any file): the folder's copy comes into the app. */
 export async function takeFile(ws: WorkspaceApi, fs: FolderApi, key: string, path: string) {
   const job = await jobFor(ws, key)
-  await locked(key, () => pullOne(fs, job, new Set([path])))
+  const r = await locked(key, () => pullOne(fs, job, new Set([path])))
   checkFolders()
+  if (r?.late) throw new Error('Something changed in Dispatch meanwhile. Try again.')
 }
 
 /**
@@ -511,6 +514,7 @@ export function useFolderSync(ws: WorkspaceApi, notify: (m: string) => void, fs:
               const vault = j.space ? await syncVault(ws, fs, j.space).catch((e): FolderStatus['vault'] => ({ state: 'error', note: String(e) })) : undefined
               return { pulled, conflicts: await syncOne(ws, fs, j.key, j.dir, j.files, false, pulled ?? undefined, vault) }
             })
+            if (r.pulled?.late) continue // the change that made it late runs this again
             if (r.pulled?.incoming.length) { notify(`Updated from ${j.dir}: ${describeIncoming(r.pulled.incoming)}.`); continue }
             last.current.set(j.key, sig)
             const conflicts = r.conflicts ?? []

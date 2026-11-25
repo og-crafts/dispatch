@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applySuggestions, suggest } from '../src/core/parameterize'
+import { addVariables, applySuggestions, knownVars, suggest } from '../src/core/parameterize'
 import { emptyAuth, emptyBody, kv, newRequest } from '../src/core/types'
 import { prepare } from '../src/core/prepare'
 
@@ -50,5 +50,18 @@ describe('parameterize', () => {
     expect(s.find((x) => x.kind === 'baseUrl')?.varName).toBe('baseUrl2')
     const { request } = applySuggestions(req, s)
     expect(request.auth.password).toBe('{{password}}')
+  })
+  it('doesn’t suggest a name that is taken though it has no value or is off, nor a path variable the URL has', () => {
+    const req = newRequest({ url: 'https://h.test/users/:userId/users/12345', headers: [kv('Authorization', 'Bearer abc-def')], pathVars: [kv('userId', '7')] })
+    expect(suggest(req, [], ['baseUrl', 'token']).map((s) => s.varName)).toEqual(['baseUrl2', 'token2', 'userId2'])
+  })
+  it('knows only the values a name really has: the environment wins, then the collection, then the globals', () => {
+    const known = knownVars({ name: 'Dev', variables: [kv('a', 'env-a'), kv('off', 'x', false), kv(' s ', 'spaced'), kv('empty', '')] }, { name: 'Shop', variables: [kv('a', 'coll-a'), kv('b', 'coll-b'), kv('empty', 'hidden by the empty one')] }, [kv('b', 'glob-b'), kv('c', 'old'), kv('c', 'glob-c')])
+    expect(known).toEqual([{ key: 'a', value: 'env-a', from: 'Dev' }, { key: 's', value: 'spaced', from: 'Dev' }, { key: 'b', value: 'coll-b', from: 'Shop' }, { key: 'c', value: 'glob-c', from: 'Globals' }])
+  })
+  it('never drops a value: a name the table has, also switched off, isn’t added', () => {
+    expect(addVariables([kv('x', '1')], [kv('y', '2')])).toMatchObject({ rows: [{ key: 'x' }, { key: 'y', value: '2' }] })
+    expect(addVariables([kv(' y ', '1', false)], [kv('y', '2')])).toEqual({ taken: 'y' })
+    expect(addVariables([], [kv('y', '1'), kv('y', '2')])).toEqual({ taken: 'y' })
   })
 })

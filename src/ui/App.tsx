@@ -175,7 +175,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
   useEffect(() => {
     if (ws.trash.length > trashCount.current) {
       const last = ws.trash[ws.trash.length - 1]
-      notify(`Deleted ${last.label}.`, { label: 'Undo', run: () => { void ws.undoDelete().then((l) => { if (l) notify(`Restored ${l}.`) }) } })
+      notify(`Deleted ${last.label}.`, { label: 'Undo', run: () => { void ws.undoDelete(last.id).then((l) => { if (l) notify(`Restored ${l}.`) }) } })
     }
     trashCount.current = ws.trash.length
   }, [ws.trash]) // eslint-disable-line react-hooks/exhaustive-deps

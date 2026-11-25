@@ -12,6 +12,16 @@ export class AssistantError extends Error {
 
 export const abortError = () => new DOMException('Stopped.', 'AbortError')
 
+/** `p`, or a rejection as soon as `signal` aborts. */
+export function until<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((res, rej) => {
+    const stop = () => rej(abortError())
+    if (signal.aborted) stop()
+    signal.addEventListener('abort', stop, { once: true })
+    p.then(res, rej).finally(() => signal.removeEventListener('abort', stop))
+  })
+}
+
 /** `text` without the connection's key, in any spelling a server may echo. */
 export function scrub(text: string, conn: Connection): string {
   let out = text

@@ -17,11 +17,11 @@ export function AssistantHost({ ws, slot, open, onOpen }: { ws: WorkspaceApi; sl
   useEffect(() => { if (a.ready && none) { setUsed(false); if (open) onOpen(false) } }, [a.ready, none, open, onOpen])
   if (none) return null
   const close = () => { onOpen(false); icon.current?.focus() }
-  const busy = a.status !== 'idle'
+  const busy = a.status !== 'idle', waits = a.cards.some((c) => c.state === 'waiting')
   return <>
     {slot && createPortal(
-      <button ref={icon} type="button" className={`btn small ghost aiIcon ${open ? 'on' : ''}`} aria-label={busy ? 'Assistant, answering' : 'Assistant'} title="Assistant" aria-expanded={open} aria-controls={open ? 'assistant-panel' : undefined}
-        onClick={() => (open ? close() : onOpen(true))}><Icon name="chat" />{busy && <span className="spin" aria-hidden="true" />}</button>, slot)}
+      <button ref={icon} type="button" className={`btn small ghost aiIcon ${open ? 'on' : ''}`} aria-label={waits ? 'Assistant, waiting for you' : busy ? 'Assistant, answering' : 'Assistant'} title="Assistant" aria-expanded={open} aria-controls={open ? 'assistant-panel' : undefined}
+        onClick={() => (open ? close() : onOpen(true))}><Icon name="chat" />{waits ? <span className="aiWaits" aria-hidden="true" /> : busy && <span className="spin" aria-hidden="true" />}</button>, slot)}
     {(open || used) && <Boundary resetKey={`${a.chat?.id} ${open}`} fallback={open ? <aside className="assistant" aria-label="Assistant"><p className="warnLine">The assistant couldn’t be shown. The rest of Dispatch works as before; restart Dispatch to try again.</p>
       <div className="actions"><button type="button" className="btn small" onClick={close}>Close</button></div></aside> : null}>
       <AssistantPanel a={a} ws={ws} open={open} onClose={close} />

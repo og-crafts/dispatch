@@ -32,8 +32,8 @@ export function CodeArea({ label, value, onChange, rows = 10, placeholder, mono 
   const ed = useRef<Editor | null>(null)
   const [ready, setReady] = useState(false)
   // Keep the latest callbacks without rebuilding the editor.
-  const latest = useRef({ onChange, variables })
-  latest.current = { onChange, variables }
+  const latest = useRef({ onChange, variables, value })
+  latest.current = { onChange, variables, value }
   // Values this editor produced itself. React hands them back a little later; those must not be "synced" back
   // into the editor, or fast typing loses characters. Only values from elsewhere (Tidy, snippets) are synced.
   const emitted = useRef<string[]>([])
@@ -41,14 +41,16 @@ export function CodeArea({ label, value, onChange, rows = 10, placeholder, mono 
   useEffect(() => {
     if (!rich || !host.current) return
     let gone = false
-    void import('./editor/codemirror').then(async ({ createEditor }) => {
+    void import('./editor/codemirror').then(async ({ createEditor, syncDoc }) => {
       if (gone || !host.current) return
       ed.current = await createEditor(host.current, {
-        doc: value, lang, readOnly, placeholder, label, minLines: Math.min(rows, 14),
+        doc: latest.current.value, lang, readOnly, placeholder, label, minLines: Math.min(rows, 14),
         onChange: (v) => { emitted.current = [...emitted.current.slice(-49), v]; latest.current.onChange(v) },
         variables: () => latest.current.variables?.() ?? [], schema,
       })
       if (gone) { ed.current.destroy(); ed.current = null; return }
+      // Changed while it was loading: the next keystroke must not bring the older text back.
+      syncDoc(ed.current.view, latest.current.value)
       if (editorRef) editorRef.current = ed.current
       setReady(true)
     })
@@ -58,6 +60,7 @@ export function CodeArea({ label, value, onChange, rows = 10, placeholder, mono 
   // Outside changes (Tidy, snippets, templates) flow into the editor.
   useEffect(() => {
     if (!ed.current || emitted.current.includes(value)) return
+    emitted.current = [] // from here on, a text typed earlier can come back from outside too (an undo)
     void import('./editor/codemirror').then(({ syncDoc }) => ed.current && syncDoc(ed.current.view, value))
   }, [value])
   useEffect(() => { ed.current?.setSchema(schema ?? null) }, [schema, ready])

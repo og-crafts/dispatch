@@ -86,12 +86,8 @@ export function mcpTools(flowNames: string[] = [], multi = false, ownWorkspace =
   ]
 }
 
-/** Handles one JSON-RPC message; returns the reply (or null for notifications). */
-export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | null> {
-  const reply = (result: unknown) => ({ jsonrpc: '2.0', id: msg.id, result })
-  const fail = (code: number, message: string) => ({ jsonrpc: '2.0', id: msg.id, error: { code, message } })
-  const text = (t: string, isError = false) => reply({ content: [{ type: 'text', text: t }], ...(isError ? { isError: true } : {}) })
-  if (msg.id === undefined) return null
+/** What the tools can find, and by which paths (the ones list_requests shows). */
+export function finder(o: Pick<McpServeOptions, 'ws' | 'allCollections' | 'workspace'>) {
   const cols: Collection[] = o.allCollections ? o.ws.collections : o.ws.collections.slice(0, 1)
   const multi = !!o.allCollections
   const col = cols[0]
@@ -111,6 +107,16 @@ export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | nul
     if (!it) return { error: named.length > 1 ? `Several requests are named “${want}”: ${named.map(pathOf).join(', ')}. Use the full path.` : `No request named “${want}”. Use list_requests.` }
     return { it, path: pathOf(it) }
   }
+  return { cols, multi, col, own, items, pathOf, colOf, lookup }
+}
+
+/** Handles one JSON-RPC message; returns the reply (or null for notifications). */
+export async function handleMcp(msg: any, o: McpServeOptions): Promise<any | null> {
+  const reply = (result: unknown) => ({ jsonrpc: '2.0', id: msg.id, result })
+  const fail = (code: number, message: string) => ({ jsonrpc: '2.0', id: msg.id, error: { code, message } })
+  const text = (t: string, isError = false) => reply({ content: [{ type: 'text', text: t }], ...(isError ? { isError: true } : {}) })
+  if (msg.id === undefined) return null
+  const { cols, multi, col, own, items, pathOf, colOf, lookup } = finder(o)
   /** Hides secrets in what goes back: every one Dispatch knows, plus any this send or run just made. */
   const redactor = (fresh: { vars?: (KV[] | null | undefined)[]; auth?: object } = {}) => new Redactor([
     ...knownSecrets({

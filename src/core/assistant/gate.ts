@@ -1,15 +1,21 @@
 /**
  * The gate between the model and Dispatch: the only way a tool runs, and the only way its result gets out. It refuses
  * what isn't offered and what doesn't fit the tool's schema before anything runs, hands on a cleaned copy of the open
- * workspace, and redacts and cuts what comes back.
+ * workspace, and redacts and cuts what comes back. A change is only proposed here: the person decides (`decide`).
  */
 import { handleMcp, type McpServeOptions } from '../mcpHandler'
-import { Redactor } from '../mcpLogs'
 import { HIDDEN } from '../mcpWorkspace'
 import type { Transport } from '../transport'
 import { spaceOf, type HistoryEntry, type RequestDef } from '../types'
 import type { Connection } from './connections'
-import { allSecrets, readTools } from './tools'
+import { cleaner, secretsNow } from './clean'
+import { type ParameterBatches, suggestParameters } from './parameters'
+import type { Proposal } from './proposal'
+import { propose } from './propose'
+import { until } from './providers/shared'
+import { type AssistantJob, offeredTools, smallContext, toolClass } from './tools'
+import type { Schedule } from '../schedules'
+export { smallContext }
 
 export interface ToolContext {
   /** The open workspace as it is now, as the outside endpoint's options describe it. */
@@ -20,34 +26,52 @@ export interface ToolContext {
   spaceId: string
   /** Secrets beyond the open workspace's: connection keys, sign-ins, cookies, certificate keys, other workspaces (allSecrets). */
   secrets: () => string[]
+  /** What suggest_parameters suggested lately, one per chat. */
+  batches: ParameterBatches
+  /** The chat's job, the one its tools were offered for. */
+  job: AssistantJob
+  /** Whether the request is open with edits that aren't saved: a change would be built on the old text. */
+  unsaved(requestId: string): boolean
+  schedules(): Promise<Schedule[]>
+  /** Shows the person the proposal and waits. Answers a stop at once, unless the change is being written: then the write decides. */
+  decide(p: Proposal, signal: AbortSignal): Promise<Decision>
 }
+/** `text`: why it couldn't be applied. */
+export interface Decision { outcome: 'applied' | 'rejected' | 'expired' | 'stopped'; text?: string }
 export interface ToolResult { text: string; isError: boolean }
 
 const RESULT_LIMIT = 20_000
 const SMALL_RESULT_LIMIT = 4_000
-const SMALL_CONTEXT = 16_000
-/** Whether the connection is known to have little room. */
-export const smallContext = (c: Connection): boolean => c.contextTokens !== undefined && c.contextTokens < SMALL_CONTEXT
 
 // Behind the gate's own refusal, what handleMcp is given can't send either: no request has this method (an empty list would
 // allow them all), and the transport and pipeline do nothing.
-const NO_METHODS = ['none: the assistant only reads']
+const NO_METHODS = ['none: the assistant never sends']
 const NO_TRANSPORT: Transport = { label: 'none', unrestricted: false, send: async () => { throw new Error('The assistant can’t send requests.') } }
 
-interface Schema { type?: string; properties?: Record<string, Schema>; required?: string[]; enum?: unknown[] }
+interface Schema { type?: string; properties?: Record<string, Schema>; required?: string[]; enum?: unknown[]; additionalProperties?: Schema; items?: Schema }
 
-/** Why `input` doesn't fit `schema`, or null. Covers what the read tools use; anything else is refused, also unknown properties. */
+/**
+ * Why `input` doesn't fit `schema`, or null. Covers what the tools use; anything else is refused. An object takes only its
+ * `properties`, or, with `additionalProperties`, any own name (never `__proto__`) whose value fits that schema.
+ */
 export function validate(input: unknown, schema: object, at = 'The input'): string | null {
   const s = schema as Schema
   if (s.type === 'object') {
     if (!input || typeof input !== 'object' || Array.isArray(input)) return `${at} must be an object.`
     const props = s.properties ?? {}
     for (const k of s.required ?? []) if (!Object.hasOwn(input, k)) return `${at} needs “${k}”.`
+    // Object.entries lists own enumerable names only; JSON.parse can make an own `__proto__`, which must not be taken as a name.
     for (const [k, v] of Object.entries(input)) {
-      if (!Object.hasOwn(props, k)) return `${at} has a field this tool doesn’t have.`
-      const bad = validate(v, props[k], `“${k}”`)
+      const extra = !Object.hasOwn(props, k) && k !== '__proto__' ? s.additionalProperties : undefined
+      if (!extra && !Object.hasOwn(props, k)) return `${at} has a field this tool doesn’t have.`
+      const bad = validate(v, extra ?? props[k], `“${k}”`)
       if (bad) return bad
     }
+    return null
+  }
+  if (s.type === 'array') {
+    if (!Array.isArray(input) || !s.items) return `${at} must be a list.`
+    for (const [i, v] of input.entries()) { const bad = validate(v, s.items, `${at} item ${i + 1}`); if (bad) return bad }
     return null
   }
   if (s.type === 'number' ? !Number.isFinite(input) : !(['string', 'boolean'].includes(s.type ?? '') && typeof input === s.type)) return `${at} must be a ${s.type}.`
@@ -59,19 +83,48 @@ export function validate(input: unknown, schema: object, at = 'The input'): stri
 export async function runTool(name: string, input: unknown, ctx: ToolContext): Promise<ToolResult> {
   const refuse = (text: string): ToolResult => ({ text, isError: true })
   if (ctx.signal.aborted) return refuse('The person stopped this. Nothing was run.')
-  const tool = readTools(ctx.world, ctx.conn).find((t) => t.name === name)
+  const tool = offeredTools(ctx.conn, ctx.job).find((t) => t.name === name)
   if (!tool) return refuse('There is no such tool here. Use only the tools you were given. Nothing was run.')
   const bad = validate(input, tool.inputSchema)
   if (bad) return refuse(`${bad} Nothing was run.`)
-  if (JSON.stringify(input).includes(HIDDEN)) return refuse(`${HIDDEN} stands for a secret you weren’t shown, so it can’t be used. Nothing was run.`)
+  const read = toolClass(name) === 'read'
+  // an edit's path may hold it; propose() refuses it anywhere else
+  if (read && JSON.stringify(input).includes(HIDDEN)) return refuse(`${HIDDEN} stands for a secret you weren’t shown, so it can’t be used. Nothing was run.`)
   try {
     const world = ctx.world()
     if (world.settings.activeSpaceId !== ctx.spaceId) return refuse('The person opened another workspace, so this chat can’t read here now. Nothing was run.')
+    if (!read) {
+      const before = secretsNow(ctx, world)
+      const p = await until(propose(name, input as Record<string, unknown>, ctx), ctx.signal)
+      if ('refused' in p) return { text: exit(p.refused, cleaner(ctx, ctx.world(), before).clean, ctx.conn), isError: true }
+      return await decided(p, ctx, before)
+    }
+    if (name === 'suggest_parameters') {
+      const r = suggestParameters(input as Record<string, unknown>, ctx, world)
+      return { text: exit(r.text, cleaner(ctx, world).clean, ctx.conn), isError: r.isError }
+    }
     const { options, clean } = prepare(name, input as Record<string, unknown>, ctx, world)
     const r = await handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: input } }, options)
     return { text: exit(String(r?.result?.content?.[0]?.text ?? 'This tool isn’t available.'), clean, ctx.conn), isError: !r?.result || !!r.result.isError }
   } catch {
-    return refuse('This tool failed inside Dispatch. Nothing was changed.')
+    return refuse(ctx.signal.aborted ? STOPPED : 'This tool failed inside Dispatch. Nothing was changed.')
+  }
+}
+
+const STOPPED = 'This was stopped. Nothing was changed.'
+
+/** Asks the person, and says what came of it. Never throws: it may have been applied. */
+async function decided(p: Proposal, ctx: ToolContext, before: string[]): Promise<ToolResult> {
+  let d: Decision
+  try { d = await ctx.decide(p, ctx.signal) } catch { return { text: 'This failed inside Dispatch. Look at it before you say whether it was changed.', isError: true } }
+  if (d.outcome === 'rejected') return { text: 'The person didn’t want this change. Don’t propose the same again; ask what they’d like instead.', isError: true }
+  if (d.outcome === 'stopped') return { text: STOPPED, isError: true }
+  const applied = d.outcome === 'applied'
+  try {
+    // with what is secret now too: it may have moved something into a secret variable
+    return { text: exit(applied ? p.reply : d.text ?? '', cleaner(ctx, ctx.world(), before).clean, ctx.conn), isError: !applied }
+  } catch {
+    return { text: applied ? 'The change was applied.' : 'The change wasn’t applied.', isError: !applied }
   }
 }
 
@@ -95,32 +148,7 @@ function exit(text: string, clean: (s: string) => string, conn: Connection): str
  */
 function prepare(name: string, input: Record<string, unknown>, ctx: ToolContext, w: McpServeOptions): { options: McpServeOptions; clean: (s: string) => string } {
   const history = ctx.conn.readLogs ? w.logs?.history() ?? [] : []
-  const redact = new Redactor([
-    ...ctx.secrets(),
-    ...allSecrets({
-      environments: [...w.ws.environments, ...(w.environment ? [w.environment] : [])], globals: w.globals, collections: w.ws.collections, folders: w.ws.folders,
-      requests: w.ws.requests, history,
-      connections: [ctx.conn], signIns: [], cookies: [], clientCerts: w.settings.clientCerts, hostToken: w.settings.mcpHostToken,
-    }),
-  ])
-  const clean = (s: string) => redact.clean(s)
-  const deep = <T>(v: T, key = ''): T => {
-    if (typeof v === 'string') return (/^(id|kind|method)$|Id$/.test(key) ? v : clean(v)) as T
-    if (Array.isArray(v)) {
-      const header = key === 'headers' && v.length === 2 && typeof v[0] === 'string' && typeof v[1] === 'string'
-      return (header ? [clean(v[0]), redact.named(v[0], v[1])] : v.map((x) => deep(x, key))) as T
-    }
-    if (!v || typeof v !== 'object') return v
-    const out = Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deep(x, k)]))
-    const item = v as { key?: unknown; value?: unknown; secret?: unknown; options?: { value: string }[] }
-    if (typeof item.key === 'string' && typeof item.value === 'string') {
-      // the name as it really is decides, so before it is cleaned itself
-      const show = (x: string) => (item.secret && x ? HIDDEN : redact.named(item.key as string, x))
-      out.value = show(item.value)
-      if (item.options) out.options = item.options.map((x) => ({ ...deep(x), value: show(x.value) }))
-    }
-    return out as T
-  }
+  const { clean, deep } = cleaner(ctx, w)
 
   const here = <T extends { workspaceId?: string }>(x: T) => spaceOf(x) === w.settings.activeSpaceId
   const environments = w.ws.environments.filter(here).map((e) => deep(e))

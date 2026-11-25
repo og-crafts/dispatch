@@ -212,7 +212,7 @@ describe('reading stored messages', () => {
 const api = (over: Partial<AssistantApi> = {}): AssistantApi => ({
   ready: true, connections: [local()], connection: local(), selectConnection: vi.fn(), chats: [], chat: null, paused: false, blocked: null,
   send: vi.fn(async () => 'sent' as const), stop: vi.fn(), newChat: vi.fn(), openChat: vi.fn(async () => {}), deleteChat: vi.fn(async () => {}),
-  status: 'idle', ended: null, streamed: '', tools: [], usage: null, fallback: null, error: '', pendingConsent: null, allowConsent: vi.fn(async () => 'sent' as const), declineConsent: vi.fn(),
+  status: 'idle', ended: null, streamed: '', tools: [], cards: [], approve: vi.fn(async () => {}), reject: vi.fn(), undo: vi.fn(async () => {}), job: 'ask', setJob: vi.fn(), usage: null, fallback: null, error: '', pendingConsent: null, allowConsent: vi.fn(async () => 'sent' as const), declineConsent: vi.fn(),
   nearFull: false, summarise: vi.fn(async () => 'sent' as const), summary: null, startFromSummary: vi.fn(async () => 'sent' as const), dismissSummary: vi.fn(), ...over,
 })
 const ws = (over: object = {}) => ({ spaces: [{ id: 'default', name: 'Orders' }, { id: 'two', name: 'Second' }], activeSpaceId: 'default', environment: { name: 'Staging' }, switchSpace: vi.fn(), setView: vi.fn(), ...over }) as never as WorkspaceApi
@@ -233,8 +233,8 @@ describe('the panel', () => {
     panel({ usage: { input: 1200, output: 30, totalInput: 5000, totalOutput: 200 } })
     expect(within(region()).getByRole('heading').textContent).toBe('Assistant · Orders workspace')
     expect(region().textContent).toContain('Staging')
-    expect(region().textContent).toMatch(/can read and explain/)
-    expect(region().textContent).toMatch(/can’t change or send anything/)
+    expect(region().textContent).toMatch(/can read, and propose changes/)
+    expect(region().textContent).toMatch(/can’t send or run anything/)
     expect(region().textContent).toMatch(/My computer · Local · sees what it reads here/)
     expect(region().textContent).toMatch(/5,000 tokens in · 200 out/)
     expect(screen.queryByRole('combobox', { name: 'Connection' })).toBeNull()

@@ -2,7 +2,7 @@
  * The CodeMirror setup, loaded on demand (it's a sizeable chunk). Languages, {{variable}} highlighting and
  * completion, pm API completion for scripts, GraphQL schema completion, and a theme built on the app's colour tokens.
  */
-import { EditorState, Compartment, Prec, type Extension } from '@codemirror/state'
+import { Annotation, EditorState, Compartment, Prec, type Extension } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, placeholder as ph, Decoration, MatchDecorator, ViewPlugin, type DecorationSet, type ViewUpdate } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { bracketMatching, foldAll, foldGutter, foldKeymap, indentOnInput, syntaxHighlighting, unfoldAll, HighlightStyle } from '@codemirror/language'
@@ -169,7 +169,7 @@ export async function createEditor(parent: HTMLElement, o: EditorOptions): Promi
       keymap.of([indentWithTab, ...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap]))
     if (o.lang !== 'javascript' && o.variables) extensions.push(autocompletion({ override: [variableSource(o.variables)] }))
     if (o.placeholder) extensions.push(ph(o.placeholder))
-    extensions.push(EditorView.updateListener.of((u) => { if (u.docChanged) o.onChange?.(u.state.doc.toString()) }))
+    extensions.push(EditorView.updateListener.of((u) => { if (u.docChanged && !u.transactions.some((t) => t.annotation(fromOutside))) o.onChange?.(u.state.doc.toString()) }))
   }
   if (o.minLines) extensions.push(EditorView.theme({ '.cm-content, .cm-gutter': { minHeight: `${o.minLines * 1.5}em` } }))
   const view = new EditorView({ parent, state: EditorState.create({ doc: o.doc, extensions }) })
@@ -182,10 +182,13 @@ export async function createEditor(parent: HTMLElement, o: EditorOptions): Promi
   }
 }
 
+/** Marks a text that came from outside: it is shown as it is, not reported as typing (line endings would change). */
+const fromOutside = Annotation.define<boolean>()
 /** Replaces the document without losing the cursor when the value changed from outside (e.g. "Tidy"). */
 export function syncDoc(view: EditorView, value: string) {
+  value = value.replace(/\r\n?/g, '\n') // as the editor keeps it
   const cur = view.state.doc.toString()
   if (cur === value) return
   const sel = view.state.selection.main
-  view.dispatch({ changes: { from: 0, to: cur.length, insert: value }, selection: { anchor: Math.min(sel.anchor, value.length) } })
+  view.dispatch({ changes: { from: 0, to: cur.length, insert: value }, selection: { anchor: Math.min(sel.anchor, value.length) }, annotations: fromOutside.of(true) })
 }

@@ -60,13 +60,19 @@ const fields = {
   ...scriptFields('request'),
 }
 
-export function workspaceTools(editable?: string) {
-  const where = `a path like "assistant/Orders" or "assistant/Orders/Admin"${editable ? `, or "Orders/Admin" for the user’s workspace “${editable}”, which they let you edit` : ''}: the first part is the collection; collections and folders that don’t exist yet are made`
-  const yours = editable ? `your own workspace ("assistant/…") or the user’s workspace “${editable}”` : 'your own workspace ("assistant/…")'
+/**
+ * `own` false is for the built-in chat, which has no workspace of its own: the texts speak of the open workspace only
+ * (`editable` then just says it can be edited) and never of "assistant/" paths.
+ */
+export function workspaceTools(editable?: string, own = true) {
+  const ex = (p: string) => (own ? `assistant/${p}` : p)
+  const where = !own ? 'a path like "Orders" or "Orders/Admin": the first part is the collection; collections and folders that don’t exist yet are made'
+    : `a path like "assistant/Orders" or "assistant/Orders/Admin"${editable ? `, or "Orders/Admin" for the user’s workspace “${editable}”, which they let you edit` : ''}: the first part is the collection; collections and folders that don’t exist yet are made`
+  const yours = !own ? 'the open workspace' : editable ? `your own workspace ("assistant/…") or the user’s workspace “${editable}”` : 'your own workspace ("assistant/…")'
   return [
     {
       name: 'create_request',
-      description: `Save a new HTTP request in ${yours}. It is not sent; use send_request for that.${editable ? '' : ' You can’t write to the user’s workspaces; they move what they want to keep.'}`,
+      description: `Save a new HTTP request in ${yours}. It is not sent${own ? '; use send_request for that' : ''}.${editable || !own ? '' : ' You can’t write to the user’s workspaces; they move what they want to keep.'}`,
       inputSchema: {
         type: 'object',
         properties: { folder: { type: 'string', description: `Where to save it: ${where}.` }, name: { type: 'string' }, ...fields, method: { ...fields.method, description: 'Defaults to GET.' } },
@@ -75,11 +81,11 @@ export function workspaceTools(editable?: string) {
     },
     {
       name: 'update_request',
-      description: `Change a request in ${yours}. Only the fields given change.${editable ? '' : ' The user’s saved requests can’t be changed: copy_request one first and change the copy.'}`,
+      description: `Change a request in ${yours}. Only the fields given change.${editable || !own ? '' : ' The user’s saved requests can’t be changed: copy_request one first and change the copy.'}`,
       inputSchema: {
         type: 'object',
         properties: {
-          name: { type: 'string', description: 'Its path, like "assistant/Orders/Create order".' }, newName: { type: 'string', description: 'Rename it.' }, ...fields,
+          name: { type: 'string', description: `Its path, like "${ex('Orders/Create order')}".` }, newName: { type: 'string', description: 'Rename it.' }, ...fields,
           reviewed: { type: 'boolean', description: 'true clears the “handed to you” flag without moving it (move_request clears it too).' },
         },
         required: ['name'],
@@ -87,7 +93,7 @@ export function workspaceTools(editable?: string) {
     },
     {
       name: 'copy_request',
-      description: `Copy a request (the user’s or your own) into ${yours}, with its auth, scripts and settings, so you can change and send the copy.`,
+      description: `Copy a request ${own ? '(the user’s or your own) ' : ''}into ${yours}, with its auth, scripts and settings, so you can change ${own ? 'and send ' : ''}the copy.`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -100,11 +106,11 @@ export function workspaceTools(editable?: string) {
     },
     {
       name: 'move_request',
-      description: `Move (and optionally rename) a request within ${yours}, e.g. to file one the user handed you from assistant/${INBOX} into a proper collection. Its auth comes along, and a collection made for it gets the original collection’s variables. Clears the “handed to you” flag.`,
+      description: `Move (and optionally rename) a request within ${yours}, e.g. to file ${own ? `one the user handed you from assistant/${INBOX} ` : 'it '}into a proper collection. Its auth comes along, and a collection made for it gets the original collection’s variables.${own ? ' Clears the “handed to you” flag.' : ''}`,
       inputSchema: {
         type: 'object',
         properties: {
-          name: { type: 'string', description: `Its path, like "assistant/${INBOX}/Create order".` },
+          name: { type: 'string', description: `Its path, like "${own ? `assistant/${INBOX}` : 'Orders'}/Create order".` },
           to: { type: 'string', description: `Where to: ${where}.` },
           newName: { type: 'string', description: 'Rename it on the way.' },
         },
@@ -113,8 +119,8 @@ export function workspaceTools(editable?: string) {
     },
     {
       name: 'delete_request',
-      description: `Delete a request from ${yours}. The user can undo it in the app.`,
-      inputSchema: { type: 'object', properties: { name: { type: 'string', description: 'Its path, like "assistant/Orders/Create order".' } }, required: ['name'] },
+      description: `Delete a request from ${yours}. ${own ? 'The user can undo it in the app.' : 'The person decides, and can undo it until Dispatch closes.'}`,
+      inputSchema: { type: 'object', properties: { name: { type: 'string', description: `Its path, like "${ex('Orders/Create order')}".` } }, required: ['name'] },
     },
     {
       name: 'set_variables',
@@ -122,7 +128,7 @@ export function workspaceTools(editable?: string) {
       inputSchema: {
         type: 'object',
         properties: {
-          collection: { type: 'string', description: 'The collection, like "assistant/Orders".' },
+          collection: { type: 'string', description: `The collection, like "${ex('Orders')}".` },
           variables: { type: 'object', additionalProperties: { type: 'string' }, description: 'Names and values to set.' },
           remove: { type: 'array', items: { type: 'string' }, description: 'Names to remove.' },
         },
@@ -134,7 +140,7 @@ export function workspaceTools(editable?: string) {
       description: `Set the pre-request or tests script of a collection or folder in ${yours}; it runs for every request inside. For one request's own scripts use update_request.`,
       inputSchema: {
         type: 'object',
-        properties: { path: { type: 'string', description: 'The collection or folder, like "assistant/Orders" or "assistant/Orders/Admin".' }, ...scriptFields('collection or folder') },
+        properties: { path: { type: 'string', description: `The collection or folder, like "${ex('Orders')}" or "${ex('Orders/Admin')}".` }, ...scriptFields('collection or folder') },
         required: ['path'],
       },
     },
@@ -170,7 +176,7 @@ export const hide = (name: string, v: string) => {
 }
 export const AUTH_SECRETS = new Set(['password', 'token', 'value', 'clientSecret', 'accessToken', 'secret', 'accessKey', 'secretKey', 'refreshToken', 'sessionToken'])
 /** The auth fields that matter for each kind, in order. */
-const AUTH_FIELDS: Partial<Record<Auth['kind'], string[]>> = {
+export const AUTH_FIELDS: Partial<Record<Auth['kind'], string[]>> = {
   basic: ['username', 'password'], digest: ['username', 'password'], bearer: ['token'], apikey: ['key', 'value', 'in'],
   oauth2: ['grant', 'tokenUrl', 'authUrl', 'clientId', 'clientSecret', 'scope', 'accessToken'],
   jwt: ['algorithm', 'secret', 'headerPrefix'], awsv4: ['accessKey', 'secretKey', 'region', 'service'],

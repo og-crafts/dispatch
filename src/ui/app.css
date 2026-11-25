@@ -1075,6 +1075,31 @@ body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: 
 @media (min-width: 1200px) {
   .app[data-assistant="beside"] { grid-template: "top top top" auto "side work ai" minmax(0, 1fr) "con con con" auto "bar bar bar" auto / auto minmax(0, 1fr) auto; }
 }
+/* A proposed change: amber (or red, for a delete) while it waits for the person, quiet once it's decided. */
+.aiCard { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 12px; border: 1px solid var(--outline); border-radius: var(--radius); background: var(--surface-solid); }
+.aiCard:is(.waiting, .applying) { border-color: var(--primary); }
+.aiCard.delete:is(.waiting, .applying) { border-color: var(--danger); }
+.aiCard > * { margin: 0; }
+.aiCard :is(h3, h4, p, li) { margin: 0; overflow-wrap: anywhere; overflow: clip; overflow-clip-margin: 2px; }
+.aiCard h3 { font-size: 14px; font-weight: 600; }
+.aiCard h4 { font-size: 12.5px; font-weight: 500; color: var(--muted); margin-bottom: 4px; }
+.aiCard .btn { justify-self: start; }
+.aiCard .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.aiDiff { margin: 0; padding: 4px 0; background: var(--sunken); border: 1px solid var(--outline); border-radius: 8px; font: 12.5px/1.5 var(--mono); white-space: normal; overflow: hidden; }
+.aiRows { display: block; content-visibility: auto; contain-intrinsic-size: auto 400px; }
+.aiLine { position: relative; display: block; min-height: 1.5em; padding: 0 8px 0 24px; white-space: pre-wrap; overflow-wrap: anywhere; overflow: clip; }
+.aiLine .sign { position: absolute; left: 8px; user-select: none; }
+.aiLine .text { unicode-bidi: isolate; }
+:is(.aiLine, .aiRisks) .piece { display: block; content-visibility: auto; contain-intrinsic-size: auto 1500px; }
+.aiLine.add { background: var(--good-soft); color: var(--good); } .aiLine.del { background: var(--danger-soft); color: var(--danger); }
+.aiLine.gap { padding-left: 8px; color: var(--muted); font-family: var(--sans); font-style: italic; }
+.aiRisks { list-style: none; margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--warn-soft); font-size: 12.5px; display: grid; gap: 4px; }
+.aiRisks li { position: relative; padding-left: 16px; } .aiRisks li::before { content: '•'; position: absolute; left: 0; }
+.aiNow { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.aiWaits { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+.aiJob { display: flex; align-items: center; gap: 8px; padding: 8px 12px 0; }
+.aiJob select { min-width: 0; padding: 4px 8px; font-size: 12.5px; }
+.aiJob + .aiAsk { padding-top: 8px; }
 /* over: usePanelLayout (layout.ts) */
 .app:not([data-assistant="beside"]) > .assistant { grid-area: work; justify-self: end; width: var(--ai-w, 380px); max-width: 100%; background: var(--surface-solid); box-shadow: var(--shadow); }
 [data-look^="grove"] .app:not([data-assistant="beside"]) > .assistant { border-color: var(--outline); box-shadow: var(--shadow); }
