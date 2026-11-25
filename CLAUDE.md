@@ -88,7 +88,8 @@ about each, without naming or disparaging anyone.
   keep (each was a real review finding; privacy copy on the site depends on them, update `site/build.py` privacy page
   and the README with any change):
   - **One gate**: a tool runs only through `runTool` (`gate.ts`): offered tools only, input checked against the schema,
-    open workspace only (a switch mid-answer refuses), read-only (`allowMethods: []`, no handoff, no flows).
+    open workspace only (a switch mid-answer refuses), read-only (what `handleMcp` gets can't send: a method
+    list that matches none (`[]` would mean all), a transport that throws, an empty pipeline; no handoff, no flows).
   - **One redaction exit**: everything that leaves goes through the `Redactor` built from `allSecrets` (every workspace,
     keys, cookies, certs, history) and the result is cleaned BEFORE `handleMcp` (it cuts and pattern-hides itself, half a
     secret could survive), then cut to size and wrapped as data with a random mark. Add a new data source = add it to
@@ -105,8 +106,8 @@ about each, without naming or disparaging anyone.
     `renameSpace` use `spacesRef`, a stale list plus the orphan sweep could delete live chats).
   - Consent is enforced in `ask()` (not `nativeFetch`) so Test and the model list work before it; they carry no workspace
     data. The console has no workspace, so it counts as all workspaces and the consent text says so.
-  - Gotchas: read `.superpowers/sdd/2026-11-24-assistant-step-1/progress.md` (the ledger) before changing any of it: it
-    records each ruling and its cost, and the deferred minors. Stream parsing: a clean `finish_reason` completes a stream
+  - Gotchas: read `docs/ASSISTANT.md` before changing any of it: it records each rule, why and its cost, and the open
+    minor points. Stream parsing: a clean `finish_reason` completes a stream
     without `[DONE]`; in an ambiguous stream only whole tool calls count; request ids are random and events after abort
     are dropped. Under a loaded machine the first `App` render in tests can exceed 1 s (raise the wait, don't loosen code).
 - `tests/` — vitest (jsdom; `cli.test.ts` builds and runs the real CLI in Node; `cssTokens.test.ts` keeps each dark colour

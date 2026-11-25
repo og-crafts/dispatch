@@ -305,7 +305,7 @@ mod tests {
         r.proxy = Some(format!("http://127.0.0.1:{pport}"));
         let mut evs = vec![];
         let (_k, rx) = oneshot::channel();
-        stream_core(&r, rx, |e| { evs.push(e); true }).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), stream_core(&r, rx, |e| { evs.push(e); true })).await.expect("hung").unwrap();
         assert_eq!(evs.last(), Some(&AiEvent::End));
         assert_eq!(proxy_hit.load(Ordering::SeqCst), 0);
     }
@@ -447,7 +447,7 @@ mod tests {
         let (tx, rx) = oneshot::channel();
         tx.send(()).unwrap();
         let mut n = 0;
-        stream_core(&req(port, "/"), rx, |_| { n += 1; true }).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), stream_core(&req(port, "/"), rx, |_| { n += 1; true })).await.expect("hung").unwrap();
         assert_eq!(n, 0);
         assert!(tokio::time::timeout(Duration::from_millis(200), l.accept()).await.is_err(), "a connection was made");
     }

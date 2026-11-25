@@ -74,6 +74,21 @@ const STOPS = new Map<string, Turn['stop']>(Object.entries({
   stop: 'end', eos_token: 'end', stop_sequence: 'end', tool_calls: 'tools', function_call: 'tools', length: 'length', content_filter: 'refused',
 }))
 
+/** Questions in a row (after a stop or an error) as one message: some chat templates refuse two. The stored ones stay as they are. */
+function joined(messages: unknown[]): unknown[] {
+  const out: unknown[] = []
+  const said = (m: unknown): string | null => {
+    const { role, content } = (m ?? {}) as { role?: unknown; content?: unknown }
+    return role === 'user' && typeof content === 'string' ? content : null
+  }
+  for (const m of messages) {
+    const last = out[out.length - 1], before = said(last), text = said(m)
+    if (before !== null && text !== null) out[out.length - 1] = { ...(last as object), content: `${before}\n\n${text}` }
+    else out.push(m)
+  }
+  return out
+}
+
 const MAX_EVENT = 4 * 1024 * 1024
 
 export function chatProvider(conn: Connection, unlimited: typeof globalThis.fetch): Provider {
@@ -87,7 +102,7 @@ export function chatProvider(conn: Connection, unlimited: typeof globalThis.fetc
       method: 'POST', headers, signal: t.signal,
       body: JSON.stringify({
         model: conn.model, stream: true, stream_options: { include_usage: true },
-        messages: [{ role: 'system', content: t.system }, ...t.messages],
+        messages: [{ role: 'system', content: t.system }, ...joined(t.messages)],
         ...(t.tools.length ? { tools: t.tools.map((x) => ({ type: 'function', function: { name: x.name, description: x.description, parameters: x.inputSchema } })) } : {}),
       }),
     })

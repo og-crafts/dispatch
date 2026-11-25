@@ -173,11 +173,15 @@ describe('untrusted Markdown', () => {
 
 describe('what is read out', () => {
   it('is the words, without Markdown', () => {
-    expect(plainText('## Title\n\n**Bold** and *it* and `code` [docs](https://x.test/a) ![pic](https://e.test/p)\n\n```js\ndx.test()\n```\n- one\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n> said'))
+    expect(plainText('## Title\n\n**Bold** and *it* and `code` [docs](https://x.test/a) ![pic](https://e.test/p)\n\n```js\ndx.test()\n```\n- one\n\n| a | b |\n|:--|--:|\n| 1 | 2 |\n\n> said'))
       .toBe('Title\n\nBold and it and code docs (https://x.test/a) image: pic\n\ndx.test()\none\n\na, b\n1, 2\n\nsaid')
     const t = performance.now()
     for (const x of ['[', '*', '`', '|', '> ', '![a](']) plainText(x.repeat(100_000))
     expect(performance.now() - t).toBeLessThan(1500)
+    const t2 = performance.now()
+    for (const x of ['-', '- ', '|-', ' -|']) plainText(`${x.repeat(10_000).slice(0, 19_990)}x`)
+    expect(performance.now() - t2).toBeLessThan(300)
+    expect(plainText('a\n|:-|-:|\n---\n|::|\nb')).toBe('a\n---\n::\nb') // only a table's rule goes
   })
 })
 

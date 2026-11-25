@@ -86,6 +86,14 @@ const cTools = chat([chunk({ role: 'assistant', content: 'On it' }),
   chunk({}, 'tool_calls'), usage])
 
 describe('nativeFetch', () => {
+  it('sends the connection’s own origin for Rust to compare, not the request’s', async () => {
+    play(text('x'))
+    const c = conn('compatible', { key: '' })
+    const p = nativeFetch(c, net)('http://localhost:11434/v1/models')
+    c.baseUrl = ' https://moved.example.com/v1 ' // between the check here and the one in Rust
+    await p
+    expect(reqs()[0]).toMatchObject({ url: 'http://localhost:11434/v1/models', origin: 'https://moved.example.com' })
+  })
   it('sends the request to Rust and streams the answer as it comes', async () => {
     play({ chunks: [], then: 'hang', headers: [['X-A', '1']] })
     const c = conn('compatible', { key: '' })
@@ -366,6 +374,17 @@ describe('chat completions', () => {
     expect(header(reqs()[1], 'authorization')).toBeUndefined()
     expect(bodyOf(1)).not.toHaveProperty('tools')
   })
+  it('consecutive questions go as one message; the stored ones stay as they are', async () => {
+    play(text(cText))
+    const user = (content: unknown) => ({ role: 'user', content })
+    const call = { role: 'assistant', content: null, tool_calls: [{ id: 'c', type: 'function', function: { name: 'get', arguments: '{}' } }] }
+    const tool = { role: 'tool', tool_call_id: 'c', content: 'r' }
+    const messages = [user('a'), user('b'), user('c'), { role: 'assistant', content: 'x' }, user('d'), call, tool, user('e'), user([{ type: 'text', text: 'f' }]), user('g')]
+    const copy = structuredClone(messages)
+    await turn(await make(), { messages })
+    expect(bodyOf().messages).toEqual([{ role: 'system', content: 'sys' }, user('a\n\nb\n\nc'), copy[3], user('d'), call, tool, user('e'), copy[8], user('g')])
+    expect(messages).toEqual(copy)
+  })
   it('a compatible connection with a key sends it', async () => {
     play(text(cText))
     await turn(await make({ key: ' k1 ' }))
@@ -490,6 +509,9 @@ describe('chat completions', () => {
     const bare = (args: string, more: object) => ({ ...more, function: { arguments: args } })
     for (const key of [(i: number) => ({ index: i }), (i: number) => ({ id: `c${i}` }), (i: number) => ({ index: i, id: `c${i}` })])
       expect(await calls(fn('get', '', key(0)), fn('get', '{"a"', key(1)), bare('{"a":1', key(0)), bare(':2}', key(1)), bare('}', key(0)))).toEqual([['get', { a: 1 }], ['get', { a: 2 }]])
+  })
+  it('calls with their own index: one without arguments runs, the other gets its own', async () => {
+    expect(await calls(fn('list', '', { index: 0 }), fn('send', '', { index: 1 }), { index: 1, function: { arguments: '{"x":1}' } })).toEqual([['list', {}], ['send', { x: 1 }]])
   })
   it('any interleaving: a valid call is one that was sent', async () => {
     let seed = 7

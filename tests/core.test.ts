@@ -356,6 +356,9 @@ describe('server-sent events', () => {
     expect(p.push('data: 12345\ndata: 1234\n\ndata: 1234567890\n\n').length).toBe(2)
     p.push('data: 12345\n')
     expect(() => p.push('data: 123456\n')).toThrow('too large')
+    // the line ends between data lines count too, so empty lines can't pile up
+    expect(() => new SseParser(10).push('data:\n'.repeat(20))).toThrow('too large')
+    expect(() => new SseParser(10).push('data: 12345\ndata: 12345\n')).toThrow('too large')
     expect(() => new SseParser(10).push('data: 12345678901234567')).toThrow('too large')
     expect(new SseParser().push(`data: ${'x'.repeat(5_000_000)}\n\n`).length).toBe(1)
   })

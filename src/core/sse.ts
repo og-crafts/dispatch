@@ -44,7 +44,7 @@ export class SseParser {
       let value = i >= 0 ? line.slice(i + 1) : ''
       if (value.startsWith(' ')) value = value.slice(1)
       if (field === 'data') {
-        this.size += value.length
+        this.size += value.length + (this.data.length ? 1 : 0) // 1: the line end it is joined with
         if (this.size > this.maxEvent) throw new SseTooLarge()
         this.data.push(value)
       }

@@ -169,6 +169,26 @@ describe('the gate', () => {
     await runTool('list_requests', {}, ctx(conn({ readLogs: false }), { world: () => world }))
     expect(vi.mocked(handleMcp).mock.calls[1][1].logs).toBeUndefined()
   })
+  it('even without the gate’s refusal, what it hands on can’t send', async () => {
+    const pipeline = { beforeSend: vi.fn(async (r: RequestDef) => r), sign: vi.fn(async (p: unknown) => p as never), browser: vi.fn(async () => {}) }
+    await runTool('list_requests', {}, ctx(conn({ readLogs: true }), { world: () => makeWorld({ pipeline, engine: {} as never }) }))
+    const { calls } = vi.mocked(handleMcp).mock
+    const o = calls[calls.length - 1][1]
+    const flow = { id: 'fl', name: 'F', nodes: [{ id: 'n1', type: 'request', x: 0, y: 0, config: { requestId: items.id } }], edges: [] } as never
+    const sends: [string, object][] = [['send_request', { name: 'Form' }], ['run_collection', { folder: 'Shop' }], ['run_flow', { name: 'F' }]]
+    const direct = (name: string, args: object, opts: McpServeOptions) => handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, opts)
+    expect(o.allowMethods.length).toBeGreaterThan(0) // empty would allow every method
+    for (const r of o.ws.requests) expect(o.allowMethods).not.toContain(r.method)
+    // as handed on; then with flows and an engine; then also without the method list
+    for (const opts of [o, { ...o, ws: { ...o.ws, flows: [flow] }, engine: {} as never }, { ...o, ws: { ...o.ws, flows: [flow] }, engine: {} as never, allowMethods: [] }])
+      for (const [name, args] of sends) {
+        const r = await direct(name, args, opts)
+        expect(!!r.error || r.result.isError === true, name).toBe(true)
+      }
+    await expect((async () => o.transport.send({} as never, {} as never))()).rejects.toThrow()
+    expect(transport.send).not.toHaveBeenCalled()
+    for (const f of Object.values(pipeline)) expect(f).not.toHaveBeenCalled()
+  })
   it('get_environment works without readLogs, and shows the open workspace only', async () => {
     const r = await runTool('get_environment', {}, ctx(conn({ readLogs: false })))
     expect(r.isError).toBe(false)
@@ -558,7 +578,7 @@ describe('the loop', () => {
     const t4 = start([{ text: 'a', stop: 'length', message: { role: 'assistant', content: [{ type: 'text', text: 'a' }, { type: 'thinking', thinking: 'h', signature: '' }] } }])
     expect((await t4.result).messages).toEqual(hello())
     const t5 = start([{ text: '' }])
-    expect(await t5.result).toMatchObject({ ended: 'done', messages: hello() })
+    expect(await t5.result).toMatchObject({ ended: 'error', messages: hello() })
   })
   it.each(KINDS)('length and refused with the real %s provider', async (kind, answer) => {
     const c = kind === 'anthropic' ? anthropic() : cloud(), run = vi.fn()
@@ -582,6 +602,27 @@ describe('the loop', () => {
     const r2 = await t2.result
     expect(r2.error).toBeTruthy()
     expect(r2.error).not.toMatch(/weird|planted/)
+  })
+  it('an empty answer is an error that says so, and adds nothing', async () => {
+    const SMALL = ' Its context may be too small.'
+    const plain = (n: string) => `${n} sent an empty answer. Try again, or another model.`
+    const cases: [Connection, string][] = [[anthropic(), plain('Work')], [anthropic({ contextTokens: 8000 }), plain('Work') + SMALL], [anthropic({ contextTokens: 100_000 }), plain('Work')], [conn(), plain('Mine') + SMALL]]
+    for (const [c, error] of cases) for (const text of ['', ' \n']) {
+      const r = await start([{ text }], { conn: c }).result
+      expect(r).toEqual({ messages: hello(), ended: 'error', error })
+    }
+    const t = start([{ calls: [call('1')] }, { text: '' }])
+    const r = await t.result
+    expect(r.ended).toBe('error')
+    expect(r.messages).toHaveLength(3)
+    consistent(r.messages)
+  })
+  it.each(KINDS)('an empty answer from %s is an error', async (kind, answer) => {
+    const c = kind === 'anthropic' ? anthropic() : conn()
+    rust.answers.push(answer(''))
+    const r = await ask({ provider: await createProvider(c, net), conn: c, system: 's', messages: hello(), tools: [], run: async () => ({ text: '', isError: true }), signal: new AbortController().signal, on: events().on })
+    expect(r.ended).toBe('error')
+    expect(r.error).toContain(`${c.name} sent an empty answer. Try again, or another model.`)
   })
   it('a listener that throws changes nothing', async () => {
     const boom = () => { throw new Error('ui') }

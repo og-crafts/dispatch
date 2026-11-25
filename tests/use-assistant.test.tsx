@@ -125,6 +125,18 @@ describe('sending', () => {
     expect(await send('  ')).toBe('empty')
   })
 
+  it('an empty answer says so, and the next question goes on', async () => {
+    await mount([local()])
+    await ask('one', says(''))
+    expect(a().ended).toBe('error')
+    expect(a().error).toBe('Mine sent an empty answer. Try again, or another model. Its context may be too small.')
+    expect(texts()).toEqual(['one'])
+    await ask('two', says('Yes'))
+    expect(a().error).toBe('')
+    expect(texts()).toEqual(['one', 'two', 'Yes'])
+    expect(bodyOf(1).messages.slice(1)).toEqual([{ role: 'user', content: 'one\n\ntwo' }])
+  })
+
   it('a missing or lost key stops before anything is sent or kept', async () => {
     await mount([cloud({ kind: 'openai', baseUrl: 'https://api.openai.com/v1', key: '' })])
     expect(await send('hi')).toBe('blocked')

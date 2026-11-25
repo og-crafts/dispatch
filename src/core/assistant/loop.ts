@@ -5,7 +5,7 @@
  */
 import { Redactor } from '../mcpLogs'
 import { reach, validateAddress, type Connection } from './connections'
-import type { ToolResult } from './gate'
+import { smallContext, type ToolResult } from './gate'
 import { abortError, AssistantError, assertUsable, scrub } from './providers/shared'
 import type { Provider, ToolSpec, Turn } from './providers/types'
 
@@ -111,7 +111,9 @@ export async function ask(o: AskOptions): Promise<Answer> {
       if (fallbackModel) tell(() => o.on.fallback?.(fallbackModel))
       if (turn.stop === 'refused') return end('refused')
       if (turn.stop === 'length' || !calls.length) {
-        if (canGoBack(turn)) messages.push(turn.message)
+        const kept = canGoBack(turn)
+        if (kept) messages.push(turn.message)
+        else if (turn.stop !== 'length') return end('error', scrub(`${o.conn.name} sent an empty answer. Try again, or another model.${o.conn.kind === 'compatible' || smallContext(o.conn) ? ' Its context may be too small.' : ''}`, o.conn))
         return end(turn.stop === 'length' ? 'length' : 'done')
       }
 

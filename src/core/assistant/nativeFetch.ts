@@ -91,7 +91,7 @@ export function nativeFetch(conn: Connection, net: NetSettings): typeof fetch {
 
       invoke('ai_stream', {
         req: {
-          id, method: init?.method ?? 'GET', url: url.href, origin: url.origin, headers: [...new Headers(init?.headers)], body,
+          id, method: init?.method ?? 'GET', url: url.href, origin: new URL(conn.baseUrl.trim()).origin, headers: [...new Headers(init?.headers)], body,
           proxy: net.proxyUrl || null, noProxy: net.proxyBypass || null, caCertsPem: net.caCerts.filter((c) => c.trim()),
         },
         onEvent,
