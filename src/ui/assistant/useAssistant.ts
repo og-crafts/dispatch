@@ -6,7 +6,7 @@ import { type Connection, reach, validateAddress } from '../../core/assistant/co
 import { runTool } from '../../core/assistant/gate'
 import { ask, type Answer } from '../../core/assistant/loop'
 import { AssistantError, assertUsable } from '../../core/assistant/providers/shared'
-import { allSecrets, readTools, systemPrompt } from '../../core/assistant/tools'
+import { allSecrets, readOnlyTools, systemPrompt } from '../../core/assistant/tools'
 import * as db from '../../core/db'
 import type { McpSignIn } from '../../core/mcpAuth'
 import type { McpServeOptions } from '../../core/mcpHandler'
@@ -231,7 +231,7 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
     let result: Answer
     try {
       result = await ask({
-        provider: r.provider, conn, messages: start.messages, tools: readTools(world, conn), keys: () => r.keys, signal: job.ctl.signal,
+        provider: r.provider, conn, messages: start.messages, tools: readOnlyTools(conn), keys: () => r.keys, signal: job.ctl.signal,
         system: systemPrompt({ workspace: wsRef.current.spaces.find((s) => s.id === start.spaceId)?.name ?? '', ...(wsRef.current.view.kind === 'request' ? { openRequest: wsRef.current.draft.name } : {}) }, secretsOf(wsRef.current, r.conns, r.signIns)),
         run: async (name, input, signal) => {
           // read again: a key, a sign-in or the console tick may have changed since the question

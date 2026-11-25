@@ -4,12 +4,13 @@
  * workspace, and redacts and cuts what comes back.
  */
 import { handleMcp, type McpServeOptions } from '../mcpHandler'
-import { Redactor } from '../mcpLogs'
 import { HIDDEN } from '../mcpWorkspace'
 import type { Transport } from '../transport'
 import { spaceOf, type HistoryEntry, type RequestDef } from '../types'
 import type { Connection } from './connections'
-import { allSecrets, readTools } from './tools'
+import { cleaner } from './clean'
+import { offeredTools, smallContext, toolClass } from './tools'
+export { smallContext }
 
 export interface ToolContext {
   /** The open workspace as it is now, as the outside endpoint's options describe it. */
@@ -25,29 +26,36 @@ export interface ToolResult { text: string; isError: boolean }
 
 const RESULT_LIMIT = 20_000
 const SMALL_RESULT_LIMIT = 4_000
-const SMALL_CONTEXT = 16_000
-/** Whether the connection is known to have little room. */
-export const smallContext = (c: Connection): boolean => c.contextTokens !== undefined && c.contextTokens < SMALL_CONTEXT
 
 // Behind the gate's own refusal, what handleMcp is given can't send either: no request has this method (an empty list would
 // allow them all), and the transport and pipeline do nothing.
 const NO_METHODS = ['none: the assistant only reads']
 const NO_TRANSPORT: Transport = { label: 'none', unrestricted: false, send: async () => { throw new Error('The assistant can’t send requests.') } }
 
-interface Schema { type?: string; properties?: Record<string, Schema>; required?: string[]; enum?: unknown[] }
+interface Schema { type?: string; properties?: Record<string, Schema>; required?: string[]; enum?: unknown[]; additionalProperties?: Schema; items?: Schema }
 
-/** Why `input` doesn't fit `schema`, or null. Covers what the read tools use; anything else is refused, also unknown properties. */
+/**
+ * Why `input` doesn't fit `schema`, or null. Covers what the tools use; anything else is refused. An object takes only its
+ * `properties`, or, with `additionalProperties`, any own name (never `__proto__`) whose value fits that schema.
+ */
 export function validate(input: unknown, schema: object, at = 'The input'): string | null {
   const s = schema as Schema
   if (s.type === 'object') {
     if (!input || typeof input !== 'object' || Array.isArray(input)) return `${at} must be an object.`
     const props = s.properties ?? {}
     for (const k of s.required ?? []) if (!Object.hasOwn(input, k)) return `${at} needs “${k}”.`
+    // Object.entries lists own enumerable names only; JSON.parse can make an own `__proto__`, which must not be taken as a name.
     for (const [k, v] of Object.entries(input)) {
-      if (!Object.hasOwn(props, k)) return `${at} has a field this tool doesn’t have.`
-      const bad = validate(v, props[k], `“${k}”`)
+      const extra = !Object.hasOwn(props, k) && k !== '__proto__' ? s.additionalProperties : undefined
+      if (!extra && !Object.hasOwn(props, k)) return `${at} has a field this tool doesn’t have.`
+      const bad = validate(v, extra ?? props[k], `“${k}”`)
       if (bad) return bad
     }
+    return null
+  }
+  if (s.type === 'array') {
+    if (!Array.isArray(input) || !s.items) return `${at} must be a list.`
+    for (const [i, v] of input.entries()) { const bad = validate(v, s.items, `${at} item ${i + 1}`); if (bad) return bad }
     return null
   }
   if (s.type === 'number' ? !Number.isFinite(input) : !(['string', 'boolean'].includes(s.type ?? '') && typeof input === s.type)) return `${at} must be a ${s.type}.`
@@ -59,7 +67,8 @@ export function validate(input: unknown, schema: object, at = 'The input'): stri
 export async function runTool(name: string, input: unknown, ctx: ToolContext): Promise<ToolResult> {
   const refuse = (text: string): ToolResult => ({ text, isError: true })
   if (ctx.signal.aborted) return refuse('The person stopped this. Nothing was run.')
-  const tool = readTools(ctx.world, ctx.conn).find((t) => t.name === name)
+  // Until edits can be proposed and approved, only reading runs; a name with no class never does.
+  const tool = toolClass(name) === 'read' ? offeredTools(ctx.conn).find((t) => t.name === name) : undefined
   if (!tool) return refuse('There is no such tool here. Use only the tools you were given. Nothing was run.')
   const bad = validate(input, tool.inputSchema)
   if (bad) return refuse(`${bad} Nothing was run.`)
@@ -95,32 +104,7 @@ function exit(text: string, clean: (s: string) => string, conn: Connection): str
  */
 function prepare(name: string, input: Record<string, unknown>, ctx: ToolContext, w: McpServeOptions): { options: McpServeOptions; clean: (s: string) => string } {
   const history = ctx.conn.readLogs ? w.logs?.history() ?? [] : []
-  const redact = new Redactor([
-    ...ctx.secrets(),
-    ...allSecrets({
-      environments: [...w.ws.environments, ...(w.environment ? [w.environment] : [])], globals: w.globals, collections: w.ws.collections, folders: w.ws.folders,
-      requests: w.ws.requests, history,
-      connections: [ctx.conn], signIns: [], cookies: [], clientCerts: w.settings.clientCerts, hostToken: w.settings.mcpHostToken,
-    }),
-  ])
-  const clean = (s: string) => redact.clean(s)
-  const deep = <T>(v: T, key = ''): T => {
-    if (typeof v === 'string') return (/^(id|kind|method)$|Id$/.test(key) ? v : clean(v)) as T
-    if (Array.isArray(v)) {
-      const header = key === 'headers' && v.length === 2 && typeof v[0] === 'string' && typeof v[1] === 'string'
-      return (header ? [clean(v[0]), redact.named(v[0], v[1])] : v.map((x) => deep(x, key))) as T
-    }
-    if (!v || typeof v !== 'object') return v
-    const out = Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deep(x, k)]))
-    const item = v as { key?: unknown; value?: unknown; secret?: unknown; options?: { value: string }[] }
-    if (typeof item.key === 'string' && typeof item.value === 'string') {
-      // the name as it really is decides, so before it is cleaned itself
-      const show = (x: string) => (item.secret && x ? HIDDEN : redact.named(item.key as string, x))
-      out.value = show(item.value)
-      if (item.options) out.options = item.options.map((x) => ({ ...deep(x), value: show(x.value) }))
-    }
-    return out as T
-  }
+  const { clean, deep } = cleaner(ctx, w)
 
   const here = <T extends { workspaceId?: string }>(x: T) => spaceOf(x) === w.settings.activeSpaceId
   const environments = w.ws.environments.filter(here).map((e) => deep(e))
