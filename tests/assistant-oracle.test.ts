@@ -260,3 +260,30 @@ describe('the same with nothing approved, where the name alone decides', () => {
     expect(await say(PIN)).toBe(await say(OTHER))
   })
 })
+
+describe('a new name can’t break what hides its neighbours', () => {
+  const body = (m: M, text: string) => { m.ws.requests.find((x) => x.name === 'Mine')!.body = { ...emptyBody('json'), text } }
+  const choose = async (m: M, as: string) => { const s = await m.suggest('Shop/Mine'); return m.call('apply_parameters', { name: 'Shop/Mine', batch: s.batch, choose: { [s.id('baseUrl')]: as }, where: 'collection' }) }
+  it.each(['a\\b', 'a"b', 'a&b', 'a,b', 'a;b', 'a<b', 'a=b', 'a/b', 'a:b', 'a\'b', 'a@b', 'é'])('“%s” is refused', async (as) => {
+    const m = mk({ url: 'https://shop.test/x' })
+    body(m, '{"https://shop.test token": "Abcdef99zz"}')
+    expect((await choose(m, as)).isError).toBe(true)
+    expect(m.cards).toEqual([])
+  })
+  it.each(['base.url', 'base-url', 'baseUrl_2'])('“%s” is fine, and what was hidden stays hidden', async (as) => {
+    const m = mk({ url: 'https://shop.test/x' })
+    body(m, '{"https://shop.test token": "Abcdef99zz"}')
+    expect((await choose(m, as)).isError).toBe(false)
+    expect(m.ws.requests.find((x) => x.name === 'Mine')!.url).toBe(`{{${as}}}/x`)
+    expect((await m.read('Shop/Mine')) + JSON.stringify({ ...m.cards[0], changes: 0, basis: 0 })).not.toContain('Abcdef99zz')
+  })
+  it.each(['x0n__', '0n__', 'x0n_', '__n0'])('a value like a made-up name (“%s”) ends all the same', async (value) => {
+    const m = mk({ url: 'https://shop.test/orders/1234567890', variables: [kv('t', value)] })
+    body(m, `${value} a`)
+    const t = (await m.call('suggest_parameters', { name: 'Shop/Mine' })).text
+    const batch = /batch: (\S+)/.exec(t)![1], ids = [...t.matchAll(/^(s\d+) ·/gm)].map((x) => x[1])
+    expect((await m.call('apply_parameters', { name: 'Shop/Mine', batch, choose: Object.fromEntries(ids.map((i) => [i, ''])), where: 'collection' })).isError).toBe(false)
+    const r = m.ws.requests.find((x) => x.name === 'Mine')!
+    expect([r.url, r.body.text]).toEqual(['{{baseUrl}}/orders/:orderId', '{{t}} a'])
+  })
+})

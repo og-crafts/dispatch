@@ -13,7 +13,7 @@ import { addVariables, type KnownVar, knownVars, suggest, type Suggestion } from
 import { effectiveAuth, pathVarNames, pathVarsFromUrl, prepare, scopeFor } from '../prepare'
 import { folderChain } from '../runtime'
 import { SECRET_NAME } from '../share'
-import { type Auth, type Collection, emptyAuth, emptyBody, type Environment, kv, type KV, type RequestDef } from '../types'
+import { type Auth, type Collection, emptyAuth, emptyBody, type Environment, kv, type KV, type RequestDef, uid } from '../types'
 import { paramsFromUrl, splitUrl } from '../url'
 import { interpolate } from '../vars'
 import { cleaner } from './clean'
@@ -84,6 +84,8 @@ const named = (v: KV) => !!v.secret || SECRET_NAME.test(v.key)
 /** Shorter ones aren't hidden where they are in a text. */
 const KNOWN = 6
 const NAME = /^[^{}\s]+$/
+/** A new name: other characters could end what hides the text next to it, and the checks run under made-up names. */
+const NEW_NAME = /^[\w.-]+$/
 const IS_VAR = /^\s*\{\{[^{}]+\}\}\s*$/
 
 /**
@@ -271,9 +273,11 @@ function sent(r: RequestDef, t: Tables, w: McpServeOptions): string {
  */
 function underNeutralNames(r: RequestDef, chosen: Found[], cl: Cleaner, signIn: Auth | null): ReturnType<typeof parameterize> {
   const all = JSON.stringify([r, chosen])
-  let salt = 0
-  const name = (i: number) => `__n${salt}x${i}n__`
-  while (chosen.some((s, i) => all.includes(name(i)) || (s.value && name(i).includes(s.value)))) salt++
+  let salt = '', tries = 0
+  const name = (i: number) => `n${salt}x${i}n`
+  // a value that is replaced everywhere must not be in one of these
+  const clash = () => chosen.some((_s, i) => all.includes(name(i)) || chosen.some((x) => (x.kind === 'existing' || x.kind === 'baseUrl') && name(i).includes(x.value)))
+  do { if (tries++ > 50) return { request: r, create: [], done: [] }; salt = uid().replace(/[^A-Za-z0-9]/g, '') } while (clash())
   const back = new Map(chosen.flatMap((s, i) => (s.kind === 'existing' ? [] : [[name(i), s.varName] as const])))
   const deep = <T>(v: T): T => {
     if (typeof v === 'string') { let out: string = v; for (const [n, to] of back) out = out.split(n).join(to); return out as T }
@@ -309,7 +313,7 @@ export function applyParameters(input: Record<string, unknown>, ctx: ProposeCont
     if (s.kind === 'existing') {
       if (name !== s.varName) return refuse(`“${id}” is already a variable, so it keeps its name: choose it with "".`)
     } else {
-      if (!NAME.test(name) || name in FAKE || (s.kind === 'pathId' && !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(name))) return refuse(`The name for “${id}” can’t be used: no spaces or braces, not empty, and in the path only letters, digits, _ and -.`)
+      if (!NEW_NAME.test(name) || name in FAKE || (s.kind === 'pathId' && !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(name))) return refuse(`The name for “${id}” can’t be used: only letters, digits, _, - and ., and in the path no dot and no digit or - first.`)
       // what can be read must not become a known secret: see places.ts
       if (!s.secret && secretName(name)) return refuse(`The name for “${id}” is a secret’s name, and this isn’t one. Choose another name.`)
       if (taken.has(name)) return refuse(`The name for “${id}” is already used there. Choose another name.`)

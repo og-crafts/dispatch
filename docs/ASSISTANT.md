@@ -65,6 +65,9 @@ dialogs) and `src-tauri/src/ai.rs` (sends and streams, because the webview's CSP
 - `suggest_parameters` lists what could move, with ids and no values. Which lines there are, their order and names tell
   nothing about a hidden value except that a variable marked secret is in the request. Cost: some suggestions the
   Parameterize panel makes are missing here. A batch counts only while the request and the variables are as they were.
+- `apply_parameters` decides what may move under made-up names, so whether a chosen name is a hidden value changes nothing.
+  New names are letters, digits, `_`, `-` and `.` only: others could end the pattern that hides the text next to them.
+- The console names a record the chat made up only once its card is applied (the chat may read the console).
 - `apply_parameters` is refused when the request would then send something else. With another sign-in than bearer, a
   bearer header stays and takes the variable. Environment variables with a secret's name are made secret and empty.
 - The chat's parameter tools are **not** offered to outside assistants. They were built and withdrawn (f4bd384, 1ce6222):
