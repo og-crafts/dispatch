@@ -1,14 +1,16 @@
 /** The assistant's panel: the chat, what it looked up, and the box. Everything a model wrote is shown as untrusted. */
 import { Fragment, memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { reach, reachLabel } from '../../core/assistant/connections'
+import { smallContext } from '../../core/assistant/tools'
 import { useDialogs } from '../Dialogs'
 import { Markdown, type Untrusted } from '../Markdown'
 import { openExternal } from '../PrivacyDialogs'
 import type { WorkspaceApi } from '../useWorkspace'
 import { Boundary } from './Boundary'
+import { ChangeCard, outcome } from './ChangeCard'
 import { ConsentDialog } from './ConsentDialog'
 import { MAX_W, MIN_W, usePanelLayout } from './layout'
-import { items, lastAnswer, plainText, toolLine, type Item, type ToolState } from './transcript'
+import { lastAnswer, plainText, proposed, stateWords, toolLine, turns, type Item, type ToolState } from './transcript'
 import type { AssistantApi, SendResult } from './useAssistant'
 
 const WIDTH_KEY = 'dispatch.assistantWidth'
@@ -25,21 +27,23 @@ const NOT_OPENED = 'The link couldn’t be opened. Copy its address into your br
 /** Delete and Backspace would remove a flow's block, the others act on requests and their tabs; none is meant while in the panel. */
 const OWN_KEYS = /^(enter|s|t|w)$/
 const Answer = memo(function Answer({ text, untrusted }: { text: string; untrusted: Untrusted }) { return <Markdown text={text} untrusted={untrusted} /> })
-const STATE: Partial<Record<ToolState, string>> = { failed: ' (didn’t work)', stopped: ' (stopped)' }
+const STAYS = 'Changes you already applied stay. Use Undo on their cards.'
+const NO_TOOLS: AssistantApi['tools'] = []
 
-function Lookup({ text, state }: { text: string; state?: ToolState }) {
-  return <p className="aiTool muted small">{state === 'running' && <span className="spin" aria-hidden="true" />}<span>{text}{(state && STATE[state]) ?? ''}</span></p>
+/** `still`: it waits for the person, so nothing turns. */
+function Lookup({ text, name, state, still }: { text: string; name: string; state?: ToolState; still?: boolean }) {
+  return <p className="aiTool muted small">{state === 'running' && !still && <span className="spin" aria-hidden="true" />}<span>{text}{stateWords(name, state)}</span></p>
 }
 
-const Kept = memo(function Kept({ all, tools, untrusted }: { all: Item[]; tools: AssistantApi['tools']; untrusted: Untrusted }) {
-  const asked = all.map((i) => i.kind).lastIndexOf('you')
+/** One question and what came of it. `tools`: the last message's look-ups. */
+const Kept = memo(function Kept({ all, tools, still, untrusted }: { all: Item[]; tools: AssistantApi['tools']; still: boolean; untrusted: Untrusted }) {
   let n = 0
   return <>
     {all.map((i, k) => {
       if (i.kind === 'tool') {
-        // the last message's look-ups are known better than what the messages say
-        const now = k > asked && tools.length ? tools[n++] : undefined
-        return <Lookup key={k} text={i.text} state={now ? now.state : k > asked && tools.length ? 'stopped' : i.state} />
+        // they are known better than what the messages say
+        const now = tools.length ? tools[n++] : undefined
+        return <Lookup key={k} text={i.text} name={i.name} state={now ? now.state : tools.length ? 'stopped' : i.state} still={still} />
       }
       if (i.kind === 'model') return <p key={k} className="aiTool muted small">Answered by {i.text}</p>
       return (
@@ -52,30 +56,47 @@ const Kept = memo(function Kept({ all, tools, untrusted }: { all: Item[]; tools:
   </>
 })
 
+/** Whether the last question changed something that a stop doesn't take back. */
+function stays(a: AssistantApi): boolean {
+  const start = turns(a.chat?.messages).at(-1)?.start ?? -1
+  return a.cards.some((c) => c.state === 'applied' && c.at > start)
+}
+
 /** Some providers keep the model that answered in the messages; it is said once. */
-function Conversation({ a, untrusted }: { a: AssistantApi; untrusted: Untrusted }) {
+function Conversation({ a, open, untrusted }: { a: AssistantApi; open: boolean; untrusted: Untrusted }) {
   const messages = a.chat?.messages
-  const all = useMemo(() => items(messages), [messages])
+  const asked = useMemo(() => turns(messages), [messages])
+  const last = asked.length - 1
+  const all = asked[last]?.items ?? []
+  const act = useRef(a); act.current = a
+  /** The cards of a question, the ones nobody asked for here with the last. */
+  const cardsOf = (k: number) => a.cards.filter((c) => c.at > (asked[k]?.start ?? -1) && (k >= last || c.at <= asked[k + 1].start))
+  const cards = (k: number) => cardsOf(k).map((c) => <ChangeCard key={c.proposal.id} card={c} open={open} act={act} />)
+  const waits = a.cards.some((c) => c.state === 'waiting')
   const answering = a.status === 'answering'
-  const asked = all.map((i) => i.kind).lastIndexOf('you')
   /** Look-ups that aren't in the messages yet, and the text around them. */
-  const now = a.tools.slice(all.filter((i, k) => i.kind === 'tool' && k > asked).length)
+  const now = a.tools.slice(all.filter((i) => i.kind === 'tool').length)
   const from = Math.max(0, a.streamed.length - LIVE)
   const part = (start: number, end: number) => {
     const t = a.streamed.slice(Math.max(start, from), end).trim()
     return t && <div className="aiMsg from-assistant"><h3 className="sr">Assistant</h3><div className="aiText">{start <= from && from ? '…' : ''}{t}</div></div>
   }
   return <>
-    <Kept all={all} tools={a.tools} untrusted={untrusted} />
+    {asked.map((t, k) => <Fragment key={t.start}>
+      <Kept all={t.items} tools={k === last ? a.tools : NO_TOOLS} still={k === last && waits} untrusted={untrusted} />
+      {k !== last && cards(k)}
+    </Fragment>)}
     {now.map((t, k) => <Fragment key={t.id}>
       {answering && part(k ? now[k - 1].at ?? 0 : 0, t.at ?? 0)}
-      <Lookup text={toolLine(t.name, t.input)} state={t.state} />
+      <Lookup text={toolLine(t.name, t.input)} name={t.name} state={t.state} still={waits} />
     </Fragment>)}
     {answering ? part(now[now.length - 1]?.at ?? 0, a.streamed.length)
       : a.streamed && <div className="aiMsg from-assistant"><h3 className="sr">Assistant</h3><Answer text={a.streamed} untrusted={untrusted} /></div>}
+    {cards(Math.max(0, last))}
     {answering && !a.streamed && !a.tools.some((t) => t.state === 'running') && <p className="aiTool muted small"><span className="spin" aria-hidden="true" /><span>Answering…</span></p>}
     {a.fallback && !all.some((i) => i.kind === 'model' && i.text === a.fallback) && <p className="aiTool muted small">Answered by {a.fallback}: the chosen model declined.</p>}
     {!answering && a.ended === 'stopped' && <p className="aiTool muted small">Stopped. Send another message to go on.</p>}
+    {!answering && a.ended === 'stopped' && stays(a) && <p className="aiTool muted small">{STAYS}</p>}
   </>
 }
 
@@ -145,10 +166,25 @@ export default function AssistantPanel({ a, ws, open, onClose }: { a: AssistantA
     if (before.status === 'summarising') now ||= a.summary ? 'The summary is ready to read.' : ''
     else if (before.status === 'answering' && a.ended && a.chat !== before.chat) {
       const answer = a.ended === 'done' || a.ended === 'length' ? plainText(lastAnswer(a.chat?.messages)) : ''
-      now = [answer.length > ANNOUNCED ? `${answer.slice(0, ANNOUNCED)}… The rest is in the panel.` : answer, a.ended === 'stopped' ? 'Stopped.' : '', a.error].filter(Boolean).join('\n')
+      now = [answer.length > ANNOUNCED ? `${answer.slice(0, ANNOUNCED)}… The rest is in the panel.` : answer, a.ended === 'stopped' ? 'Stopped.' : '', a.ended === 'stopped' && stays(a) ? STAYS : '', a.error].filter(Boolean).join('\n')
     }
     setSaid(now)
   }, [a.status, a.error]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Each card is announced once, when it can be seen; then what came of it.
+  const told = useRef(new Map<string, string>())
+  useEffect(() => {
+    if (!open) return
+    for (const c of a.cards) {
+      const { id, title, tool, cls } = c.proposal
+      const before = told.current.get(id), words = outcome(c)
+      if (before === words) continue
+      told.current.set(id, words)
+      const name = /“(.*)”/s.exec(title)?.[1] ?? title
+      if (c.state === 'waiting') setSaid(`The assistant proposes ${proposed(tool, name.length > 200 ? `${name.slice(0, 200)}…` : name)}. ${cls === 'delete' ? 'Delete' : 'Apply'} or reject it in the panel.`)
+      else if (before !== undefined && c.state !== 'stopped' && c.state !== 'rejected' && c.state !== 'applying') setSaid(words)
+    }
+  }, [a.cards, open])
 
   // Follows the answer only while the person is at its end.
   const log = useRef<HTMLDivElement>(null)
@@ -157,8 +193,12 @@ export default function AssistantPanel({ a, ws, open, onClose }: { a: AssistantA
   useLayoutEffect(() => {
     if (shownChat.current !== a.chat?.id) { shownChat.current = a.chat?.id; atEnd.current = true }
     const l = log.current
-    if (open && l && atEnd.current) l.scrollTop = l.scrollHeight
-  }, [open, a.chat, a.streamed, a.tools, a.status, a.ended])
+    if (!open || !l || !atEnd.current) return
+    l.scrollTop = l.scrollHeight
+    // a card is read from its start
+    const c = [...l.querySelectorAll<HTMLElement>('.aiCard.waiting')].pop()
+    if (c && c.offsetHeight > l.clientHeight) l.scrollTop += c.getBoundingClientRect().top - l.getBoundingClientRect().top - 8
+  }, [open, a.chat, a.streamed, a.tools, a.cards, a.status, a.ended])
 
   /** Runs what sends, and takes the message out of the box when it was sent. */
   const sendWith = async (f: () => Promise<SendResult>, message: string) => {
@@ -240,12 +280,12 @@ export default function AssistantPanel({ a, ws, open, onClose }: { a: AssistantA
         </div>
       </header>
       <div className="aiMiddle">
-      <p className="aiNote small">In this version it can read and explain, and suggest scripts to copy. It can’t change or send anything.</p>
+      <p className="aiNote small">It can read, and propose changes. Nothing changes until you apply it. It can’t send or run anything.</p>
 
       <div ref={log} className="aiLog" role="group" aria-label="Conversation" tabIndex={0}
         onScroll={(e) => { const l = e.currentTarget; atEnd.current = l.scrollHeight - l.scrollTop - l.clientHeight < AT_END }}>
         <Boundary resetKey={a.chat} fallback={<p className="warnLine small">This chat can’t be shown. Start a new chat.</p>}>
-          <Conversation a={a} untrusted={untrusted} />
+          <Conversation a={a} open={open} untrusted={untrusted} />
         </Boundary>
         {!a.chat && !a.streamed && !busy && <p className="aiEmpty muted">Ask why a test fails, what a script does, or how to write the next one.</p>}
       </div>
@@ -266,6 +306,8 @@ export default function AssistantPanel({ a, ws, open, onClose }: { a: AssistantA
 
       </div>
       <div className="aiBottom">
+      {a.connection && smallContext(a.connection) && <label className="aiJob small"><span>Help with</span>
+        <select value={a.job} onChange={(e) => a.setJob(e.target.value as AssistantApi['job'])}><option value="ask">Questions</option><option value="scripts">Scripts and variables</option></select></label>}
       <form className="aiAsk" onSubmit={(e) => { e.preventDefault(); submit() }}>
         <textarea ref={box} rows={2} aria-label="Message to the assistant" placeholder="Ask about this workspace…" aria-describedby={why ? `${id}-why` : undefined} value={text} onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {

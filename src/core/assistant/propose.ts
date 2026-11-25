@@ -19,7 +19,7 @@ import { cleaner } from './clean'
 import type { ToolContext } from './gate'
 import { applyParameters, setEnvironmentVariables } from './parameters'
 import { canonical, type Change, type Field, type Line, type Proposal, type Rec } from './proposal'
-import { toolClass } from './tools'
+import { allSecrets, toolClass } from './tools'
 
 /** What proposing needs: everything but the person's answer. */
 export type ProposeContext = Omit<ToolContext, 'decide' | 'job'>
@@ -355,6 +355,22 @@ function diffField(label: string, before: string, after: string): Field | null {
   const lines: Line[] = before === '' ? split(after, 'add') : after === '' ? split(before, 'del')
     : withContext(diffLines(before, after)).map((l) => (l.type === 'gap' ? { type: 'gap', text: plural(l.count, 'unchanged line') } : l))
   return { label, lines }
+}
+
+/**
+ * What is different now from what was applied, for the card of an undo that was refused: cleaned and drawn as a proposal
+ * is, also of the secrets its records held and of `also`. Nothing the model supplied is shown exactly here.
+ */
+export function changedSince(p: Proposal, w: McpServeOptions, now: (kind: Change['kind'], id: string) => Rec | null, ctx: Parameters<typeof cleaner>[0], also: string[]): Field[] {
+  if (w.settings.activeSpaceId !== p.spaceId) return []
+  const since = p.changes.map((c): Change => ({ ...c, before: c.after, after: now(c.kind, c.id) }))
+  const recs = [...p.changes, ...since].flatMap((c) => [c.before, c.after].map((r) => ({ kind: c.kind, r })))
+  const of = <T>(...kinds: Change['kind'][]) => recs.flatMap((x) => (x.r && kinds.includes(x.kind) ? [x.r as T] : []))
+  const held = allSecrets({ environments: of('environment'), globals: of<KV[]>('globals').flat(), collections: of('collection'), folders: of('folder'), requests: of('request'), connections: [], signIns: [], cookies: [], clientCerts: [] })
+  const cl = cleaner(ctx, w, [...also, ...held])
+  const world = openWorld(w, p.spaceId)
+  const d: Draft = { tool: p.tool, title: '', changes: [], reply: '' }
+  return since.flatMap((c) => fieldsOf(c, applied(world, p.changes), world, d, cl))
 }
 
 function fieldsOf(c: Change, before: World, after: World, d: Draft, cl: Cleaner): Field[] {

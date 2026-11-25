@@ -2,12 +2,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { version } from '../../../package.json'
 import { listChats, type Chat } from '../../core/assistant/chats'
-import { type Connection, reach, validateAddress } from '../../core/assistant/connections'
+import { type Connection, newConnection, reach, validateAddress } from '../../core/assistant/connections'
 import { type Decision, runTool } from '../../core/assistant/gate'
 import { ask, type Answer, type Clock } from '../../core/assistant/loop'
 import { ParameterBatches } from '../../core/assistant/parameters'
-import type { Proposal } from '../../core/assistant/proposal'
-import { basisOf, oneLine } from '../../core/assistant/propose'
+import type { Field, Proposal } from '../../core/assistant/proposal'
+import { basisOf, changedSince, oneLine } from '../../core/assistant/propose'
 import { AssistantError, assertUsable, until } from '../../core/assistant/providers/shared'
 import { allSecrets, type AssistantJob, offeredTools, systemPrompt, toolClass } from '../../core/assistant/tools'
 import * as db from '../../core/db'
@@ -22,7 +22,11 @@ import { keepChat, onAllChatsDeleted, removeChat, updateConnections, useConnecti
 export type SendResult = 'sent' | 'consent' | 'busy' | 'empty' | 'blocked' | 'stopped'
 export interface ToolActivity { id: number; name: string; input: unknown; state: 'running' | 'ok' | 'failed' | 'stopped'; /** Where in `streamed`, while it answers. */ at?: number }
 /** A proposed change the person decides on. `text`: why it wasn't applied, or why it couldn't be undone. */
-export interface Card { proposal: Proposal; state: 'waiting' | 'applying' | 'applied' | 'rejected' | 'expired' | 'stopped' | 'undone'; text?: string }
+export interface Card { proposal: Proposal; state: 'waiting' | 'applying' | 'applied' | 'rejected' | 'expired' | 'stopped' | 'undone'; text?: string
+  /** How many messages the chat had when it was asked for: the card comes after that question's answer. */
+  at: number
+  /** What is different now, when it couldn't be undone. Cleaned, as `fields` are. */
+  now?: Field[] }
 /** `input` and `output` are the last call's (input is how full the chat is); the totals are this chat's since it was opened. */
 export interface Usage { input: number; output: number; totalInput: number; totalOutput: number }
 /** `kind`: what a yes goes on with: the message `text`, a summary of the chat on screen, or a new chat that begins with `text`. */
@@ -163,6 +167,8 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
   const aboutRef = useRef(about)
   const cardsRef = useRef(cardsOf)
   const waiting = useRef(new Map<string, Waiting>())
+  /** The secrets known when a change was proposed; some may be forgotten by the time it's undone. */
+  const knownAt = useRef(new WeakMap<Proposal, string[]>())
   const jobs = useRef(new Set<Job>())
   const mounted = useRef(false)
   /** Deleted chats: an answer still ending must not bring them back. */
@@ -190,8 +196,8 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
     cardsRef.current = next; setCardsState(next)
   }
   const cardsIn = (chatId: string) => cardsRef.current.get(chatId) ?? []
-  const setCard = (chatId: string, id: string, state: Card['state'], text?: string) =>
-    setCards(chatId, cardsIn(chatId).map((c) => (c.proposal.id === id ? { proposal: c.proposal, state, ...(text ? { text } : {}) } : c)))
+  const setCard = (chatId: string, id: string, state: Card['state'], text?: string, now?: Field[]) =>
+    setCards(chatId, cardsIn(chatId).map((c) => (c.proposal.id === id ? { proposal: c.proposal, at: c.at, state, ...(text ? { text } : {}), ...(now?.length ? { now } : {}) } : c)))
   const cardOnScreen = (id: string) => (chatRef.current ? cardsIn(chatRef.current.id) : []).find((c) => c.proposal.id === id)
 
   /** One line in the console: what was decided, the tool and the record's name, without secrets. */
@@ -203,7 +209,7 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
   }
 
   /** Shows the card and waits for approve, reject or the job's end. */
-  const decide = (job: Job, chatId: string, clock: Clock, secrets: () => string[], p: Proposal, signal: AbortSignal) => new Promise<Decision>((answer) => {
+  const decide = (job: Job, chatId: string, at: number, clock: Clock, secrets: () => string[], p: Proposal, signal: AbortSignal) => new Promise<Decision>((answer) => {
     if (signal.aborted) return answer({ outcome: 'stopped' })
     const before = secrets()
     let writing = false
@@ -212,12 +218,17 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
       if (!waiting.current.delete(p.id)) return
       signal.removeEventListener('abort', stop)
       clock.resume()
-      setCard(chatId, p.id, outcome, text)
+      const known = () => [...before, ...secrets()]
+      // the text can hold a name as it really is
+      let shown = text
+      try { shown = text && new Redactor(known()).clean(text) } catch { shown = undefined }
+      if (outcome === 'applied') knownAt.current.set(p, before)
+      setCard(chatId, p.id, outcome, shown)
       answer({ outcome, ...(text ? { text } : {}) })
-      if (outcome !== 'stopped') note(`${outcome[0].toUpperCase()}${outcome.slice(1)}`, p, () => [...before, ...secrets()])
+      if (outcome !== 'stopped') note(`${outcome[0].toUpperCase()}${outcome.slice(1)}`, p, known)
     }
     waiting.current.set(p.id, { job, end, begin: () => { writing = true; clock.resume(); setCard(chatId, p.id, 'applying') } })
-    setCards(chatId, [...cardsIn(chatId), { proposal: p, state: 'waiting' }])
+    setCards(chatId, [...cardsIn(chatId), { proposal: p, state: 'waiting', at }])
     clock.pause()
     signal.addEventListener('abort', stop, { once: true })
   })
@@ -253,7 +264,17 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
       const secrets = () => secretsOf(wsRef.current, list ?? [], signIns)
       const before = secrets()
       const r = await wsRef.current.undoProposal(card.proposal)
-      setCard(chatId, id, r.ok ? 'undone' : 'applied', r.ok ? undefined : r.text)
+      if (r.ok) setCard(chatId, id, 'undone')
+      else {
+        const also = [...knownAt.current.get(card.proposal) ?? [], ...before, ...secrets()]
+        let now: Field[] = [], text: string | undefined
+        try {
+          text = new Redactor(also).clean(r.text)
+          const w = wsRef.current, conn = (list ?? []).find((c) => c.id === chatRef.current?.connectionId)
+          now = changedSince(card.proposal, worldOf(w), w.recordNow, { conn: conn ?? newConnection('compatible'), secrets }, also)
+        } catch { text ??= 'This couldn’t be undone.' }
+        setCard(chatId, id, 'applied', text, now)
+      }
       if (r.ok) note('Undone', card.proposal, () => [...before, ...secrets()])
     } catch { setCard(chatId, id, 'applied', 'Something went wrong while this was being undone. Look at it before you go on.') } finally { undoing.current.delete(id) }
   }
@@ -348,7 +369,7 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
           return runTool(name, input, {
             world, signal, batches, secrets, job: about, spaceId: start.spaceId, conn: { ...conn, readLogs: conn.readLogs && now?.readLogs === true },
             unsaved: (id) => wsRef.current.isUnsaved(id), schedules: db.getSchedules,
-            decide: (p, stop) => decide(job, start.id, clock, secrets, p, stop),
+            decide: (p, stop) => decide(job, start.id, start.messages.length, clock, secrets, p, stop),
           })
         },
         on: {
