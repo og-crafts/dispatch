@@ -46,8 +46,10 @@ see the privacy policy.
 
 - Assistant (desktop; after 0.2.0): stuck on why a test fails or what an old script does? Ask right inside Dispatch, with
   a model you connect (your own Anthropic or OpenAI key, an address you choose, or one running on this computer, such as
-  Ollama). In this version it reads your requests, scripts and variables, explains them and suggests scripts to copy; it
-  doesn't change or send anything. Off until you add a connection. Secrets Dispatch knows are hidden from it, but it can't
+  Ollama). It reads your requests, scripts and variables, explains them, and can propose changes: a new test, a fixed
+  script, values moved into variables. You see each change first, and it is made only when you press Apply. You can undo
+  it until you close Dispatch. The assistant never sends or runs anything. A script you applied runs when you send the
+  request, so read it first. Off until you add a connection. Secrets Dispatch knows are hidden from it, but it can't
   recognise every secret and ordinary data isn't hidden. Chats and keys stay sealed on the device, out of backups and
   folders. See https://dispatch.ogcrafts.cloud/privacy/#assistant.
 

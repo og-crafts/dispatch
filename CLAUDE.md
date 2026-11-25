@@ -81,15 +81,22 @@ about each, without naming or disparaging anyone.
   bearer token, refuses Origin and foreign Host headers, POST only) that relays JSON-RPC to the frontend
   (`src/ui/mcpHost.ts`, turned on in Settings → AI assistants).
 - The built-in assistant (desktop only, `transport.unrestricted`): `src/core/assistant/` (`connections.ts` kinds, address
-  rules, consent, `withBaseUrl`; `gate.ts` the gate; `tools.ts` offered tools, `allSecrets`, system prompt; `loop.ts` the
+  rules, consent, `withBaseUrl`; `gate.ts` the gate; `tools.ts` offered tools and their class (read/edit/delete),
+  `allSecrets`, system prompt; `propose.ts` + `parameters.ts` + `proposal.ts` an edit call to a proposal; `loop.ts` the
   turn loop with call/time limits; `providers/` Anthropic + OpenAI-compatible streams; `nativeFetch.ts` to Rust; `chats.ts`),
-  `src/ui/assistant/` (`useAssistant.ts` the hook, panel, settings, dialogs, `binding.ts`, `store.ts`) and
+  `src/ui/assistant/` (`useAssistant.ts` the hook, panel, `ChangeCard.tsx`, settings, dialogs, `binding.ts`, `store.ts`) and
   `src-tauri/src/ai.rs` (`ai_stream`: the webview's CSP can't reach AI hosts, so Rust sends and streams back). Rules to
   keep (each was a real review finding; privacy copy on the site depends on them, update `site/build.py` privacy page
   and the README with any change):
   - **One gate**: a tool runs only through `runTool` (`gate.ts`): offered tools only, input checked against the schema,
-    open workspace only (a switch mid-answer refuses), read-only (what `handleMcp` gets can't send: a method
+    open workspace only (a switch mid-answer refuses). It never sends (what `handleMcp` gets can't: a method
     list that matches none (`[]` would mean all), a transport that throws, an empty pipeline; no handoff, no flows).
+  - **Changes only by approval**: an edit tool only proposes (`propose`); the person presses Apply, Delete or Reject on its
+    card, one change at a time, and `applyProposal` (`useWorkspace.ts`) writes. Anything the preview rests on changing
+    meanwhile expires the card (also a script's own writes). No hidden value is replaced or removed (`apply_parameters`
+    moves it unseen); `<hidden>` is never saved. Undo until Dispatch closes; cards and undo are in memory only, and the
+    model isn't told about an undo. Apply can't protect against what an approved script does when the person sends it.
+    The parameter tools are for the chat only, not for outside assistants (built and withdrawn, see ASSISTANT.md).
   - **One redaction exit**: everything that leaves goes through the `Redactor` built from `allSecrets` (every workspace,
     keys, cookies, certs, history) and the result is cleaned BEFORE `handleMcp` (it cuts and pattern-hides itself, half a
     secret could survive), then cut to size and wrapped as data with a random mark. Add a new data source = add it to

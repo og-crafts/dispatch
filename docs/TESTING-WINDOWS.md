@@ -463,7 +463,7 @@ Run these from the repo folder in PowerShell.
 ## 10. The Dispatch assistant (builds after 0.2.0)
 
 Needs the desktop app. Use Ollama (https://ollama.com) with a small model that can call tools (for example `qwen3:8b`)
-if you can; the local model keeps everything on the computer. Without it, do 10.1 and 10.7 only. Never type a real key
+if you can; the local model keeps everything on the computer. Without it, do 10.1 and 10.7 only. Use a workspace with made-up data for 10.8 to 10.13: they change it. Never type a real key
 into this guide's tests: use a fake one (`sk-test-0000000000000000`) wherever a key is needed.
 
 10.1. **Nothing without a connection:** on a fresh profile there is no assistant icon in the top bar, and Settings → AI
@@ -480,8 +480,8 @@ into this guide's tests: use a fake one (`sk-test-0000000000000000`) wherever a 
       question stays unanswered. (Don't allow it unless you really use that key.)
 
 10.4. **It reads and explains:** ask the local model what a request's after-response script does, and why a test fails.
-      The answer is based on the real workspace, tool lookups show in the chat, and it offers script text to copy; it
-      never says it changed or sent anything. Ask it to "send the login request": it must say it can't.
+      The answer is based on the real workspace and tool lookups show in the chat. It says a change was made only after you
+      applied it. Ask it to "send the login request": it must say it can't.
 
 10.5. **Stop:** ask a long question ("describe every request in detail") and press **Stop** while it writes. The answer
       stops, "Stopped" shows, and you can send another message afterwards.
@@ -497,6 +497,32 @@ into this guide's tests: use a fake one (`sk-test-0000000000000000`) wherever a 
       workspace folder. Settings → AI assistants: untick **Keep chats on this device**, ask something: it is not kept
       after a restart. Tick it again and press **Delete all chats**: the list is empty. Remove a connection: its key
       is gone (editing a new one starts empty).
+
+10.8. **Apply:** ask the local model to add a test to a saved request. If the connection's context size is under 16,000,
+      first pick **Help with: Scripts and variables** above the message box. A card shows the change with removed and added
+      lines and a warning that scripts run when the request is sent. Until you press **Apply** the saved request is the
+      same. Press Apply: the card says "Applied.", the request has the test, and History shows that nothing was sent.
+      Close the panel while a card waits: the icon has a dot and its name is "Assistant, waiting for you".
+
+10.9. **Reject:** ask for another change and press **Reject**. The card says "Rejected. Nothing was changed.", the request
+      is as it was, and the assistant is told. Ask it to delete a request: the button says **Delete**; reject it.
+
+10.10. **Undo:** press **Undo** on the card from 10.8. It says "Undone." and the test is gone. Apply another change, edit and
+      save the same request yourself, then press Undo: it must say that this changed meanwhile, show what changed, and keep
+      your edit. Let it delete a made-up request, then Undo: the request is back. Restart Dispatch: there is no Undo left
+      and the applied changes are still there.
+
+10.11. **Stop while waiting:** with a card waiting, press **Stop**. The card says "Stopped. Nothing was changed." and its
+      buttons are gone. Do the same by opening another workspace, and by restarting Dispatch: nothing is applied.
+      Leave a card waiting for more than 10 minutes: it still waits, and Apply works.
+
+10.12. **Unsaved edits and changes meanwhile:** edit a request without saving and ask for a change to it: it must ask you to
+      save or discard your changes first. Then, with a card waiting, edit a variable of the active environment and
+      press Apply: "This changed meanwhile, so nothing was applied."
+
+10.13. **An open editor:** open the scripts of a collection (then a folder, then an environment's variables) and ask for a
+      change there. Apply it with the editor still open: the editor shows the new text. Type one more character: the
+      applied text stays, with your character.
 
 ## Report template
 
