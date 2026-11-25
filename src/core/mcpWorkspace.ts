@@ -176,7 +176,7 @@ export const hide = (name: string, v: string) => {
 }
 export const AUTH_SECRETS = new Set(['password', 'token', 'value', 'clientSecret', 'accessToken', 'secret', 'accessKey', 'secretKey', 'refreshToken', 'sessionToken'])
 /** The auth fields that matter for each kind, in order. */
-const AUTH_FIELDS: Partial<Record<Auth['kind'], string[]>> = {
+export const AUTH_FIELDS: Partial<Record<Auth['kind'], string[]>> = {
   basic: ['username', 'password'], digest: ['username', 'password'], bearer: ['token'], apikey: ['key', 'value', 'in'],
   oauth2: ['grant', 'tokenUrl', 'authUrl', 'clientId', 'clientSecret', 'scope', 'accessToken'],
   jwt: ['algorithm', 'secret', 'headerPrefix'], awsv4: ['accessKey', 'secretKey', 'region', 'service'],
