@@ -15,14 +15,14 @@ const SECRET = 'Zq7hunter2XyW', RIGHT = SECRET.slice(0, 3), WRONG = 'Qx9'
 const LEAD = '{"user": "ann", "password": "'
 const URL_LEAD = 'https://ann:'
 
-function mk(over: { variables?: KV[]; env?: KV[]; url?: string; headers?: KV[]; globals?: KV[] } = {}) {
+function mk(over: { variables?: KV[]; env?: KV[]; url?: string; headers?: KV[]; globals?: KV[]; readLogs?: boolean } = {}) {
   const shop: Collection = { ...newCollection('Shop'), variables: over.variables ?? [] }
   const env: Environment = { ...newEnvironment('Dev'), variables: over.env ?? [] }
   const login = newRequest({ name: 'Login', collectionId: shop.id, url: 'https://shop.test/login', sort: 1, body: { ...emptyBody('json'), text: `${LEAD}${SECRET}"}` }, docs: `as in ${URL_LEAD}${SECRET}@shop.test` })
   const mine = newRequest({ name: 'Mine', collectionId: shop.id, url: over.url ?? 'https://shop.test/mine', headers: over.headers ?? [], sort: 2 })
   const ws = { source: 'dispatch' as const, collections: [shop], folders: [] as McpServeOptions['ws']['folders'], requests: [login, mine], environments: [env], flows: [], warnings: [] }
-  const world: McpServeOptions = { ws, environment: env, globals: over.globals ?? [], settings: { ...defaultSettings, activeSpaceId: 'default' }, transport, pipeline: {}, allowMethods: [], version: 't', allCollections: true }
-  const conn = { ...newConnection('compatible'), name: 'Mine', model: 'm', tools: 'yes' as const, readLogs: false, key: 'k-123456789' }
+  const world: McpServeOptions = { ws, environment: env, globals: over.globals ?? [], settings: { ...defaultSettings, activeSpaceId: 'default' }, transport, pipeline: {}, allowMethods: [], version: 't', allCollections: true, logs: { logs: () => [], history: () => [] } }
+  const conn = { ...newConnection('compatible'), name: 'Mine', model: 'm', tools: 'yes' as const, readLogs: over.readLogs ?? false, key: 'k-123456789' }
   const cards: Proposal[] = []
   const put = <T extends { id: string }>(l: T[], p: Proposal, kind: string): T[] => {
     const cs = p.changes.filter((c) => c.kind === kind)
@@ -46,7 +46,7 @@ function mk(over: { variables?: KV[]; env?: KV[]; url?: string; headers?: KV[]; 
     const t = (await call('suggest_parameters', { name })).text
     return { batch: /batch: (\S+)/.exec(t)?.[1] ?? '', id: (kind: string) => new RegExp(`^(s\\d+) · ${{ pathId: 'ID in the path', baseUrl: 'base URL', apiKeyHeader: 'API key' }[kind]}`, 'm').exec(t)?.[1] ?? `no ${kind}` }
   }
-  return { ws, world, cards, call, read, suggest }
+  return { ws, world, ctx, cards, call, read, suggest }
 }
 type M = ReturnType<typeof mk>
 type Step = (m: M, value: string) => Promise<unknown>
@@ -101,7 +101,7 @@ describe('a right guess reads like a wrong one', () => {
       const s = await m.suggest('Shop/Mine')
       const r = await m.call('apply_parameters', { name: 'Shop/Mine', batch: s.batch, choose: { [s.id('pathId')]: as }, where: 'collection' })
       expect(r.isError).toBe(true)
-      expect(r.text).toContain('has a secret’s name')
+      expect(r.text).toContain('is a secret’s name')
     }
     const s = await m.suggest('Shop/Mine')
     expect((await m.call('apply_parameters', { name: 'Shop/Mine', batch: s.batch, choose: { [s.id('pathId')]: 'itemId' }, where: 'collection' })).isError).toBe(false)
@@ -178,5 +178,112 @@ describe('what the chat may still write under a secret’s name', () => {
     const m = mk({ headers: [kv('X-Token', SECRET)] })
     const say = async (v: string) => { const r = await m.call('update_request', { name: 'Shop/Mine', headers: { 'X-Token': v } }); expect(r.isError).toBe(true); return r.text.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, 'ID') }
     expect(await say(SECRET)).toBe(await say('something else'))
+  })
+})
+
+describe('a refusal doesn’t tell a right guess at a short secret from a wrong one, with nothing approved', () => {
+  const PIN = '482913', OTHER = '105577'
+  type Refusal = [string, (m: M, g: string) => [string, Record<string, unknown>] | Promise<[string, Record<string, unknown>]>]
+  const apply = (m: M, kind: string, as: (g: string) => string) => async (g: string): Promise<[string, Record<string, unknown>]> => { const s = await m.suggest('Shop/Mine'); return ['apply_parameters', { name: 'Shop/Mine', batch: s.batch, choose: { [s.id(kind)]: as(g) }, where: 'collection' }] }
+  const refusals: Refusal[] = [
+    ...['get_request', 'suggest_parameters', 'delete_request', 'update_request'].map((t): Refusal => [`${t}: name`, (_m, g) => [t, { name: g }]]),
+    ['get_environment', (_m, g) => ['get_environment', { name: g }]],
+    ['get_history_entry', (_m, g) => ['get_history_entry', { id: g }]],
+    ['copy_request: from', (_m, g) => ['copy_request', { from: g, to: 'Shop' }]],
+    ['move_request: name', (_m, g) => ['move_request', { name: g, to: 'Shop' }]],
+    ['copy_request: to', (_m, g) => ['copy_request', { from: 'Shop/Mine', to: `assistant/${g}` }]],
+    ['create_request: folder', (_m, g) => ['create_request', { folder: `assistant/${g}`, name: 'N', url: 'https://x.test' }]],
+    ['create_request: method', (_m, g) => ['create_request', { folder: 'Shop', name: 'N', url: 'https://x.test', method: g }]],
+    ['update_request: method', (_m, g) => ['update_request', { name: 'Shop/Mine', method: g }]],
+    ['update_request: bodyType', (_m, g) => ['update_request', { name: 'Shop/Mine', bodyType: g }]],
+    ['a header’s name', (_m, g) => ['update_request', { name: 'Shop/Mine', headers: { [`token ${g}`]: 'x' } }]],
+    ['a query parameter’s name', (_m, g) => ['update_request', { name: 'Shop/Mine', url: `https://x.test/?token-${g}=x` }]],
+    ['set_variables: collection', (_m, g) => ['set_variables', { collection: g, variables: { a: 'b' } }]],
+    ['set_variables: a name', (_m, g) => ['set_variables', { collection: 'Shop', variables: { [`${g} x`]: 'b' } }]],
+    ['set_scripts: collection', (_m, g) => ['set_scripts', { path: g, testScript: 'x' }]],
+    ['set_scripts: folder', (_m, g) => ['set_scripts', { path: `Shop/${g}`, testScript: 'x' }]],
+    ['set_environment_variables: environment', (_m, g) => ['set_environment_variables', { environment: g, variables: { a: 'b' } }]],
+    ['set_environment_variables: a name', (_m, g) => ['set_environment_variables', { variables: { [`{${g}`]: 'b' } }]],
+    ['set_environment_variables: remove', (_m, g) => ['set_environment_variables', { remove: [g] }]],
+    ['apply_parameters: name', (_m, g) => ['apply_parameters', { name: g, batch: 'b', choose: {}, where: 'globals' }]],
+    ['apply_parameters: batch', (_m, g) => ['apply_parameters', { name: 'Shop/Mine', batch: g, choose: {}, where: 'globals' }]],
+    ['apply_parameters: where', async (m, g) => { const s = await m.suggest('Shop/Mine'); return ['apply_parameters', { name: 'Shop/Mine', batch: s.batch, choose: {}, where: g }] }],
+    ['apply_parameters: an id', async (m, g) => { const s = await m.suggest('Shop/Mine'); return ['apply_parameters', { name: 'Shop/Mine', batch: s.batch, choose: { [g]: '' }, where: 'collection' }] }],
+    ['apply_parameters: a bad name', (m, g) => apply(m, 'baseUrl', (x) => `${x} x`)(g)],
+    ['apply_parameters: a secret’s name', (m, g) => apply(m, 'baseUrl', (x) => `token_${x}`)(g)],
+    ['apply_parameters: the same name twice', async (m, g) => { const s = await m.suggest('Shop/Mine'); return ['apply_parameters', { name: 'Shop/Mine', batch: s.batch, choose: { [s.id('baseUrl')]: `v${g}`, [s.id('pathId')]: `v${g}` }, where: 'collection' }] }],
+    ['an unknown tool', (_m, g) => [g, {}]],
+    ['an unknown field', (_m, g) => ['get_request', { name: 'Shop/Mine', [g]: 'x' }]],
+    ['a value of the wrong type', (_m, g) => ['set_variables', { collection: 'Shop', variables: { [g]: 1 } }]],
+  ]
+  it.each(refusals)('%s', async (_what, make) => {
+    const say = async (g: string) => {
+      const m = mk({ variables: [kv('pin', PIN, true, { secret: true })], url: 'https://shop.test/orders/1234567890', readLogs: true })
+      const [name, input] = await make(m, g)
+      const r = await m.call(name, input)
+      expect(r.isError).toBe(true)
+      expect(m.cards).toEqual([])
+      return r.text.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, 'ID').replaceAll(g, 'GUESS')
+    }
+    expect(await say(PIN)).toBe(await say(OTHER))
+  })
+})
+
+describe('the same with nothing approved, where the name alone decides', () => {
+  const PIN = 'hunter2x', OTHER = 'monkey3x'
+  const norm = (t: string, g: string) => t.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, 'ID').replaceAll(g, 'GUESS')
+  it.each([['pathId', (g: string) => g], ['pathId', (g: string) => `a_${g}`], ['baseUrl', (g: string) => g]] as const)('a new name for %s', async (kind, as) => {
+    const say = async (g: string) => {
+      const m = mk({ variables: [kv('pin', PIN, true, { secret: true })], url: 'https://shop.test/orders/1234567890' })
+      m.ctx.decide = async (p) => { m.cards.push(p); return { outcome: 'rejected' } }
+      const s = await m.suggest('Shop/Mine')
+      const r = await m.call('apply_parameters', { name: 'Shop/Mine', batch: s.batch, choose: { [s.id(kind)]: as(g) }, where: 'collection' })
+      return [norm(r.text, g), m.cards.length]
+    }
+    const right = await say(PIN)
+    expect(right).toEqual(await say(OTHER))
+    expect(right[1]).toBe(1)
+  })
+  it('and what is approved has the names the model chose', async () => {
+    const m = mk({ url: 'https://shop.test/orders/1234567890' })
+    const s = await m.suggest('Shop/Mine')
+    expect((await m.call('apply_parameters', { name: 'Shop/Mine', batch: s.batch, choose: { [s.id('pathId')]: 'order', [s.id('baseUrl')]: 'host' }, where: 'collection' })).isError).toBe(false)
+    const r = m.ws.requests.find((x) => x.name === 'Mine')!
+    expect([r.url, r.pathVars.map((p) => [p.key, p.value]), m.ws.collections[0].variables.map((v) => [v.key, v.value])]).toEqual(['{{host}}/orders/:order', [['order', '1234567890']], [['host', 'https://shop.test']]])
+  })
+  it('a new name for a request whose name is a secret', async () => {
+    const say = async (g: string) => {
+      const m = mk({ variables: [kv('pin', PIN, true, { secret: true })] })
+      m.ws.requests.push(newRequest({ name: PIN, collectionId: m.ws.collections[0].id, url: 'https://shop.test', sort: 3 }))
+      return norm((await m.call('move_request', { name: 'Shop/<hidden>', to: 'Shop', newName: g })).text, g)
+    }
+    expect(await say(PIN)).toBe(await say(OTHER))
+  })
+})
+
+describe('a new name can’t break what hides its neighbours', () => {
+  const body = (m: M, text: string) => { m.ws.requests.find((x) => x.name === 'Mine')!.body = { ...emptyBody('json'), text } }
+  const choose = async (m: M, as: string) => { const s = await m.suggest('Shop/Mine'); return m.call('apply_parameters', { name: 'Shop/Mine', batch: s.batch, choose: { [s.id('baseUrl')]: as }, where: 'collection' }) }
+  it.each(['a\\b', 'a"b', 'a&b', 'a,b', 'a;b', 'a<b', 'a=b', 'a/b', 'a:b', 'a\'b', 'a@b', 'é'])('“%s” is refused', async (as) => {
+    const m = mk({ url: 'https://shop.test/x' })
+    body(m, '{"https://shop.test token": "Abcdef99zz"}')
+    expect((await choose(m, as)).isError).toBe(true)
+    expect(m.cards).toEqual([])
+  })
+  it.each(['base.url', 'base-url', 'baseUrl_2'])('“%s” is fine, and what was hidden stays hidden', async (as) => {
+    const m = mk({ url: 'https://shop.test/x' })
+    body(m, '{"https://shop.test token": "Abcdef99zz"}')
+    expect((await choose(m, as)).isError).toBe(false)
+    expect(m.ws.requests.find((x) => x.name === 'Mine')!.url).toBe(`{{${as}}}/x`)
+    expect((await m.read('Shop/Mine')) + JSON.stringify({ ...m.cards[0], changes: 0, basis: 0 })).not.toContain('Abcdef99zz')
+  })
+  it.each(['x0n__', '0n__', 'x0n_', '__n0'])('a value like a made-up name (“%s”) ends all the same', async (value) => {
+    const m = mk({ url: 'https://shop.test/orders/1234567890', variables: [kv('t', value)] })
+    body(m, `${value} a`)
+    const t = (await m.call('suggest_parameters', { name: 'Shop/Mine' })).text
+    const batch = /batch: (\S+)/.exec(t)![1], ids = [...t.matchAll(/^(s\d+) ·/gm)].map((x) => x[1])
+    expect((await m.call('apply_parameters', { name: 'Shop/Mine', batch, choose: Object.fromEntries(ids.map((i) => [i, ''])), where: 'collection' })).isError).toBe(false)
+    const r = m.ws.requests.find((x) => x.name === 'Mine')!
+    expect([r.url, r.body.text]).toEqual(['{{baseUrl}}/orders/:orderId', '{{t}} a'])
   })
 })

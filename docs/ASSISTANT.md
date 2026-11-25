@@ -65,6 +65,9 @@ dialogs) and `src-tauri/src/ai.rs` (sends and streams, because the webview's CSP
 - `suggest_parameters` lists what could move, with ids and no values. Which lines there are, their order and names tell
   nothing about a hidden value except that a variable marked secret is in the request. Cost: some suggestions the
   Parameterize panel makes are missing here. A batch counts only while the request and the variables are as they were.
+- `apply_parameters` decides what may move under made-up names, so whether a chosen name is a hidden value changes nothing.
+  New names are letters, digits, `_`, `-` and `.` only: others could end the pattern that hides the text next to them.
+- The console names a record the chat made up only once its card is applied (the chat may read the console).
 - `apply_parameters` is refused when the request would then send something else. With another sign-in than bearer, a
   bearer header stays and takes the variable. Environment variables with a secret's name are made secret and empty.
 - The chat's parameter tools are **not** offered to outside assistants. They were built and withdrawn (f4bd384, 1ce6222):
@@ -160,8 +163,9 @@ dialogs) and `src-tauri/src/ai.rs` (sends and streams, because the webview's CSP
 - A known value that crosses a text hidden by its pattern hides its neighbours too. The chat can't make one by an edit
   (see Proposals), but a person's send can: a header filled from a variable the chat set is in the history as a secret.
   So can a script that runs.
-- A whole known secret the model guessed comes back as `<hidden>`, in a text it wrote or a refusal, so a short or
-  guessable one can be confirmed, many guesses at a time. That needs the whole value, never a part of it.
+- A whole known secret the model guessed comes back as `<hidden>` in a text it wrote and the person approved, so a short or
+  guessable one can be confirmed that way. That needs the whole value, never a part of it. Refusals don't repeat what the
+  model wrote unless something is there by that name (`assistant-oracle.test.ts`); keep that for every new one.
 - What a change took away is remembered in memory only: after a restart, a copy of it elsewhere under an ordinary name is
   ordinary data.
 - Base64 and HTML-escaped forms of a secret aren't recognised.

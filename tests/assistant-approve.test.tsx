@@ -627,6 +627,20 @@ describe('hostile text', () => {
 })
 
 describe('what is kept', () => {
+  it('a name the chat made up is in the console only once the person approved it', async () => {
+    await seed({ name: 'Order' }); await mount()
+    const make = (name: string) => calls(['create_request', { folder: 'Shop', name, url: 'https://x.test' }])
+    const rename = calls(['update_request', { name: 'Shop/Order', newName: 'guess-3' }])
+    await send('go', make('guess-1'), make('guess-2'), rename, says('Done'))
+    const p = await waits()
+    act(() => a().reject(p.id))
+    const q = await waits(1)
+    await approve(q.id)
+    const t = await waits(2)
+    act(() => a().reject(t.id))
+    await idle()
+    expect(ws().logs.filter((l) => l.source === 'assistant').map((l) => l.text)).toEqual(['Rejected create_request: a new request', 'Applied create_request: “guess-2”', 'Rejected update_request: “Order”'])
+  })
   it('no proposal, preview or undo copy in the saved chat, the messages or the console; the names in it are cleaned', async () => {
     await seed({ name: `Order ${SECRET}`, scripts: { pre: OLD, post: 'one' } }); await mount()
     await send('go', calls(script('two', 'Shop/Order <hidden>')), calls(script('three', 'Shop/Order <hidden>')), says('Done'))

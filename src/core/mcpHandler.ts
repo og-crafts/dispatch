@@ -104,7 +104,7 @@ export function finder(o: Pick<McpServeOptions, 'ws' | 'allCollections' | 'works
     // A user collection named "assistant" can give two requests the same path: say so rather than pick one.
     if (exact.length > 1) return { error: `“${want}” names a request in your own workspace and one in the user’s collection “assistant”; ask the user to rename one of them.` }
     const it = exact[0] ?? (named.length === 1 || !multi ? named[0] : undefined)
-    if (!it) return { error: named.length > 1 ? `Several requests are named “${want}”: ${named.map(pathOf).join(', ')}. Use the full path.` : `No request named “${want}”. Use list_requests.` }
+    if (!it) return { error: named.length > 1 ? `Several requests are named “${want}”: ${named.map(pathOf).join(', ')}. Use the full path.` : 'No request by that name or path. Use list_requests.' }
     return { it, path: pathOf(it) }
   }
   return { cols, multi, col, own, items, pathOf, colOf, lookup }
