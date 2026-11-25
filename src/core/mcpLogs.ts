@@ -220,7 +220,7 @@ export function logCall(name: string, args: any, x: LogCallContext): [string, bo
     const id = String(args.id ?? '').trim()
     if (!id) return ['Give the id from list_history.', true]
     const hits = visible().filter((h) => h.id.startsWith(id))
-    if (!hits.length) return [`No send “${id}” in the open workspace’s history. Use list_history.`, true]
+    if (!hits.length) return ['No send with that id in the open workspace’s history. Use list_history.', true]
     if (hits.length > 1) return [`“${id}” matches ${hits.length} sends; give more of the id.`, true]
     const h = hits[0]
     const hdr = (k: string, v: string) => `  ${k}: ${x.redact.header(k, v)}`
@@ -245,7 +245,7 @@ export function logCall(name: string, args: any, x: LogCallContext): [string, bo
   if (name === 'get_environment') {
     const names = x.environments.map((e) => `${e.name}${e.id === x.environment?.id ? ' (active)' : ''}`)
     const e = args.name ? x.environments.find((y) => y.name === String(args.name)) : x.environment
-    if (!e) return [args.name ? `No environment “${args.name}”. Environments: ${names.join(', ') || 'none'}.` : `No environment is active. Environments: ${names.join(', ') || 'none'}.`, !!args.name]
+    if (!e) return [args.name ? `No environment by that name. Environments: ${names.join(', ') || 'none'}.` : `No environment is active. Environments: ${names.join(', ') || 'none'}.`, !!args.name]
     const vars = e.variables.filter((v) => v.key.trim())
     const show = (v: KV) => (v.secret ? HIDDEN : R(hide(v.key, v.value)))
     return [[

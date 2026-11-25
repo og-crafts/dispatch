@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { handleMcp } from '../src/core/mcpHandler'
 import { type HttpResponse, defaultSettings, kv, newCollection, newRequest } from '../src/core/types'
 import type { Transport } from '../src/core/transport'
-import type { Environment } from '../src/core/types'
+import type { Environment, KV, RequestDef } from '../src/core/types'
 
 const SECRET = 'planted-secret-9z'
 const setup = (res: Partial<HttpResponse> = {}, error?: string) => {
@@ -55,4 +55,27 @@ it('run_collection hides a known secret in failures', async () => {
   const t = await setup({}, `refused for ${SECRET}`)('run_collection', { folder: 'Shop' })
   expect(t).toContain('✗ Login')
   expect(t).not.toContain(SECRET)
+})
+
+describe('get_request and the secret mark', () => {
+  const marked = (key: string, value: string) => kv(key, value, true, { secret: true })
+  const shown = async (variables: KV[], over: Partial<RequestDef> = {}) => {
+    const c = { ...newCollection('Shop'), variables }
+    const r = newRequest({ name: 'Items', url: 'https://shop.test', collectionId: c.id, ...over })
+    const o = { ws: { source: 'dispatch' as const, collections: [c], folders: [], requests: [r], environments: [], flows: [], warnings: [] }, environment: null, globals: [], settings: defaultSettings, transport: { label: 't', unrestricted: true, send: async () => { throw new Error('no') } }, pipeline: {}, allowMethods: [], version: 't', allCollections: true }
+    return (await handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_request', arguments: { name: 'Shop/Items' } } }, o)).result.content[0].text as string
+  }
+  it('hides a marked collection variable whatever its name, also a short one, a reference or an empty-looking one', async () => {
+    const t = await shown([marked('pin', '4821'), marked('tenant', 'acme-hidden-1'), marked('from', 'x {{base}} y-hidden'), kv('base', 'https://shop.test'), marked('none', '')])
+    expect(t).toContain('pin = <hidden>, tenant = <hidden>, from = <hidden>, base = https://shop.test, none = ')
+    expect(t).not.toMatch(/4821|hidden-1|y-hidden/)
+  })
+  it('hides a marked variable of a handed request’s collection', async () => {
+    const t = await shown([], { handoff: { at: 0, from: 'Shop', note: '', variables: [marked('pin', '4821'), kv('base', 'b')] } as RequestDef['handoff'] })
+    expect(t).toContain('pin = <hidden>, base = b')
+  })
+  it('hides a secret-looking part of a plain variable, as elsewhere in the request', async () => {
+    const t = await shown([kv('db', 'postgres://ann:pw-in-url@db.test/x')])
+    expect(t).toContain('db = postgres://ann:<hidden>@db.test/x')
+  })
 })

@@ -147,6 +147,9 @@ export function workspaceTools(editable?: string, own = true) {
   ]
 }
 
+/** A variable's value as an assistant may see it: the person's secret mark decides first, then the name, then the text. */
+export const variableShown = (v: KV) => (v.secret && v.value ? HIDDEN : hideInText(hide(v.key, v.value)))
+
 /** The read-only tool for looking at one request in full; offered whenever list_requests is. */
 export function getRequestTool() {
   return {
@@ -278,11 +281,11 @@ export function describeRequest(found: { it: RunItem; path: string }, x: { allCo
     if (sc.post.trim()) lines.push(`${owner} tests script (runs too):\n${hideInText(sc.post)}`)
   }
   if (r.docs.trim()) lines.push(`Docs:\n${hideInText(r.docs)}`)
-  if (col?.variables.length) lines.push(`Collection “${col.name}” variables: ${col.variables.map((v) => `${v.key} = ${hide(v.key, v.value)}`).join(', ')}`)
+  if (col?.variables.length) lines.push(`Collection “${col.name}” variables: ${col.variables.map((v) => `${v.key} = ${variableShown(v)}`).join(', ')}`)
   if (r.handoff) {
     const h = r.handoff
     lines.push(`Handed to you by the user (${new Date(h.at).toISOString().slice(0, 16).replace('T', ' ')}) from “${h.from}”${h.note ? `, asking: ${hideInText(h.note)}` : ''}.`)
-    if (h.variables?.length) lines.push(`Its original collection’s variables: ${h.variables.map((v) => `${v.key} = ${hide(v.key, v.value)}`).join(', ')} (given to a new collection you move it into).`)
+    if (h.variables?.length) lines.push(`Its original collection’s variables: ${h.variables.map((v) => `${v.key} = ${variableShown(v)}`).join(', ')} (given to a new collection you move it into).`)
     if (/^\/\/ From the (collection|folder) “/m.test(r.scripts.pre + '\n' + r.scripts.post)) lines.push('Its scripts include the collection and folder scripts it ran with (each marked “// From the …”): remove those parts if you file it back under that collection or folder, or they run twice.')
     lines.push('Review it, fix what needs fixing (update_request, set_variables), then file it with move_request.')
   }
@@ -365,7 +368,7 @@ export async function workspaceCall(name: string, args: any, x: WorkspaceCallCon
     return (METHODS as readonly string[]).includes(v) ? v : null
   }
   const bodyOf = (args: any, current: RequestDef['body'] | null): RequestDef['body'] | string => {
-    if (args.bodyType !== undefined && !BODY_KINDS.includes(args.bodyType)) return `Unknown bodyType “${args.bodyType}”; use one of ${BODY_KINDS.join(', ')}.`
+    if (args.bodyType !== undefined && !BODY_KINDS.includes(args.bodyType)) return `Unknown bodyType; use one of ${BODY_KINDS.join(', ')}.`
     const base = current ?? newRequest().body
     if (args.body === undefined || args.body === null) return args.bodyType && current ? { ...base, kind: args.bodyType } : base
     const text = typeof args.body === 'string' ? args.body : JSON.stringify(args.body, null, 2)
@@ -396,7 +399,7 @@ export async function workspaceCall(name: string, args: any, x: WorkspaceCallCon
     if (!rname || !url) return ['Give the request a name and a URL.', true]
     if (hasHidden(url, args.headers, args.body, args.preRequestScript, args.testScript)) return [hiddenBack, true]
     const method = methodOf(args.method ?? 'GET')
-    if (!method) return [`Unknown method “${args.method}”; use one of ${METHODS.join(', ')}.`, true]
+    if (!method) return [`Unknown method; use one of ${METHODS.join(', ')}.`, true]
     const at = placeAt(args.folder)
     if (typeof at === 'string') return [at, true]
     if (siblingsOf(at.collection.id, at.folderId).some((r) => r.name === rname)) return [`That folder already has “${rname}”. Use update_request to change it, or pick another name.`, true]
@@ -425,7 +428,7 @@ export async function workspaceCall(name: string, args: any, x: WorkspaceCallCon
     }
     if (args.method !== undefined) {
       const m = methodOf(args.method)
-      if (!m) return [`Unknown method “${args.method}”; use one of ${METHODS.join(', ')}.`, true]
+      if (!m) return [`Unknown method; use one of ${METHODS.join(', ')}.`, true]
       next.method = m as RequestDef['method']; changed.push('method')
     }
     if (args.url !== undefined) {
@@ -526,7 +529,7 @@ export async function workspaceCall(name: string, args: any, x: WorkspaceCallCon
     const c = (assistant ? assistantCols() : userCols()).find((y) => y.name === segs[0])
     if (!c) {
       const theirs = x.allCollections.some((y) => y.name === segs[0] && !writable.has(y.id))
-      return [theirs ? `“${segs[0]}” is the user’s collection, which you can’t change.` : `No collection “${String(args.collection)}” you can change. Use list_requests.`, true]
+      return [theirs ? `“${segs[0]}” is the user’s collection, which you can’t change.` : 'No collection by that name that you can change. Use list_requests.', true]
     }
     const set = args.variables && typeof args.variables === 'object' && !Array.isArray(args.variables) ? Object.entries(args.variables).map(([k, v]) => [k, String(v)] as const) : []
     const drop: string[] = Array.isArray(args.remove) ? args.remove.map(String) : []
@@ -544,13 +547,13 @@ export async function workspaceCall(name: string, args: any, x: WorkspaceCallCon
     const c = (assistant ? assistantCols() : userCols()).find((y) => y.name === segs[0])
     if (!c) {
       const theirs = x.allCollections.some((y) => y.name === segs[0] && !writable.has(y.id))
-      return [theirs ? `“${segs[0]}” is the user’s collection, which you can’t change.` : `No collection “${segs[0]}” you can change. Use list_requests.`, true]
+      return [theirs ? `“${segs[0]}” is the user’s collection, which you can’t change.` : 'No collection by that name that you can change. Use list_requests.', true]
     }
     let folder: Folder | undefined
     let parent: string | null = null
     for (const seg of segs.slice(1)) {
       folder = x.folders.find((y) => y.collectionId === c.id && y.parentId === parent && y.name === seg)
-      if (!folder) return [`No folder “${seg}” in ${String(args.path)}.`, true]
+      if (!folder) return ['There is no folder at that path.', true]
       parent = folder.id
     }
     if (hasHidden(args.preRequestScript, args.testScript)) return [hiddenBack, true]

@@ -256,10 +256,10 @@ describe('apply_parameters', () => {
   it('names: twice the same, another one for an existing variable, and what a path variable can’t be called', async () => {
     const c = col(), r = typical(c, { url: 'https://shop.test/:shop/users/12345', pathVars: [kv('shop', '1')] })
     const s = make({ collections: [c], requests: [r], globals: [kv('any', '*/*x')] })
-    expect(await refused(s.move({ 'bearer token': 'same', 'API key': 'same' }))).toContain('“same”')
+    expect(await refused(s.move({ 'bearer token': 'same', 'API key': 'same' }))).toContain('already used')
     const two = make({ collections: [c], requests: [req(c, { url: 'https://shop.test/users/12345/orders/67890' })] }), g = await two.suggest()
-    expect(await refused(two.run('apply_parameters', { name: 'Shop/Create order', batch: g.batch, choose: Object.fromEntries(g.lines.filter((l) => l[1].includes('path')).map((l) => [l[0], 'same'])), where: 'globals' }))).toContain('“same” is already used')
-    expect(await refused(s.move({ 'bearer token': '$guid' }))).toContain('can’t be a name')
+    expect(await refused(two.run('apply_parameters', { name: 'Shop/Create order', batch: g.batch, choose: Object.fromEntries(g.lines.filter((l) => l[1].includes('path')).map((l) => [l[0], 'same'])), where: 'globals' }))).toContain('is already used')
+    expect(await refused(s.move({ 'bearer token': '$guid' }))).toContain('can’t be used')
     for (const n of ['shop', 'a-é', '1a']) expect(await refused(s.move({ 'ID in the path': n }))).toContain('Nothing was changed.')
     const t = make({ collections: [c], requests: [req(c, { url: 'https://shop.test/acme-prod' })], globals: [kv('tenant', 'acme-prod')] })
     expect(await refused(t.move({ tenant: 'other' }))).toContain('already a variable')
@@ -374,7 +374,7 @@ describe('apply_parameters', () => {
       expect((await good(make({ ...o, environments: [o.active, envOf([], 'Prod')] }).move({ 'base URL': '', 'bearer token': '' }))).warnings).toEqual([])
       expect((await good(make(o).move({ 'base URL': 'address' }, 'collection'))).warnings).toEqual([])
       // readable, so never under a secret's name
-      expect(await refused(make(o).move({ 'base URL': 'authToken' }, 'collection'))).toContain('has a secret’s name')
+      expect(await refused(make(o).move({ 'base URL': 'authToken' }, 'collection'))).toContain('is a secret’s name')
     })
     it('an existing secret where it was', async () => {
       const c = col(), p = await good(make({ collections: [c], requests: [typical(c)], active: envOf([secretVar('tok', TOKEN)]) }).move({ tok: '' }))
@@ -435,11 +435,11 @@ describe('set_environment_variables', () => {
     expect(await refused(setup({ environments: [e], active: e, secrets: ['plant-layer-HHHH8'] }).run('set_environment_variables', { variables: { base: 'z' } }))).toContain('is secret')
   })
   it('only the open workspace’s environments, one of that name, and one that is there', async () => {
-    expect(await refused(set({ environment: 'Far', variables: { a: 'b' } }))).toContain('No environment “Far”')
+    expect(await refused(set({ environment: 'Far', variables: { a: 'b' } }))).toContain('No environment by that name')
     expect(await refused(setup({ environments: [far], active: far }).run('set_environment_variables', { variables: { a: 'b' } }))).toContain('No environment is active')
     expect(await refused(setup({ environments: [prod, envOf([], 'Prod')] }).run('set_environment_variables', { environment: 'Prod', variables: { a: 'b' } }))).toContain('more than one')
     const named = envOf([], 'E plant-env-IIII9'), s = setup({ environments: [named], secrets: ['plant-env-IIII9'] })
-    expect(await refused(s.run('set_environment_variables', { environment: named.name, variables: { a: 'b' } }))).toContain('No environment “E <hidden>”')
+    expect(await refused(s.run('set_environment_variables', { environment: named.name, variables: { a: 'b' } }))).toContain('No environment by that name')
     const p = await good(s.run('set_environment_variables', { environment: 'E <hidden>', variables: { a: 'b' } }))
     expect([p.title, (p.changes[0].after as Environment).name]).toEqual(['Change the variables of “E <hidden>”', named.name])
   })

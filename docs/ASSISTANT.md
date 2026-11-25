@@ -160,8 +160,9 @@ dialogs) and `src-tauri/src/ai.rs` (sends and streams, because the webview's CSP
 - A known value that crosses a text hidden by its pattern hides its neighbours too. The chat can't make one by an edit
   (see Proposals), but a person's send can: a header filled from a variable the chat set is in the history as a secret.
   So can a script that runs.
-- A whole known secret the model guessed comes back as `<hidden>`, in a text it wrote or a refusal, so a short or
-  guessable one can be confirmed, many guesses at a time. That needs the whole value, never a part of it.
+- A whole known secret the model guessed comes back as `<hidden>` in a text it wrote and the person approved, so a short or
+  guessable one can be confirmed that way. That needs the whole value, never a part of it. Refusals don't repeat what the
+  model wrote unless something is there by that name (`assistant-oracle.test.ts`); keep that for every new one.
 - What a change took away is remembered in memory only: after a restart, a copy of it elsewhere under an ordinary name is
   ordinary data.
 - Base64 and HTML-escaped forms of a secret aren't recognised.

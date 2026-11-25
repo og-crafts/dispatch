@@ -71,6 +71,7 @@ export async function propose(name: string, input: Record<string, unknown>, ctx:
   const w = ctx.world()
   if (w.settings.activeSpaceId !== ctx.spaceId) return { refused: 'The person opened another workspace, so this chat can’t change anything here now. Nothing was changed.' }
   const cl = cleaner(ctx, w)
+  // A refusal doesn't repeat what the model wrote, unless it is there by that name: cleaned, it would tell whether it is a secret.
   const refuse = (text: string): Refused => ({ refused: `${cl.clean(text)} Nothing was changed.` })
   const hiddenBack = refuse(`${HIDDEN} stands for a secret you weren’t shown, so it can’t be saved.`)
   // A path may hold it (a name with a secret in it is shown so); what would be written may not.
@@ -259,7 +260,7 @@ function badPlace(tool: string, path: string, collections: Collection[], folders
   if (segs[0] === 'assistant' || p.startsWith(ASSISTANT_PREFIX)) {
     // the edit code takes this for its own workspace, unless it finds the collection and its folder
     const c = collections.find((x) => x.name === 'assistant')
-    if (!c || (segs[1] && !folders.some((f) => f.collectionId === c.id && f.parentId === null && f.name === segs[1]))) return `“${path}” isn’t in the open workspace, and can’t be made under that name.`
+    if (!c || (segs[1] && !folders.some((f) => f.collectionId === c.id && f.parentId === null && f.name === segs[1]))) return 'That place isn’t in the open workspace, and can’t be made under that name.'
   }
   const several = (what: string, seg: string) => `There is more than one ${what} “${seg}” there. Ask the person to rename one.`
   const cols = collections.filter((c) => c.name === segs[0])
@@ -299,7 +300,7 @@ export function badVariables(input: Record<string, unknown>, vars: KV[], cl: Cle
   const set = Object.keys((input.variables as object) ?? {}), drop = (input.remove as string[] | undefined) ?? []
   for (const k of [...set, ...drop]) if (vars.some((v) => v.key.trim() === k.trim() && isSecret(v, cl))) return `The variable “${k}” is secret, so it can’t be set or removed here. Ask the person to do it.`
   const odd = set.find((k) => !/^[^{}\s]+$/.test(k))
-  if (odd !== undefined) return `“${odd}” can’t be a variable’s name: no spaces or braces, and not empty.`
+  if (odd !== undefined) return 'A variable’s name can’t have spaces or braces, or be empty.'
   if (set.some((k) => drop.includes(k))) return 'A variable can’t be set and removed at once.'
   return null
 }

@@ -290,10 +290,10 @@ export function applyParameters(input: Record<string, unknown>, ctx: ProposeCont
     if (s.kind === 'existing') {
       if (name !== s.varName) return refuse(`“${id}” is already a variable, so it keeps its name: choose it with "".`)
     } else {
-      if (!NAME.test(name) || name in FAKE || (s.kind === 'pathId' && !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(name))) return refuse(`“${name}” can’t be a name here: no spaces or braces, not empty, and in the path only letters, digits, _ and -.`)
+      if (!NAME.test(name) || name in FAKE || (s.kind === 'pathId' && !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(name))) return refuse(`The name for “${id}” can’t be used: no spaces or braces, not empty, and in the path only letters, digits, _ and -.`)
       // what can be read must not become a known secret: see places.ts
-      if (!s.secret && secretName(name)) return refuse(`“${name}” has a secret’s name, and this isn’t one. Choose another name.`)
-      if (taken.has(name)) return refuse(`“${name}” is already used there. Choose another name.`)
+      if (!s.secret && secretName(name)) return refuse(`The name for “${id}” is a secret’s name, and this isn’t one. Choose another name.`)
+      if (taken.has(name)) return refuse(`The name for “${id}” is already used there. Choose another name.`)
       taken.add(name)
     }
     chosen.push({ ...s, varName: name })
@@ -344,7 +344,7 @@ export function setEnvironmentVariables(input: Record<string, unknown>, ctx: Pro
   const { real } = cleanWorld(w, ctx.spaceId, cl)
   const wanted = input.environment === undefined ? null : String(input.environment)
   const list = wanted === null ? (real.active ? [real.active] : []) : real.environments.filter((e) => cl.clean(e.name) === wanted)
-  if (!list.length) return refuse(wanted === null ? 'No environment is active: name one.' : `No environment “${wanted}”. Use get_environment.`)
+  if (!list.length) return refuse(wanted === null ? 'No environment is active: name one.' : 'No environment by that name. Use get_environment.')
   if (list.length > 1) return refuse(`There is more than one environment “${wanted}”. Ask the person to rename one.`)
   const env = list[0]
   const set = Object.entries((input.variables as Record<string, string>) ?? {}), drop = ((input.remove as string[] | undefined) ?? []).map((k) => k.trim())
@@ -354,7 +354,7 @@ export function setEnvironmentVariables(input: Record<string, unknown>, ctx: Pro
   if (why) return refuse(why)
   const at = (k: string) => (v: KV) => v.key.trim() === k.trim()
   const none = drop.find((k) => !env.variables.some(at(k)))
-  if (none !== undefined) return refuse(`There is no variable “${none}” in that environment.`)
+  if (none !== undefined) return refuse('A name to remove isn’t in that environment.')
 
   const lower = [...real.collections.flatMap((c) => c.variables), ...real.globals, ...real.requests.flatMap((x) => x.handoff?.variables ?? [])]
   const hides = set.map(([k]) => k).find((k) => SECRET_NAME.test(k) && !env.variables.some(at(k)) && lower.some(at(k)))

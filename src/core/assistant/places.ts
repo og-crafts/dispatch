@@ -26,12 +26,12 @@ export function literalIn(input: Record<string, unknown>, was: RequestDef | unde
     if ((!secretName(k) && !API_KEY_HEADER.test(k.trim())) || isRef(v) || REF.test(v.replace(SCHEME, ''))) continue
     // given back as it can be read
     if (was?.headers.some((h) => h.key === k && h.value === v && JSON.stringify(cl.deep(h)) === JSON.stringify(h))) continue
-    return `A header named like “${k}” is treated as a secret, so it can’t be given a value here, only a {{variable}} (also after Bearer, Basic, Digest or Token). ${PLAIN}`
+    return `A header there has a name that is treated as a secret, so it can’t be given a value here, only a {{variable}} (also after Bearer, Basic, Digest or Token). ${PLAIN}`
   }
   if (input.url === undefined || input.url === null) return null
   const url = String(input.url).trim()
   const p = paramsFromUrl(url, []).find((x) => secretName(x.key) && !isRef(x.value))
-  if (p) return `A query parameter named like “${p.key}” is treated as a secret, so it can’t be given a value here, only a {{variable}}. ${PLAIN}`
+  if (p) return `A query parameter there has a name that is treated as a secret, so it can’t be given a value here, only a {{variable}}. ${PLAIN}`
   return hideInText(url) !== url ? 'That URL holds what looks like a secret, such as a password. Use a {{variable}} for it.' : null
 }
 
