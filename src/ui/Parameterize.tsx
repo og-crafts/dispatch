@@ -1,17 +1,13 @@
 import { useMemo, useState } from 'react'
-import { type KnownVar, type Suggestion, applySuggestions, suggest } from '../core/parameterize'
-import type { KV } from '../core/types'
+import { addVariables, applySuggestions, knownVars, type Suggestion, suggest } from '../core/parameterize'
 import type { WorkspaceApi } from './useWorkspace'
 
 /** Suggests turning hard-coded parts of the open request into variables, and applies the chosen ones. */
 export function ParameterizePanel({ ws, notify, onClose }: { ws: WorkspaceApi; notify: (m: string) => void; onClose: () => void }) {
-  const known = useMemo<KnownVar[]>(() => {
-    const out: KnownVar[] = []
-    const add = (rows: KV[] | undefined, from: string) => rows?.forEach((v) => { if (v.enabled && v.key.trim() && v.value) out.push({ key: v.key.trim(), value: v.value, from }) })
-    add(ws.environment?.variables, ws.environment?.name ?? 'the environment'); add(ws.collection?.variables, ws.collection?.name ?? 'the collection'); add(ws.globals, 'Globals')
-    return out
-  }, [ws.environment, ws.collection, ws.globals])
-  const suggestions = useMemo(() => suggest(ws.draft, known), [ws.draft, known])
+  const suggestions = useMemo(() => {
+    const names = [...(ws.environment?.variables ?? []), ...(ws.collection?.variables ?? []), ...ws.globals].map((v) => v.key.trim())
+    return suggest(ws.draft, knownVars(ws.environment, ws.collection, ws.globals), names)
+  }, [ws.draft, ws.environment, ws.collection, ws.globals])
   const [off, setOff] = useState<Set<string>>(new Set())
   const [target, setTarget] = useState<string>(() => (ws.environment ? `env:${ws.environment.id}` : ws.collection ? 'collection' : 'new-env'))
   const chosen = suggestions.filter((s) => !off.has(s.id))
@@ -20,16 +16,18 @@ export function ParameterizePanel({ ws, notify, onClose }: { ws: WorkspaceApi; n
   const apply = async () => {
     const { request, create } = applySuggestions(ws.draft, chosen)
     if (create.length) {
-      const merge = (rows: KV[]) => [...rows, ...create.filter((c) => !rows.some((r) => r.key === c.key))]
-      if (target.startsWith('env:')) {
-        const e = ws.environments.find((x) => `env:${x.id}` === target)
-        if (e) await ws.updateEnvironment({ ...e, variables: merge(e.variables) })
-      } else if (target === 'collection' && ws.collection) await ws.updateCollection({ ...ws.collection, variables: merge(ws.collection.variables) })
-      else if (target === 'globals') await ws.setGlobals(merge(ws.globals))
+      const e = ws.environments.find((x) => `env:${x.id}` === target)
+      const rows = target.startsWith('env:') ? e?.variables : target === 'collection' ? ws.collection?.variables : target === 'globals' ? ws.globals : []
+      const got = rows && addVariables(rows, create)
+      if (!got) { notify('That place isn’t there any more. Choose another one. Nothing was changed.'); return }
+      if ('taken' in got) { notify(`“${got.taken}” is already there. Choose another place, or rename that one first. Nothing was changed.`); return }
+      if (e) await ws.updateEnvironment({ ...e, variables: got.rows })
+      else if (target === 'collection') await ws.updateCollection({ ...ws.collection!, variables: got.rows })
+      else if (target === 'globals') await ws.setGlobals(got.rows)
       else {
-        const e = await ws.addEnvironment('Default')
-        await ws.updateEnvironment({ ...e, variables: create })
-        ws.setSettings({ activeEnvId: e.id })
+        const fresh = await ws.addEnvironment('Default')
+        await ws.updateEnvironment({ ...fresh, variables: create })
+        ws.setSettings({ activeEnvId: fresh.id })
       }
     }
     ws.setDraft(() => request)

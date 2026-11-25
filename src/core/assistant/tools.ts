@@ -8,17 +8,18 @@ import type { McpSignIn } from '../mcpAuth'
 import { knownSecrets, logTools, Redactor } from '../mcpLogs'
 import { kv, type Collection, type Environment, type Folder, type HistoryEntry, type KV, type RequestDef } from '../types'
 import type { Connection } from './connections'
+import { parameterTools } from './parameters'
 import type { ToolSpec } from './providers/types'
 
 const ALWAYS = ['list_requests', 'get_request', 'get_environment']
 export const LOG_READS = ['get_logs', 'list_history', 'get_history_entry']
 
 export type ToolClass = 'read' | 'edit' | 'delete'
-/** The class of every tool the gate knows; a name that isn't here never runs. Task 4's tools are one line each. */
-const EDITS: Record<string, ToolClass> = { create_request: 'edit', update_request: 'edit', copy_request: 'edit', move_request: 'edit', set_variables: 'edit', set_scripts: 'edit', delete_request: 'delete' }
-const CLASSES: Record<string, ToolClass> = { ...Object.fromEntries([...ALWAYS, ...LOG_READS].map((n) => [n, 'read' as const])), ...EDITS }
-/** What a small context offers when the job is changing scripts (the read tools come with every job). */
-const SCRIPT_JOB = ['update_request', 'set_scripts']
+/** The class of every tool the gate knows; a name that isn't here never runs. */
+const EDITS: Record<string, ToolClass> = { create_request: 'edit', update_request: 'edit', copy_request: 'edit', move_request: 'edit', set_variables: 'edit', set_scripts: 'edit', delete_request: 'delete', apply_parameters: 'edit', set_environment_variables: 'edit' }
+const CLASSES: Record<string, ToolClass> = { ...Object.fromEntries([...ALWAYS, ...LOG_READS].map((n) => [n, 'read' as const])), suggest_parameters: 'read', ...EDITS }
+/** What a small context offers when the job is scripts and variables (the other read tools come with every job). */
+const SCRIPT_JOB = ['update_request', 'set_scripts', 'suggest_parameters', 'apply_parameters', 'set_environment_variables']
 /** `reviewed` is for the outside assistants' inbox; the chat has none. */
 const NOT_OFFERED: Record<string, string[]> = { update_request: ['reviewed'] }
 const SMALL_CONTEXT = 16_000
@@ -30,16 +31,16 @@ export const toolClass = (name: string): ToolClass | null => (Object.hasOwn(CLAS
 /**
  * The tools this connection may use. The read ones are the outside-assistant tools, reused; the edit ones are their
  * workspace tools worded for the open workspace only. Under 16,000 context tokens a job gets a few of them: `ask` (the
- * default) none of the edit tools, `scripts` the ones that change scripts. The descriptions hold nothing from the workspace.
+ * default) none of the edit tools, `scripts` the ones for scripts and variables. The descriptions hold nothing from the workspace.
  */
 export function offeredTools(conn: Connection, job: 'ask' | 'scripts' = 'ask'): ToolSpec[] {
   if (conn.tools === 'no') return []
-  const pool = [...mcpTools([], true), ...logTools([]), ...workspaceTools('open', false)]
+  const pool = [...mcpTools([], true), ...logTools([]), ...workspaceTools('open', false), ...parameterTools()]
   const small = smallContext(conn)
-  const wanted = (n: string) => (toolClass(n) === 'read' ? ALWAYS.includes(n) || !!conn.readLogs : !small || (job === 'scripts' && SCRIPT_JOB.includes(n)))
+  const wanted = (n: string) => (ALWAYS.includes(n) ? true : LOG_READS.includes(n) ? !!conn.readLogs : !small || (job === 'scripts' && SCRIPT_JOB.includes(n)))
   return Object.keys(CLASSES).filter(wanted).flatMap((n) => {
     const t = pool.find((x) => x.name === n)
-    if (!t) return [] // a tool a later task adds
+    if (!t) return []
     const drop = NOT_OFFERED[n]
     if (!drop) return [t]
     const schema = t.inputSchema as { properties: Record<string, unknown> }

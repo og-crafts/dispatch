@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { newConnection, type Connection } from '../src/core/assistant/connections'
 import { runTool, validate } from '../src/core/assistant/gate'
 import { ask, type LoopEvents } from '../src/core/assistant/loop'
+import { ParameterBatches } from '../src/core/assistant/parameters'
 import { allSecrets, readOnlyTools, systemPrompt } from '../src/core/assistant/tools'
 import { createProvider } from '../src/core/assistant/providers'
 import { AssistantError } from '../src/core/assistant/providers/shared'
@@ -97,7 +98,7 @@ const secrets = () => allSecrets({
   environments: [staging, foreign], globals: [secretVar('g', S.globalVar)], collections: [shop, elsewhere], folders: [folder], requests: [items, formReq, bodyPwd],
   connections: [anthropic(), cloud({ key: S.otherKey })], signIns: [signIn], cookies: [{ value: S.cookie }, { value: S.respHeader }], clientCerts: [{ key: PEM }], history: [entry], hostToken: S.host,
 })
-const ctx = (c = conn(), over: Partial<Parameters<typeof runTool>[2]> = {}) => ({ world: () => makeWorld(), conn: c, spaceId: 'default', signal: new AbortController().signal, secrets, ...over })
+const ctx = (c = conn(), over: Partial<Parameters<typeof runTool>[2]> = {}) => ({ world: () => makeWorld(), conn: c, spaceId: 'default', signal: new AbortController().signal, secrets, batches: new ParameterBatches(), ...over })
 const noSecrets = (t: string) => {
   for (const s of [...SECRETS, KEY]) for (const v of [s, JSON.stringify(s).slice(1, -1), encodeURIComponent(s)]) expect(t).not.toContain(v)
   expect(t).not.toContain('word-2') // the end of a password with commas in it
@@ -113,10 +114,10 @@ afterEach(() => { vi.useRealTimers() })
 describe('the tools offered', () => {
   const names = (c: Connection) => readOnlyTools(c).map((t) => t.name)
   it('reads only, log tools with readLogs, none when the model can’t use tools', () => {
-    expect(names(conn({ readLogs: true }))).toEqual(['list_requests', 'get_request', 'get_environment', 'get_logs', 'list_history', 'get_history_entry'])
-    expect(names(conn({ readLogs: false }))).toEqual(['list_requests', 'get_request', 'get_environment'])
+    expect(names(conn({ readLogs: true }))).toEqual(['list_requests', 'get_request', 'get_environment', 'get_logs', 'list_history', 'get_history_entry', 'suggest_parameters'])
+    expect(names(conn({ readLogs: false }))).toEqual(['list_requests', 'get_request', 'get_environment', 'suggest_parameters'])
     expect(names(conn({ tools: 'no' }))).toEqual([])
-    expect(names(conn({ tools: 'unknown', readLogs: false }))).toHaveLength(3)
+    expect(names(conn({ tools: 'unknown', readLogs: false }))).toHaveLength(4)
   })
   it('descriptions hold nothing from the workspace', () => {
     const t = JSON.stringify(readOnlyTools(conn()))

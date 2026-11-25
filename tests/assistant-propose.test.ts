@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { cleaner } from '../src/core/assistant/clean'
 import { newConnection } from '../src/core/assistant/connections'
+import { ParameterBatches } from '../src/core/assistant/parameters'
 import type { Proposal } from '../src/core/assistant/proposal'
 import { propose, proposalOf, type ProposeContext } from '../src/core/assistant/propose'
 import { allSecrets } from '../src/core/assistant/tools'
@@ -25,6 +26,7 @@ const setup = (o: W = {}) => {
   const ctx: ProposeContext = {
     world: () => world, conn, signal: new AbortController().signal, spaceId: o.space ?? 'default',
     secrets: () => [...(o.secrets ?? []), ...allSecrets({ environments: ws.environments, globals: world.globals, collections: ws.collections, folders: ws.folders, requests: ws.requests, connections: [conn], signIns: [], cookies: [], clientCerts: [] })],
+    batches: new ParameterBatches(),
     unsaved: (id) => (o.unsaved ?? []).includes(id), schedules: async () => o.schedules ?? [],
   }
   return { world, ctx, run: (name: string, input: Record<string, unknown>) => propose(name, input, ctx) }

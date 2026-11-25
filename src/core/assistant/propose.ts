@@ -17,6 +17,7 @@ import { splitUrl, withScheme } from '../url'
 import { namesIn } from '../vars'
 import { cleaner } from './clean'
 import type { ToolContext } from './gate'
+import { applyParameters, setEnvironmentVariables } from './parameters'
 import { canonical, type Change, type Field, type Line, type Proposal, type Rec } from './proposal'
 import { toolClass } from './tools'
 
@@ -26,32 +27,38 @@ export interface ProposeContext extends ToolContext {
   schedules(): Promise<Schedule[]>
 }
 
-type Cleaner = ReturnType<typeof cleaner>
+export type Cleaner = ReturnType<typeof cleaner>
 interface World { collections: Collection[]; folders: Folder[]; requests: RequestDef[]; environments: Environment[]; globals: KV[]; active: Environment | null }
 /** What the model itself supplied, so it is shown exactly. `headers` (names in lower case) and `variables` with the values it gave. */
 interface Exact { name?: boolean; url?: boolean; body?: boolean; docs?: boolean; pre?: boolean; post?: boolean; headers?: Map<string, string>; variables?: Map<string, string> }
-export interface Draft { tool: string; title: string; changes: Change[]; reply: string; exact?: Exact; sources?: Map<string, RequestDef> }
-type Refused = { refused: string }
+export interface Draft { tool: string; title: string; changes: Change[]; reply: string; exact?: Exact; sources?: Map<string, RequestDef>
+  /** What the card says besides the risks. */
+  notes?: string[]
+  /** Variables by name, with the value each took the place of in the request. */
+  moved?: Map<string, string>
+  /** Hides more than the usual one: what moves. */
+  cleaner?: Cleaner }
+export type Refused = { refused: string }
 
 /** Stands for the open workspace while the edit code runs: what it makes for its own ("assistant") can't be mistaken for it. */
 const OPEN = '(open)'
 /** The fields that name something which may already be there, as the model was shown it. */
-const PATHS: Record<string, string[]> = { create_request: ['folder'], update_request: ['name'], copy_request: ['from', 'to'], move_request: ['name', 'to'], delete_request: ['name'], set_variables: ['collection'], set_scripts: ['path'] }
+const PATHS: Record<string, string[]> = { create_request: ['folder'], update_request: ['name'], copy_request: ['from', 'to'], move_request: ['name', 'to'], delete_request: ['name'], set_variables: ['collection'], set_scripts: ['path'], apply_parameters: ['name'], set_environment_variables: ['environment'] }
 /** The ones that are a place (collection and folders), not a request. */
 const PLACES: Record<string, string> = { create_request: 'folder', copy_request: 'to', move_request: 'to', set_variables: 'collection', set_scripts: 'path' }
 const IS_VAR = /^\s*\{\{[^{}]+\}\}\s*$/
 const TEXT_BODIES = ['json', 'text', 'xml', 'html', 'graphql']
-const FIELD_BODIES = ['urlencoded', 'formdata']
+export const BODY_FIELDS = ['urlencoded', 'formdata']
 
 const given = (v: unknown) => v !== undefined && v !== null
-const held = (what: string) => `The ${what} holds a secret you weren’t shown, so it can’t be changed or removed here. Ask the person to move the secret into a {{variable}} first.`
+export const held = (what: string) => `The ${what} holds a secret you weren’t shown, so it can’t be changed or removed here. Ask the person to move the secret into a {{variable}} first.`
 const isEmpty = (s: string) => !s.trim()
 const plural = (n: number, what: string) => `${n} ${what}${n === 1 ? '' : 's'}`
 
 /** Control, zero-width and direction characters as codes, so text can't look like something else. Lines and tabs stay. */
 const drawn = (s: string) => s.replace(/(?![\n\t])[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/gu, (c) => `\\u{${c.codePointAt(0)!.toString(16).toUpperCase()}}`)
 /** For one line: a name in a title or a warning. */
-const oneLine = (s: string) => drawn(s).replace(/[\n\t]/g, (c) => `\\u{${c.charCodeAt(0).toString(16).toUpperCase()}}`)
+export const oneLine = (s: string) => drawn(s).replace(/[\n\t]/g, (c) => `\\u{${c.charCodeAt(0).toString(16).toUpperCase()}}`)
 
 /** Turns an edit call into what the person is asked to approve, or says why not. Writes and sends nothing. */
 export async function propose(name: string, input: Record<string, unknown>, ctx: ProposeContext): Promise<Proposal | Refused> {
@@ -66,25 +73,19 @@ export async function propose(name: string, input: Record<string, unknown>, ctx:
   // A path may hold it (a name with a secret in it is shown so); what would be written may not.
   if (JSON.stringify(Object.entries(input).filter(([k]) => !PATHS[name].includes(k))).includes(HIDDEN)) return hiddenBack
 
-  // The open workspace, as the edit code gets it: real but for the names, and without what it has no business with.
-  const real = openWorld(w, ctx.spaceId)
-  const collections = real.collections.map((c): Collection => ({ ...c, name: cl.clean(c.name), workspaceId: OPEN, variables: c.variables.map((v) => ({ ...v, key: cl.clean(v.key) })) }))
-  const folders = real.folders.map((f): Folder => ({ ...f, name: cl.clean(f.name) }))
-  const requests = real.requests.map(({ handoff: _, ...r }): RequestDef => ({ ...r, name: cl.clean(r.name) }))
-  const find = finder({ ws: { ...w.ws, collections, folders, requests, environments: [] }, allCollections: true })
+  if (name === 'apply_parameters' || name === 'set_environment_variables') {
+    const d = (name === 'apply_parameters' ? applyParameters : setEnvironmentVariables)(input, ctx, w, cl)
+    return 'refused' in d ? refuse(d.refused) : proposalOf(ctx, w, d.cleaner ?? cl, d)
+  }
+  const { real, collections, folders, requests, lookup } = cleanWorld(w, ctx.spaceId, cl)
 
   const bad = PLACES[name] && badPlace(name, String(input[PLACES[name]] ?? ''), collections, folders)
   if (bad) return refuse(bad)
   let found: RequestDef | undefined
-  const lookup: typeof find.lookup = (path) => {
-    if (find.items().filter((it) => find.pathOf(it) === path).length > 1) return { error: `Several requests are at “${path}”. Ask the person to rename one of them.` }
-    const r = find.lookup(path)
-    if ('it' in r) found = real.requests.find((x) => x.id === r.it.request.id)
-    return r
-  }
   if (!PLACES[name] || name === 'copy_request' || name === 'move_request') {
     const r = lookup(String(input[PATHS[name][0]] ?? ''))
     if ('error' in r) return refuse(r.error)
+    found = real.requests.find((x) => x.id === r.it.request.id)
     if (ctx.unsaved(r.it.request.id)) return refuse(`Save or discard your changes to “${oneLine(r.it.request.name)}” first.`)
   }
   // Before the edit code looks at the values: what it answers could tell a right guess from a wrong one.
@@ -176,8 +177,22 @@ export async function proposalOf(ctx: ProposeContext, w: McpServeOptions, cl: Cl
   if (!d.changes.length) return { refused: 'This wouldn’t change anything. Nothing was changed.' }
   return {
     id: uid(), spaceId: ctx.spaceId, tool: d.tool, cls: toolClass(d.tool) === 'delete' ? 'delete' : 'edit', title: oneLine(cl.clean(d.title)), fields,
-    warnings: warningsOf(d, before, after, await ctx.schedules(), cl), changes: d.changes, reply: cl.clean(d.reply),
+    warnings: [...(d.notes ?? []).map((n) => oneLine(cl.clean(n))), ...warningsOf(d, before, after, await ctx.schedules(), cl)], changes: d.changes, reply: cl.clean(d.reply),
   }
+}
+
+/** The open workspace, as the edit code gets it: real but for the names, and without what it has no business with. */
+export function cleanWorld(w: McpServeOptions, spaceId: string, cl: Cleaner) {
+  const real = openWorld(w, spaceId)
+  const collections = real.collections.map((c): Collection => ({ ...c, name: cl.clean(c.name), workspaceId: OPEN, variables: c.variables.map((v) => ({ ...v, key: cl.clean(v.key) })) }))
+  const folders = real.folders.map((f): Folder => ({ ...f, name: cl.clean(f.name) }))
+  const requests = real.requests.map(({ handoff: _, ...r }): RequestDef => ({ ...r, name: cl.clean(r.name) }))
+  const find = finder({ ws: { ...w.ws, collections, folders, requests, environments: [] }, allCollections: true })
+  const lookup: typeof find.lookup = (path) => {
+    if (find.items().filter((it) => find.pathOf(it) === path).length > 1) return { error: `Several requests are at “${path}”. Ask the person to rename one of them.` }
+    return find.lookup(path)
+  }
+  return { real, collections, folders, requests, lookup }
 }
 
 const byId = <T extends { id: string }>(l: T[]) => new Map(l.map((x) => [x.id, x]))
@@ -231,7 +246,7 @@ function badPlace(tool: string, path: string, collections: Collection[], folders
 }
 
 /** Without what no tool changes and what can be large. */
-const light = (r: RequestDef): RequestDef => ({ ...r, examples: [], body: { ...r.body, file: null, fields: r.body.fields.map((f) => ({ ...f, file: null })) } })
+export const light = (r: RequestDef): RequestDef => ({ ...r, examples: [], body: { ...r.body, file: null, fields: r.body.fields.map((f) => ({ ...f, file: null })) } })
 
 /** Which of the fields an update names hold something hidden, whether or not it would change. */
 function heldInRequest(input: Record<string, unknown>, real: RequestDef, cl: Cleaner): string | null {
@@ -242,7 +257,7 @@ function heldInRequest(input: Record<string, unknown>, real: RequestDef, cl: Cle
   if (given(input.url) && (s.url !== r.url || differs(on(s.params), on(r.params)))) return 'URL'
   if (given(input.docs) && s.docs !== r.docs) return 'docs text'
   if ((given(input.preRequestScript) && s.scripts.pre !== r.scripts.pre) || (given(input.testScript) && s.scripts.post !== r.scripts.post)) return 'script'
-  if ((given(input.body) || given(input.bodyType)) && (s.body.text !== r.body.text || (r.body.kind === 'graphql' && s.body.graphqlVariables !== r.body.graphqlVariables) || (FIELD_BODIES.includes(r.body.kind) && differs(s.body.fields, r.body.fields)))) return 'body'
+  if ((given(input.body) || given(input.bodyType)) && (s.body.text !== r.body.text || (r.body.kind === 'graphql' && s.body.graphqlVariables !== r.body.graphqlVariables) || (BODY_FIELDS.includes(r.body.kind) && differs(s.body.fields, r.body.fields)))) return 'body'
   for (const [k, v] of Object.entries((input.headers as Record<string, string>) ?? {})) {
     const i = r.headers.findIndex((h, n) => h.key.toLowerCase() === k.toLowerCase() && differs(s.headers[n], h))
     if (i >= 0 && !IS_VAR.test(String(v))) return `header “${s.headers[i].key}”`
@@ -251,7 +266,7 @@ function heldInRequest(input: Record<string, unknown>, real: RequestDef, cl: Cle
 }
 
 /** Why these variables can't be set or removed. A secret one never can, whatever its value and the case it is in. */
-function badVariables(input: Record<string, unknown>, vars: KV[], cl: Cleaner): string | null {
+export function badVariables(input: Record<string, unknown>, vars: KV[], cl: Cleaner): string | null {
   const set = Object.keys((input.variables as object) ?? {}), drop = (input.remove as string[] | undefined) ?? []
   for (const k of [...set, ...drop]) if (vars.some((v) => v.key.trim() === k.trim() && isSecret(v, cl))) return `The variable “${k}” is secret, so it can’t be set or removed here. Ask the person to do it.`
   const odd = set.find((k) => !/^[^{}\s]+$/.test(k))
@@ -263,9 +278,9 @@ function badVariables(input: Record<string, unknown>, vars: KV[], cl: Cleaner): 
 const isSecret = (v: KV, cl: Cleaner) => !!v.secret || JSON.stringify(cl.deep(v)) !== JSON.stringify(v)
 
 const SCRIPT_RISK = 'Scripts run when this is sent. They can read variables, including secrets, and send requests.'
-const LABELS: Record<string, string> = { url: 'URL', params: 'URL', docs: 'docs text', scripts: 'script', auth: 'sign-in', headers: 'list of headers', variables: 'list of variables' }
+const LABELS: Record<string, string> = { url: 'URL', params: 'URL', docs: 'docs text', scripts: 'script', auth: 'sign-in', headers: 'list of headers', pathVars: 'list of path variables', variables: 'list of variables' }
 /** The first part of a record whose hidden text would be replaced or removed, or null. */
-function lost(before: Rec, after: Rec, cl: Cleaner): string | null {
+export function lost(before: Rec, after: Rec, cl: Cleaner): string | null {
   if (Array.isArray(before)) return hiddenGone(before, cl.deep(before), after, 'variables') ? 'variables' : null
   const b = 'body' in before ? light(before) : before
   const shown = cl.deep(b) as unknown as Record<string, unknown>
@@ -290,7 +305,7 @@ function hiddenGone(b: unknown, shown: unknown, a: unknown, at: string, key = ''
 // ---- putting back what a tool didn't mean to change ----
 
 /** With alternatives, the active one follows the value. */
-const inStep = (v: KV): KV => (v.options?.some((o) => o.name === v.active && o.value !== v.value) ? { ...v, options: v.options.map((o) => (o.name === v.active ? { ...o, value: v.value } : o)) } : v)
+export const inStep = (v: KV): KV => (v.options?.some((o) => o.name === v.active && o.value !== v.value) ? { ...v, options: v.options.map((o) => (o.name === v.active ? { ...o, value: v.value } : o)) } : v)
 
 /** The parts the edit code made anew or left out on the way, as they were. */
 function asItWas(r: RequestDef, was: RequestDef | undefined, kindGiven: boolean): RequestDef {
@@ -363,7 +378,7 @@ function requestTexts(real: RequestDef, w: World, exact: Exact, cl: Cleaner, mad
   const r = light(real), s = cl.deep(r)
   const b = r.body
   const body = b.kind === 'none' ? '' : b.kind === 'binary' ? `A file: ${cl.clean(real.body.file?.name ?? 'none')}`
-    : FIELD_BODIES.includes(b.kind) ? rows(b.fields, s.body.fields, () => false, ': ')
+    : BODY_FIELDS.includes(b.kind) ? rows(b.fields, s.body.fields, () => false, ': ')
       : [exact.body ? b.text : s.body.text, ...(b.kind === 'graphql' && s.body.graphqlVariables ? [`Variables: ${s.body.graphqlVariables}`] : [])].join('\n')
   return [
     ['Name', exact.name ? r.name : s.name], ['In', placeText(w, r.collectionId, r.folderId, cl, made)], ['Method', r.method], ['URL', exact.url ? r.url : s.url],
@@ -389,7 +404,7 @@ const authOf = (r: RequestDef, w: World) => { const a = effectiveAuth(r, collect
 /** Every text that is filled in when the request is sent, by where it goes. */
 function sentTexts(r: RequestDef, w: World): Record<string, string[]> {
   const b = r.body
-  const body = b.kind === 'none' || b.kind === 'binary' ? [] : FIELD_BODIES.includes(b.kind) ? on(b.fields).flatMap((f) => [f.key, f.value]) : [b.text, ...(b.kind === 'graphql' ? [b.graphqlVariables] : [])]
+  const body = b.kind === 'none' || b.kind === 'binary' ? [] : BODY_FIELDS.includes(b.kind) ? on(b.fields).flatMap((f) => [f.key, f.value]) : [b.text, ...(b.kind === 'graphql' ? [b.graphqlVariables] : [])]
   const own = r.protocol === 'socketio' ? r.sio : r.protocol === 'http' || r.protocol === 'sse' ? null : r[r.protocol]
   return { url: [r.url], path: r.pathVars.map((v) => v.value), headers: on(r.headers).flatMap((h) => [h.key, h.value]), body, auth: strings(authOf(r, w)), own: strings(own) }
 }
@@ -467,7 +482,8 @@ function carriesSecret(r: RequestDef, w: World, cl: Cleaner): boolean {
   return JSON.stringify(cl.deep(parts)) !== JSON.stringify(parts) || secretsIn(usesOf(r, w), cl).size > 0
 }
 
-function newAddresses(r: RequestDef, was: RequestDef | undefined, before: World, after: World, cl: Cleaner): string[] {
+/** `moved`: its sign-in is the same as before, only in a variable now. */
+function newAddresses(r: RequestDef, was: RequestDef | undefined, before: World, after: World, cl: Cleaner, moved: boolean): string[] {
   const signIn = authOf(r, after)
   const same = (a: Auth | null) => canonical(a as unknown as Rec | null) === canonical(signIn as unknown as Rec | null)
   // each environment against itself before the change, the active one first
@@ -475,7 +491,7 @@ function newAddresses(r: RequestDef, was: RequestDef | undefined, before: World,
   const fresh: { a: Address; known: { x: RequestDef; a: Address }[] }[] = environments.flatMap((e) => {
     const old = e && (before.environments.find((x) => x.id === e.id) ?? null)
     // a new request: where its sign-in (or, without one, anything here) goes already
-    const from = was ? (signIn && !same(authOf(was, before)) ? [] : [was]) : before.requests.filter((x) => !signIn || same(authOf(x, before)))
+    const from = was ? (!moved && signIn && !same(authOf(was, before)) ? [] : [was]) : before.requests.filter((x) => !signIn || same(authOf(x, before)))
     const known = from.flatMap((x) => addresses(x, before, old).flatMap((a) => [
       a,
       // it has no address here so far: what the active environment makes of the same URL isn't new
@@ -520,13 +536,22 @@ function warningsOf(d: Draft, before: World, after: World, schedules: Schedule[]
   const tables = d.changes.filter((c) => c.kind === 'collection' || c.kind === 'environment' || c.kind === 'globals')
   const ids = new Set(d.changes.map((c) => c.id))
   const reached = after.requests.filter((r) => tables.length || ids.has(r.id))
-  for (const r of reached) for (const host of newAddresses(r, origin(r), before, after, cl)) out.add(`Its sign-in would go to a new address: ${safe(host)}.`)
+  for (const r of reached) for (const host of newAddresses(r, origin(r), before, after, cl, !!d.moved && ids.has(r.id))) out.add(`Its sign-in would go to a new address: ${safe(host)}.`)
 
   const uses = (n: string) => out.add(`Uses {{${safe(n)}}}, which is secret.`)
   for (const r of reached) {
     const o = origin(r)
     const old = o && secretPlaces(o, before, cl)
-    for (const [place, { n, sig }] of secretPlaces(r, after, cl)) if (old?.get(place)?.sig !== sig) uses(n)
+    const texts = o && d.moved && ids.has(r.id) ? sentTexts(o, before) : null
+    // a bearer token goes from its header to the sign-in
+    if (texts) texts.auth.push(...on(o!.headers).filter((h) => h.key.toLowerCase() === 'authorization').map((h) => h.value))
+    for (const [place, { n, sig }] of secretPlaces(r, after, cl)) {
+      if (old?.get(place)?.sig === sig) continue
+      // moved: the value was there already, and there is no other by that name
+      const value = d.moved?.get(n)
+      if (value !== undefined && texts?.[place.slice(0, place.indexOf(' '))].some((t) => t.includes(value)) && (JSON.parse(sig) as string[]).every((v) => v === value)) continue
+      uses(n)
+    }
   }
   const changedNames: { name: string; collectionId: string | null }[] = []
   for (const c of tables) {

@@ -5,6 +5,7 @@ import { listChats, type Chat } from '../../core/assistant/chats'
 import { type Connection, reach, validateAddress } from '../../core/assistant/connections'
 import { runTool } from '../../core/assistant/gate'
 import { ask, type Answer } from '../../core/assistant/loop'
+import { ParameterBatches } from '../../core/assistant/parameters'
 import { AssistantError, assertUsable } from '../../core/assistant/providers/shared'
 import { allSecrets, readOnlyTools, systemPrompt } from '../../core/assistant/tools'
 import * as db from '../../core/db'
@@ -136,6 +137,8 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
   const setChat = (c: Chat | null) => { chatRef.current = c; setChatState(c) }
   /** The one on screen; a detached one only finishes and saves its own chat. */
   const current = useRef<Job | null>(null)
+  /** The chat's, in memory only. */
+  const batchesRef = useRef({ chatId: '', batches: new ParameterBatches() })
   const jobs = useRef(new Set<Job>())
   const mounted = useRef(false)
   /** Deleted chats: an answer still ending must not bring them back. */
@@ -228,6 +231,8 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
     let turn = '', n = 0, shown = ''
     const mine = () => current.current === job
     const world = () => worldOf(wsRef.current)
+    if (batchesRef.current.chatId !== start.id) batchesRef.current = { chatId: start.id, batches: new ParameterBatches() }
+    const { batches } = batchesRef.current
     let result: Answer
     try {
       result = await ask({
@@ -239,7 +244,7 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
           const now = conns.find((c) => c.id === conn.id)
           if (differs(conn, now)) { job.ctl.abort(); return { text: 'The connection was changed. Nothing was run.', isError: true } }
           return runTool(name, input, {
-            world, signal, spaceId: start.spaceId, conn: { ...conn, readLogs: conn.readLogs && now?.readLogs === true },
+            world, signal, batches, spaceId: start.spaceId, conn: { ...conn, readLogs: conn.readLogs && now?.readLogs === true },
             secrets: () => secretsOf(wsRef.current, [...r.conns, ...conns], [...r.signIns, ...signIns]),
           })
         },

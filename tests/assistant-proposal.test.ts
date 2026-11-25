@@ -45,13 +45,17 @@ describe('tool classes and what is offered', () => {
     expect(toolClass('get_request')).toBe('read')
     expect(toolClass('update_request')).toBe('edit')
     expect(toolClass('delete_request')).toBe('delete')
+    expect(['suggest_parameters', 'apply_parameters', 'set_environment_variables'].map(toolClass)).toEqual(['read', 'edit', 'edit'])
     for (const n of ['send_request', 'run_collection', 'run_flow', 'made_up', 'constructor', '']) expect(toolClass(n)).toBeNull()
   })
-  it('offers the read tools and the edit tools, never sending or running', () => {
-    const all = names(conn({ readLogs: true }))
-    expect(all).toEqual(expect.arrayContaining(['list_requests', 'create_request', 'update_request', 'copy_request', 'move_request', 'set_variables', 'set_scripts', 'delete_request']))
-    for (const n of ['send_request', 'run_collection', 'run_flow']) expect(all).not.toContain(n)
+  it('offers the read tools and the edit tools', () => {
+    expect(names(conn({ readLogs: true }))).toEqual(expect.arrayContaining(['list_requests', 'suggest_parameters', 'create_request', 'update_request', 'copy_request', 'move_request', 'set_variables', 'set_scripts', 'delete_request', 'apply_parameters', 'set_environment_variables']))
     expect(names(conn({ tools: 'no' }))).toEqual([])
+  })
+  it.each([['ask', undefined], ['scripts', undefined], ['ask', 8_000], ['scripts', 8_000]] as const)('sending and running are never offered (job %s, context %s)', (job, contextTokens) => {
+    const all = names(conn({ readLogs: true, ...(contextTokens ? { contextTokens } : {}) }), job)
+    expect(all).toContain('get_request')
+    for (const n of ['send_request', 'run_collection', 'run_flow']) expect(all).not.toContain(n)
   })
   it('update_request has no `reviewed`', () => {
     const t = offeredTools(conn()).find((x) => x.name === 'update_request')!
@@ -61,7 +65,13 @@ describe('tool classes and what is offered', () => {
     const small = conn({ contextTokens: 8_000 })
     expect(names(small).every((n) => toolClass(n) === 'read')).toBe(true)
     expect(names(small, 'ask')).toEqual(names(small))
-    expect(names(small, 'scripts').filter((n) => toolClass(n) !== 'read').sort()).toEqual(['set_scripts', 'update_request'])
+    expect(names(small, 'scripts').filter((n) => !names(small).includes(n)).sort()).toEqual(['apply_parameters', 'set_environment_variables', 'set_scripts', 'suggest_parameters', 'update_request'])
+    expect(names(small)).not.toContain('suggest_parameters')
+  })
+  it('the chat’s move and delete promise nothing it doesn’t have', () => {
+    const text = (n: string) => offeredTools(conn()).find((t) => t.name === n)!.description
+    expect(text('move_request')).not.toMatch(/handed/)
+    expect(text('delete_request')).toBe('Delete a request from the open workspace. The person decides, and can undo it until Dispatch closes.')
   })
   it('no tool the chat is offered mentions assistant/ or an own workspace', () => {
     const t = JSON.stringify(offeredTools(conn({ readLogs: true })))

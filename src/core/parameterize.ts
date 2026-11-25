@@ -6,7 +6,8 @@
 import type { Auth, KV, RequestDef } from './types'
 import { emptyAuth, kv } from './types'
 import { paramsFromUrl, splitUrl } from './url'
-import { pathVarsFromUrl } from './prepare'
+import { pathVarNames, pathVarsFromUrl } from './prepare'
+import { scopeOf } from './vars'
 
 export type SuggestionKind = 'existing' | 'baseUrl' | 'bearer' | 'apiKeyHeader' | 'basic' | 'pathId'
 
@@ -32,10 +33,30 @@ const singular = (w: string) => w.replace(/ies$/, 'y').replace(/(ss|us)$/, '$1')
 const camel = (w: string) => w.replace(/[^a-zA-Z0-9]+(.)/g, (_, c: string) => c.toUpperCase()).replace(/^[A-Z]/, (c) => c.toLowerCase())
 const uniqueName = (base: string, taken: Set<string>) => { let n = base; let i = 2; while (taken.has(n)) n = `${base}${i++}`; taken.add(n); return n }
 
-/** The suggestions for a request, given the variables already in scope. */
-export function suggest(req: RequestDef, known: KnownVar[]): Suggestion[] {
+type Table = { name: string; variables: KV[] } | null | undefined
+/** The values in scope that their name really stands for: environment, then collection, then a hand-off's, then globals. */
+export function knownVars(environment: Table, collection: Table, globals: KV[], handoff: KV[] = []): KnownVar[] {
+  const scope = scopeOf(globals, handoff, collection?.variables, environment?.variables)
+  const out: KnownVar[] = []
+  const add = (rows: KV[] | undefined, from: string) => rows?.forEach((v) => {
+    const key = v.key.trim()
+    if (v.enabled && key && v.value && scope.get(key) === v.value && !out.some((k) => k.key === key)) out.push({ key, value: v.value, from })
+  })
+  add(environment?.variables, environment?.name || 'the environment'); add(collection?.variables, collection?.name || 'the collection'); add(handoff, 'the original collection'); add(globals, 'Globals')
+  return out
+}
+
+/** The table with new variables added, or the name that is there already (also switched off): its value must not be lost. */
+export function addVariables(rows: KV[], create: KV[]): { rows: KV[] } | { taken: string } {
+  const names = new Set(rows.map((v) => v.key.trim()))
+  for (const v of create) { if (names.has(v.key)) return { taken: v.key }; names.add(v.key) }
+  return { rows: [...rows, ...create] }
+}
+
+/** The suggestions for a request, given the variables already in scope and other names that can't be used (empty or off). */
+export function suggest(req: RequestDef, known: KnownVar[], unusable: string[] = []): Suggestion[] {
   const out: Suggestion[] = []
-  const taken = new Set(known.map((k) => k.key))
+  const taken = new Set([...known.map((k) => k.key), ...unusable, ...pathVarNames(req.url), ...req.pathVars.map((p) => p.key)])
   const byValue = new Map<string, KnownVar>()
   for (const k of known) if (k.value.length >= 4 && !byValue.has(k.value)) byValue.set(k.value, k)
   const used = new Set<string>()

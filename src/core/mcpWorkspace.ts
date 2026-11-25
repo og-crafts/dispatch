@@ -106,7 +106,7 @@ export function workspaceTools(editable?: string, own = true) {
     },
     {
       name: 'move_request',
-      description: `Move (and optionally rename) a request within ${yours}, e.g. to file one the user handed you ${own ? `from assistant/${INBOX} ` : ''}into a proper collection. Its auth comes along, and a collection made for it gets the original collection’s variables. Clears the “handed to you” flag.`,
+      description: `Move (and optionally rename) a request within ${yours}, e.g. to file ${own ? `one the user handed you from assistant/${INBOX} ` : 'it '}into a proper collection. Its auth comes along, and a collection made for it gets the original collection’s variables.${own ? ' Clears the “handed to you” flag.' : ''}`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -119,7 +119,7 @@ export function workspaceTools(editable?: string, own = true) {
     },
     {
       name: 'delete_request',
-      description: `Delete a request from ${yours}. The user can undo it in the app.`,
+      description: `Delete a request from ${yours}. ${own ? 'The user can undo it in the app.' : 'The person decides, and can undo it until Dispatch closes.'}`,
       inputSchema: { type: 'object', properties: { name: { type: 'string', description: `Its path, like "${ex('Orders/Create order')}".` } }, required: ['name'] },
     },
     {

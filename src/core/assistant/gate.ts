@@ -9,6 +9,7 @@ import type { Transport } from '../transport'
 import { spaceOf, type HistoryEntry, type RequestDef } from '../types'
 import type { Connection } from './connections'
 import { cleaner } from './clean'
+import { type ParameterBatches, suggestParameters } from './parameters'
 import { offeredTools, smallContext, toolClass } from './tools'
 export { smallContext }
 
@@ -21,6 +22,8 @@ export interface ToolContext {
   spaceId: string
   /** Secrets beyond the open workspace's: connection keys, sign-ins, cookies, certificate keys, other workspaces (allSecrets). */
   secrets: () => string[]
+  /** What suggest_parameters suggested lately, one per chat. */
+  batches: ParameterBatches
 }
 export interface ToolResult { text: string; isError: boolean }
 
@@ -76,6 +79,10 @@ export async function runTool(name: string, input: unknown, ctx: ToolContext): P
   try {
     const world = ctx.world()
     if (world.settings.activeSpaceId !== ctx.spaceId) return refuse('The person opened another workspace, so this chat can’t read here now. Nothing was run.')
+    if (name === 'suggest_parameters') {
+      const r = suggestParameters(input as Record<string, unknown>, ctx, world)
+      return { text: exit(r.text, cleaner(ctx, world).clean, ctx.conn), isError: r.isError }
+    }
     const { options, clean } = prepare(name, input as Record<string, unknown>, ctx, world)
     const r = await handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: input } }, options)
     return { text: exit(String(r?.result?.content?.[0]?.text ?? 'This tool isn’t available.'), clean, ctx.conn), isError: !r?.result || !!r.result.isError }
