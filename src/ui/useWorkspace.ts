@@ -785,8 +785,9 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     }
     const shown = tabsRef.current
     try {
-      // Stored in one go, or not at all.
-      await db.putMany({ collections: cols, folders: fs, requests: rs, ...(newSpace ? { spaces: spacesRef.current } : {}) })
+      // Stored in one go, or not at all. The list of workspaces too, even if another save added this one: that save may fail.
+      const inSpace = newSpace || cols.some((x) => spaceOf(x) === ASSISTANT_SPACE.id)
+      await db.putMany({ collections: cols, folders: fs, requests: rs, ...(inSpace ? { spaces: () => spacesRef.current } : {}) })
     } catch (e) {
       // Back as it was, but for what was written since.
       const back = <T extends { id: string }>(xs: T[], mine: T[], old: T[]) => [...xs.filter((x) => !mine.includes(x)), ...old.filter((o) => mine.some((m) => m.id === o.id && xs.includes(m)))]

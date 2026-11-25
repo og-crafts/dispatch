@@ -647,6 +647,31 @@ describe('writes that fail', () => {
     })
     expect(await storedRequest(r.id)).toMatchObject({ docs: 'a', url: 'https://applied.test' })
   })
+  it('a workspace added, renamed or removed while a hand-off is being sealed stays so', async () => {
+    const { r } = await seed(); const h = await mount()
+    const sp = await act(() => h.current.addSpace('Old'))
+    const real = secretsOf.request
+    let sealing!: () => void
+    const started = new Promise<void>((res) => { sealing = res })
+    vi.spyOn(secretsOf, 'request').mockImplementationOnce(async (x, f) => { sealing(); await new Promise((res) => setTimeout(res, 40)); return real(x, f) })
+    await act(async () => {
+      const slow = h.current.handToAssistant(r, 'a')
+      await started
+      await h.current.addSpace('New'); await h.current.renameSpace(DEFAULT_SPACE.id, 'Mine'); await h.current.removeSpace(sp.id)
+      await slow
+    })
+    expect((await db.getSpaces()).map((x) => x.name)).toEqual(['Mine', ASSISTANT_SPACE.name, 'New'])
+    expect(await db.getSpaces()).toEqual(h.current.spaces)
+  })
+  it('two assistant saves at once, the first failing: the second still stores the workspace', async () => {
+    await seed(); const h = await mount()
+    const col = (name: string) => ({ ...newCollection(name), workspaceId: ASSISTANT_SPACE.id })
+    vi.spyOn(secretsOf, 'collection').mockRejectedValueOnce(new Error('no'))
+    const got = await act(() => Promise.allSettled(['One', 'Two'].map((n) => h.current.saveAssistant({ collections: [col(n)], folders: [], requests: [] }))))
+    expect(got.map((x) => x.status)).toEqual(['rejected', 'fulfilled'])
+    expect((await db.getSpaces()).map((x) => x.id)).toEqual([DEFAULT_SPACE.id, ASSISTANT_SPACE.id])
+    expect((await db.listCollections()).map((x) => x.name).sort()).toEqual(['Shop', 'Two'])
+  })
   it('a delete that fails puts everything back', async () => {
     const { c, f, r, e } = await seed(); const h = await mount()
     act(() => h.current.openRequest(r))
