@@ -95,7 +95,7 @@ export async function propose(name: string, input: Record<string, unknown>, ctx:
     if (ctx.unsaved(r.it.request.id)) return refuse(`Save or discard your changes to “${oneLine(r.it.request.name)}” first.`)
   }
   // Before the edit code looks at the values: what it answers could tell a right guess from a wrong one.
-  const kept = name === 'update_request' ? heldInRequest(input, found!, cl) : null
+  const kept = name === 'update_request' ? heldInRequest(input, found!, cl) : name === 'move_request' && given(input.newName) && cl.clean(found!.name) !== found!.name ? 'name' : null
   if (kept) return refuse(held(kept))
   const literal = name === 'create_request' || name === 'update_request' ? literalIn(input, found, cl) : null
   if (literal) return refuse(literal)

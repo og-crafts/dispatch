@@ -46,7 +46,7 @@ function mk(over: { variables?: KV[]; env?: KV[]; url?: string; headers?: KV[]; 
     const t = (await call('suggest_parameters', { name })).text
     return { batch: /batch: (\S+)/.exec(t)?.[1] ?? '', id: (kind: string) => new RegExp(`^(s\\d+) · ${{ pathId: 'ID in the path', baseUrl: 'base URL', apiKeyHeader: 'API key' }[kind]}`, 'm').exec(t)?.[1] ?? `no ${kind}` }
   }
-  return { ws, world, cards, call, read, suggest }
+  return { ws, world, ctx, cards, call, read, suggest }
 }
 type M = ReturnType<typeof mk>
 type Step = (m: M, value: string) => Promise<unknown>
@@ -224,6 +224,38 @@ describe('a refusal doesn’t tell a right guess at a short secret from a wrong 
       expect(r.isError).toBe(true)
       expect(m.cards).toEqual([])
       return r.text.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, 'ID').replaceAll(g, 'GUESS')
+    }
+    expect(await say(PIN)).toBe(await say(OTHER))
+  })
+})
+
+describe('the same with nothing approved, where the name alone decides', () => {
+  const PIN = 'hunter2x', OTHER = 'monkey3x'
+  const norm = (t: string, g: string) => t.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, 'ID').replaceAll(g, 'GUESS')
+  it.each([['pathId', (g: string) => g], ['pathId', (g: string) => `a_${g}`], ['baseUrl', (g: string) => g]] as const)('a new name for %s', async (kind, as) => {
+    const say = async (g: string) => {
+      const m = mk({ variables: [kv('pin', PIN, true, { secret: true })], url: 'https://shop.test/orders/1234567890' })
+      m.ctx.decide = async (p) => { m.cards.push(p); return { outcome: 'rejected' } }
+      const s = await m.suggest('Shop/Mine')
+      const r = await m.call('apply_parameters', { name: 'Shop/Mine', batch: s.batch, choose: { [s.id(kind)]: as(g) }, where: 'collection' })
+      return [norm(r.text, g), m.cards.length]
+    }
+    const right = await say(PIN)
+    expect(right).toEqual(await say(OTHER))
+    expect(right[1]).toBe(1)
+  })
+  it('and what is approved has the names the model chose', async () => {
+    const m = mk({ url: 'https://shop.test/orders/1234567890' })
+    const s = await m.suggest('Shop/Mine')
+    expect((await m.call('apply_parameters', { name: 'Shop/Mine', batch: s.batch, choose: { [s.id('pathId')]: 'order', [s.id('baseUrl')]: 'host' }, where: 'collection' })).isError).toBe(false)
+    const r = m.ws.requests.find((x) => x.name === 'Mine')!
+    expect([r.url, r.pathVars.map((p) => [p.key, p.value]), m.ws.collections[0].variables.map((v) => [v.key, v.value])]).toEqual(['{{host}}/orders/:order', [['order', '1234567890']], [['host', 'https://shop.test']]])
+  })
+  it('a new name for a request whose name is a secret', async () => {
+    const say = async (g: string) => {
+      const m = mk({ variables: [kv('pin', PIN, true, { secret: true })] })
+      m.ws.requests.push(newRequest({ name: PIN, collectionId: m.ws.collections[0].id, url: 'https://shop.test', sort: 3 }))
+      return norm((await m.call('move_request', { name: 'Shop/<hidden>', to: 'Shop', newName: g })).text, g)
     }
     expect(await say(PIN)).toBe(await say(OTHER))
   })

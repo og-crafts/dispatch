@@ -265,6 +265,25 @@ function sent(r: RequestDef, t: Tables, w: McpServeOptions): string {
   return JSON.stringify([signed, p.method, p.url, headers, p.body, p.multipart])
 }
 
+/**
+ * parameterize() with made-up names for the new variables, put right afterwards: what may move must not depend on the
+ * names the model chose, or a name that is a hidden value would be refused where another isn't.
+ */
+function underNeutralNames(r: RequestDef, chosen: Found[], cl: Cleaner, signIn: Auth | null): ReturnType<typeof parameterize> {
+  const all = JSON.stringify([r, chosen])
+  let salt = 0
+  const name = (i: number) => `__n${salt}x${i}n__`
+  while (chosen.some((s, i) => all.includes(name(i)) || (s.value && name(i).includes(s.value)))) salt++
+  const back = new Map(chosen.flatMap((s, i) => (s.kind === 'existing' ? [] : [[name(i), s.varName] as const])))
+  const deep = <T>(v: T): T => {
+    if (typeof v === 'string') { let out: string = v; for (const [n, to] of back) out = out.split(n).join(to); return out as T }
+    if (Array.isArray(v)) return v.map(deep) as T
+    return v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deep(x)])) as T : v
+  }
+  const got = parameterize(r, chosen.map((s, i) => (s.kind === 'existing' ? s : { ...s, varName: name(i) })), cl, signIn)
+  return { ...deep(got), done: got.done.map((s) => ({ ...s, varName: back.get(s.varName) ?? s.varName })) }
+}
+
 const CHANGED = 'The request changed. Look at the suggestions again.'
 
 /** An apply_parameters call as a draft, or why not. The refusals hold no values. */
@@ -303,7 +322,7 @@ export function applyParameters(input: Record<string, unknown>, ctx: ProposeCont
 
   // What moves is hidden from here on, also where it wasn't known to be a secret before.
   const safe = cleaner({ ...ctx, secrets: () => [...ctx.secrets(), ...chosen.filter((s) => s.secret).map((s) => s.value)] }, w)
-  const { request, create, done } = parameterize(r, chosen, safe, signInOf(r, t, w))
+  const { request, create, done } = underNeutralNames(r, chosen, safe, signInOf(r, t, w))
   if (!done.length) return refuse('These can’t be moved here without showing a secret.')
   // Rule: a hidden value may move, but none is lost. What was swapped is put back before comparing.
   const values = new Map(done.map((s) => [s.varName, s.value]))
@@ -353,8 +372,8 @@ export function setEnvironmentVariables(input: Record<string, unknown>, ctx: Pro
   const why = badVariables({ ...input, remove: drop }, env.variables.map((v) => ({ ...v, secret: named(v) })), cl)
   if (why) return refuse(why)
   const at = (k: string) => (v: KV) => v.key.trim() === k.trim()
-  const none = drop.find((k) => !env.variables.some(at(k)))
-  if (none !== undefined) return refuse('A name to remove isn’t in that environment.')
+  const none = drop.findIndex((k) => !env.variables.some(at(k)))
+  if (none >= 0) return refuse(`Name ${none + 1} to remove isn’t in that environment. Use get_environment.`)
 
   const lower = [...real.collections.flatMap((c) => c.variables), ...real.globals, ...real.requests.flatMap((x) => x.handoff?.variables ?? [])]
   const hides = set.map(([k]) => k).find((k) => SECRET_NAME.test(k) && !env.variables.some(at(k)) && lower.some(at(k)))

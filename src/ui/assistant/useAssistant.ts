@@ -203,12 +203,15 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
     setCards(chatId, cardsIn(chatId).map((c) => (c.proposal.id === id ? { proposal: c.proposal, at: c.at, state, ...(text ? { text } : {}), ...(now?.length ? { now } : {}) } : c)))
   const cardOnScreen = (id: string) => (chatRef.current ? cardsIn(chatRef.current.id) : []).find((c) => c.proposal.id === id)
 
-  /** One line in the console: what was decided, the tool and the record's name, without secrets. */
-  const note = (what: string, p: Proposal, secrets: () => string[]) => {
+  /**
+   * One line in the console: what was decided, the tool and the record's name, without secrets. Not a name the chat made
+   * up until it is approved: the chat may read the console, and a hidden one would tell that the guess is a secret.
+   */
+  const note = (what: string, p: Proposal, secrets: () => string[], approved: boolean) => {
     const c = p.changes.find((x) => x.kind === 'request') ?? p.changes[0]
-    const r = c?.after ?? c?.before
-    const name = !r || Array.isArray(r) ? c?.kind ?? '' : r.name
-    try { wsRef.current.log([{ level: 'info', at: Date.now(), source: 'assistant', text: `${what} ${p.tool}: “${oneLine(new Redactor(secrets()).clean(name))}”` }]) } catch { /* it was decided all the same */ }
+    const r = approved ? c?.after ?? c?.before : c?.before
+    const name = Array.isArray(r) || !c ? c?.kind ?? '' : r?.name
+    try { wsRef.current.log([{ level: 'info', at: Date.now(), source: 'assistant', text: `${what} ${p.tool}: ${name === undefined ? `a new ${c!.kind}` : `“${oneLine(new Redactor(secrets()).clean(name))}”`}` }]) } catch { /* it was decided all the same */ }
   }
 
   /** Shows the card and waits for approve, reject or the job's end. */
@@ -230,7 +233,7 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
       if (outcome === 'applied') knownAt.current.set(p, before)
       setCard(chatId, p.id, outcome, shown)
       answer({ outcome, ...(text ? { text } : {}) })
-      if (outcome !== 'stopped') note(`${outcome[0].toUpperCase()}${outcome.slice(1)}`, p, known)
+      if (outcome !== 'stopped') note(`${outcome[0].toUpperCase()}${outcome.slice(1)}`, p, known, outcome === 'applied')
     }
     waiting.current.set(p.id, { job, end, begin: () => { writing = true; clock.resume(); setCard(chatId, p.id, 'applying') } })
     setCards(chatId, [...cardsIn(chatId), { proposal: p, state: 'waiting', at }])
@@ -282,7 +285,7 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
         } catch { text ??= 'This couldn’t be undone.' }
         setCard(chatId, id, 'applied', text, now)
       }
-      if (r.ok) note('Undone', card.proposal, () => [...before, ...secrets()])
+      if (r.ok) note('Undone', card.proposal, () => [...before, ...secrets()], true)
     } catch { setCard(chatId, id, 'applied', 'Something went wrong while this was being undone. Look at it before you go on.') } finally { undoing.current.delete(id) }
   }
 
