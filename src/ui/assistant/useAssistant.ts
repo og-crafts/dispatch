@@ -7,7 +7,7 @@ import { type Decision, runTool } from '../../core/assistant/gate'
 import { ask, type Answer, type Clock } from '../../core/assistant/loop'
 import { ParameterBatches } from '../../core/assistant/parameters'
 import type { Proposal } from '../../core/assistant/proposal'
-import { oneLine } from '../../core/assistant/propose'
+import { basisOf, oneLine } from '../../core/assistant/propose'
 import { AssistantError, assertUsable, until } from '../../core/assistant/providers/shared'
 import { allSecrets, type AssistantJob, offeredTools, systemPrompt, toolClass } from '../../core/assistant/tools'
 import * as db from '../../core/db'
@@ -100,6 +100,7 @@ const CHANGED = 'The connection was changed meanwhile, so nothing was sent. Chec
 /** Whether a job may not go on with the connection it took: it was removed, or where it sends, as what or whether it may has changed. */
 const differs = (was: Connection, now: Connection | undefined) =>
   !now || now.baseUrl !== was.baseUrl || now.kind !== was.kind || now.key !== was.key || now.model !== was.model || now.consentHost !== was.consentHost
+const EXPIRED = 'This changed meanwhile, so nothing was applied.'
 const FAILED = 'Something went wrong in the assistant. Try again.'
 const REFUSED = 'The model declined to answer this. Ask it in another way.'
 const CUT_OFF = 'The answer was cut off: the model reached its length limit. Ask it to go on, or start a new chat.'
@@ -228,9 +229,12 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
     const w = waitingOnScreen(id), conn = w?.job.conn, card = cardOnScreen(id)
     if (!w || !conn || !card) return
     try {
-      const now = (await db.getConnections()).find((c) => c.id === conn.id)
+      const [conns, schedules] = await Promise.all([db.getConnections(), db.getSchedules()])
+      const now = conns.find((c) => c.id === conn.id)
       if (waitingOnScreen(id) !== w) return // stopped, rejected or approved meanwhile
       if (differs(conn, now) || wsRef.current.activeSpaceId !== w.job.spaceId) { w.job.ctl.abort(); return }
+      // what the card warns of may not hold any more
+      if (basisOf(worldOf(wsRef.current), w.job.spaceId, schedules) !== card.proposal.basis) { w.end('expired', EXPIRED); return }
     } catch { setError(FAILED); return }
     w.begin()
     try {

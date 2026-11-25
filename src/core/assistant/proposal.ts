@@ -16,6 +16,8 @@ export interface Proposal {
   title: string; fields: Field[]; warnings: string[]; changes: Change[]
   /** The tool's reply, given to the model only when it was applied. */
   reply: string
+  /** What the preview rests on besides its records (basisOf): only for comparing, it holds real values. */
+  basis: string
 }
 export type ApplyResult = { ok: true } | { ok: false; reason: 'changed' | 'unsaved' | 'gone' | 'failed'; text: string }
 

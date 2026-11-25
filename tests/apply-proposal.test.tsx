@@ -19,7 +19,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 const transport: Transport = { label: 'fake', unrestricted: true, send: async () => ({ status: 200, statusText: 'OK', headers: [], body: '{"t":"new"}', binary: false, size: 2, timeMs: 1 }) }
 const proposal = (changes: Change[], over: Partial<Proposal> = {}): Proposal =>
-  structuredClone({ id: uid(), spaceId: DEFAULT_SPACE.id, tool: 'x', cls: 'edit', title: 'x', fields: [], warnings: [], changes, reply: 'done', ...over })
+  structuredClone({ id: uid(), spaceId: DEFAULT_SPACE.id, tool: 'x', cls: 'edit', title: 'x', fields: [], warnings: [], changes, reply: 'done', basis: '', ...over })
 const edit = <T extends Collection | Folder | RequestDef | Environment>(kind: Change['kind'], r: T, patch: Partial<T>): Change => ({ kind, id: r.id, before: r, after: { ...r, ...patch } })
 const create = (kind: Change['kind'], r: Collection | Folder | RequestDef): Change => ({ kind, id: r.id, before: null, after: r })
 const remove = (r: RequestDef): Change => ({ kind: 'request', id: r.id, before: r, after: null })
@@ -62,6 +62,19 @@ function whileCommitting(store: string, then: () => void) {
 }
 
 describe('applying', () => {
+  it('a screen that fails once it is stored: applied, because it was', async () => {
+    const { r } = await seed()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const quiet = (e: ErrorEvent) => e.preventDefault()
+    window.addEventListener('error', quiet)
+    const engine = new InlineEngine()
+    const h = renderHook(() => { const w = useWorkspace({ transport, engine }); if (w.requests.some((x) => x.url === 'boom')) throw new Error('draw'); return w })
+    await waitFor(() => expect(h.result.current.ready).toBe(true))
+    expect(await h.result.current.applyProposal(proposal([edit('request', r, { url: 'boom' })]))).toEqual(ok)
+    expect((await storedRequest(r.id))!.url).toBe('boom')
+    window.removeEventListener('error', quiet)
+  })
+
   it('writes all records of a create-with-folders proposal, sealed, and shows them', async () => {
     await seed(); const h = await mount()
     const c = { ...newCollection('Aaa'), variables: [kv('k', 'plain-secret', true, { secret: true })] }, f1 = newFolder(c.id, 'One'), f2 = newFolder(c.id, 'Two', f1.id)

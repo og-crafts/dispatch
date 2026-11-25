@@ -1135,8 +1135,9 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
     }
     const col = (id: string | null) => collectionsRef.current.some((c) => c.id === id)
     const fo = (id: string | null) => !id || foldersRef.current.some((f) => f.id === id) || written.some((c) => c.kind === 'folder' && c.id === id && c.after)
-    // Rendered at once, so an open editor's next keystroke is already on top of it.
-    flushSync(() => {
+    // Rendered at once, so an open editor's next keystroke is already on top of it. It is stored by now: a screen that
+    // can't be drawn doesn't make that untrue.
+    try { flushSync(() => {
       const has = (k: Kind) => written.some((c) => c.kind === k)
       if (has('collection')) setCollections((xs) => settled('collection', xs, () => true).sort(byName))
       if (has('folder')) setFolders((xs) => settled('folder', xs, (f) => col(f.collectionId) && fo(f.parentId)))
@@ -1161,7 +1162,7 @@ export function useWorkspace(opts: WorkspaceOptions = {}) {
         return d === t.draft ? t : { ...t, draft: d }
       }))
       setView((v) => ((v.kind === 'collection' || v.kind === 'folder' || v.kind === 'environment') && written.some((c) => !c.after && c.kind === v.kind && c.id === v.id) ? { kind: 'request' } : v))
-    })
+    }) } catch { /* said by the screen itself */ }
     // The change itself is stored by now; a failure here only leaves what the person's own write left.
     // After the person's own write, which may still be on its way; not over a newer one (that has both already).
     for (const c of again) await db.applyRecords([c], [], () => { if (recordNow(c.kind, c.id) !== c.after) throw new Error('newer') }).catch(() => {})

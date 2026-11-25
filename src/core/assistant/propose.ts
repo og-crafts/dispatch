@@ -172,10 +172,22 @@ export async function proposalOf(ctx: ProposeContext, w: McpServeOptions, cl: Cl
     fields.push(...own)
   }
   if (!d.changes.length) return { refused: 'This wouldn’t change anything. Nothing was changed.' }
+  const schedules = await ctx.schedules()
   return {
     id: uid(), spaceId: ctx.spaceId, tool: d.tool, cls: toolClass(d.tool) === 'delete' ? 'delete' : 'edit', title: oneLine(cl.clean(d.title)), fields,
-    warnings: [...(d.notes ?? []).map((n) => oneLine(cl.clean(n))), ...warningsOf(d, before, after, await ctx.schedules(), cl)], changes: d.changes, reply: cl.clean(d.reply),
+    warnings: [...(d.notes ?? []).map((n) => oneLine(cl.clean(n))), ...warningsOf(d, before, after, schedules, cl)], changes: d.changes, reply: cl.clean(d.reply),
+    basis: basisOf(w, ctx.spaceId, schedules),
   }
+}
+
+/** What the card and its warnings come from besides the records in the changes. Equal strings: what it says still holds. */
+export function basisOf(w: McpServeOptions, spaceId: string, schedules: Schedule[]): string {
+  const o = openWorld(w, spaceId)
+  const each = (l: unknown[]) => l.map((x) => canonical(x as Rec)).sort()
+  return JSON.stringify([
+    o.active?.id ?? null, each(o.environments), canonical(o.globals), each(o.collections), each(o.folders),
+    each(schedules.filter((s) => s.enabled).map(({ lastRunAt: _, ...s }) => s)),
+  ])
 }
 
 /** The open workspace, as the edit code gets it: real but for the names, and without what it has no business with. */

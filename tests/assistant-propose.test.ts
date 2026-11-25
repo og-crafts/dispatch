@@ -37,7 +37,7 @@ const field = (p: Proposal, label: string) => p.fields.find((f) => f.label === l
 const added = (p: Proposal, label: string) => field(p, label)?.lines.filter((l) => l.type === 'add').map((l) => l.text)
 const removed = (p: Proposal, label: string) => field(p, label)?.lines.filter((l) => l.type === 'del').map((l) => l.text)
 const afterOf = <T,>(p: Proposal, i = 0) => p.changes[i].after as unknown as T
-const card = (p: Proposal) => ({ ...p, changes: undefined })
+const card = (p: Proposal) => ({ ...p, changes: undefined, basis: undefined })
 
 const SCRIPT_RISK = 'Scripts run when this is sent. They can read variables, including secrets, and send requests.'
 const SCHEDULED = 'The schedule “Nightly” sends this while Dispatch is open.'

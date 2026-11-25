@@ -47,7 +47,7 @@ const added = (p: Proposal, label: string) => field(p, label)?.lines.filter((l) 
 const removed = (p: Proposal, label: string) => field(p, label)?.lines.filter((l) => l.type === 'del').map((l) => l.text)
 const reqOf = (p: Proposal) => p.changes.find((c) => c.kind === 'request')!.after as RequestDef
 const varsOf = (p: Proposal) => { const a = p.changes.find((c) => c.kind !== 'request')?.after; return !a ? [] : Array.isArray(a) ? a : (a as Environment).variables }
-const card = (p: Proposal) => JSON.stringify({ ...p, changes: undefined })
+const card = (p: Proposal) => JSON.stringify({ ...p, changes: undefined, basis: undefined })
 /** No run of six characters of it, so no part either. */
 const without = (text: string, secret: string) => { for (let i = 0; i + 6 <= secret.length; i++) expect(text).not.toContain(secret.slice(i, i + 6)) }
 const CHANGED = 'The request changed. Look at the suggestions again. Nothing was changed.'

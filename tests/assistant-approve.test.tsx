@@ -7,13 +7,15 @@ import { runTool, type ToolContext } from '../src/core/assistant/gate'
 import { ask, type AskOptions } from '../src/core/assistant/loop'
 import { ParameterBatches } from '../src/core/assistant/parameters'
 import type { Proposal } from '../src/core/assistant/proposal'
+import { basisOf, propose } from '../src/core/assistant/propose'
 import type { Provider, Turn } from '../src/core/assistant/providers/types'
 import { allSecrets, offeredTools, systemPrompt } from '../src/core/assistant/tools'
 import * as db from '../src/core/db'
 import type { McpServeOptions } from '../src/core/mcpHandler'
+import { newSchedule } from '../src/core/schedules'
 import { InlineEngine } from '../src/core/scriptPipeline'
 import type { Transport } from '../src/core/transport'
-import { defaultSettings, DEFAULT_SPACE, kv, newCollection, newEnvironment, newRequest, type RequestDef } from '../src/core/types'
+import { defaultSettings, DEFAULT_SPACE, emptyAuth, kv, newCollection, newEnvironment, newFolder, newRequest, type RequestDef } from '../src/core/types'
 import { removeAllChats, updateConnections } from '../src/ui/assistant/store'
 import { useAssistant } from '../src/ui/assistant/useAssistant'
 import { useWorkspace } from '../src/ui/useWorkspace'
@@ -57,11 +59,11 @@ async function seed(over: Partial<RequestDef> = {}) {
 let h: ReturnType<typeof renderHook<{ ws: ReturnType<typeof useWorkspace>; a: ReturnType<typeof useAssistant> }, unknown>>
 const a = () => h.result.current.a
 const ws = () => h.result.current.ws
-async function mount(list: Connection[] = [local()]) {
+async function mount(list: Connection[] = [local()], over: Partial<ReturnType<typeof useWorkspace>> = {}) {
   await db.putSpaces([{ id: DEFAULT_SPACE.id, name: 'Orders' }, { id: 'two', name: 'Second' }])
   await db.putConnections(list)
   const engine = new InlineEngine()
-  h = renderHook(() => { const w = useWorkspace({ transport, engine }); return { ws: w, a: useAssistant(w) } })
+  h = renderHook(() => { const w = { ...useWorkspace({ transport, engine }), ...over }; return { ws: w, a: useAssistant(w) } })
   await waitFor(() => { expect(ws().ready).toBe(true); expect(a().ready).toBe(true) })
 }
 const send = async (text: string, ...answers: string[]) => { rust.answers.push(...answers); await act(async () => { expect(await a().send(text)).toBe('sent') }) }
@@ -244,6 +246,65 @@ describe('approve and reject', () => {
   })
 })
 
+describe('what the preview rests on', () => {
+  const ready = async () => {
+    const { c } = await seed()
+    const dev = { ...newEnvironment('Dev'), variables: [kv('base', 'https://dev.test')] }, live = { ...newEnvironment('Live'), variables: [kv('base', 'https://live.test')] }
+    const other = newRequest({ name: 'Other', collectionId: c.id, sort: 2 })
+    const f = newFolder(c.id, 'Admin')
+    await db.putMany({ collections: [], folders: [f], requests: [other], environments: [dev, live] })
+    await db.putSettings({ ...(await db.getSettings()), activeEnvId: dev.id })
+    const s = { ...newSchedule(c.id, 'Nightly'), lastRunAt: 1 }, off = { ...newSchedule(c.id, 'Off'), enabled: false }
+    await db.putSchedules([s, off])
+    await mount()
+    return { c, dev, live, f, s, off, other }
+  }
+  type R = Awaited<ReturnType<typeof ready>>
+  const now = <T extends { id: string }>(l: T[], x: { id: string }) => l.find((y) => y.id === x.id)!
+  it.each<[string, (r: R) => unknown]>([
+    ['the active environment', (r) => ws().setSettings({ activeEnvId: r.live.id })],
+    ['another environment’s value', (r) => ws().updateEnvironment({ ...now(ws().environments, r.live), variables: [kv('base', 'https://evil.test')] })],
+    ['a new environment', () => ws().addEnvironment('Third')],
+    ['a global', () => ws().setGlobals([kv('g', '1')])],
+    ['a collection’s sign-in', (r) => ws().updateCollection({ ...now(ws().collections, r.c), auth: { ...emptyAuth('bearer'), token: 'other-token-1' } })],
+    ['a folder’s scripts', (r) => ws().updateFolder({ ...now(ws().folders, r.f), scripts: { pre: 'x', post: '' } })],
+    ['a schedule switched on', (r) => db.putSchedules([r.s, { ...r.off, enabled: true }])],
+  ])('%s changed: expired, nothing written', async (_what, change) => {
+    const r = await ready()
+    const p = await proposed('two', says('Ok'))
+    await act(async () => { await change(r) })
+    await approve(p.id)
+    await idle()
+    expect(card()).toMatchObject({ state: 'expired', text: CHANGED })
+    expect(results()[0]).toContain(CHANGED)
+    expect((await db.listRequests()).find((x) => x.name === 'Create order')!.scripts.post).toBe('one')
+  })
+  it.each<[string, (r: R) => unknown]>([
+    ['a schedule that ran', (r) => db.putSchedules([{ ...r.s, lastRunAt: 99 }, r.off])],
+    ['a schedule that is off', (r) => db.putSchedules([r.s, { ...r.off, name: 'Still off' }])],
+    ['an unrelated request', (r) => ws().renameRequest(now(ws().requests, r.other), 'Renamed')],
+    ['an environment saved as it was', (r) => ws().updateEnvironment({ ...now(ws().environments, r.live) })],
+  ])('%s changes nothing: applied', async (_what, change) => {
+    const r = await ready()
+    const p = await proposed('two', says('Ok'))
+    await act(async () => { await change(r) })
+    await approve(p.id)
+    await idle()
+    expect(state()).toBe('applied')
+  })
+  it('is what it was when the proposal was made, also for what changed while the schedules were read', async () => {
+    const { c, dev, other, f } = await ready()
+    const w = (globals: ReturnType<typeof kv>[]): McpServeOptions => ({ ws: { source: 'dispatch', collections: [c], folders: [f], requests: [other], environments: [dev], flows: [], warnings: [] }, environment: dev, globals, settings: { ...defaultSettings, activeSpaceId: 'default' }, transport, pipeline: {}, allowMethods: [], version: 't', allCollections: true })
+    let world = w([])
+    const p = await propose('update_request', { name: 'Shop/Other', testScript: 'x' }, {
+      world: () => world, conn: local(), signal: new AbortController().signal, spaceId: 'default', secrets: () => [], batches: new ParameterBatches(), unsaved: () => false,
+      schedules: async () => { world = w([kv('g', '1')]); return [] },
+    }) as Proposal
+    expect(p.basis).toBe(basisOf(w([]), 'default', []))
+    expect(p.basis).not.toBe(basisOf(world, 'default', []))
+  })
+})
+
 describe('stopping', () => {
   it('while it waits: stopped, no write, and the chat says so', async () => {
     await seed(); await mount()
@@ -293,6 +354,46 @@ describe('stopping', () => {
     expect(rust.sent).toHaveLength(1)
     await act(() => a().undo(p.id))
     expect(await post()).toBe('one')
+  })
+  it.each<[string, (tenMinutes: () => void) => unknown]>([
+    ['deleting the chat', () => a().deleteChat(a().chat!.id)],
+    ['unmounting', () => h.unmount()],
+    ['the 10 minutes', (up) => up()],
+  ])('%s while it is being written: the write finishes, and nothing else follows', async (what, end) => {
+    const set = vi.spyOn(globalThis, 'setTimeout')
+    await seed(); await mount()
+    await send('go', calls(script('two'), script('three')))
+    const p = await waits(), id = a().chat!.id
+    const t = heldOpen()
+    let done!: Promise<void>
+    act(() => { done = a().approve(p.id) })
+    await waitFor(() => expect(t.held()).toBe(true))
+    const timer = set.mock.calls.filter(([, ms]) => typeof ms === 'number' && ms > 540_000 && ms <= 600_000).at(-1)![0] as () => void
+    await act(async () => { await end(timer) })
+    t.release()
+    await act(() => done)
+    await waitFor(async () => expect(await post()).toBe('two'))
+    const saved = async () => (await listChats(DEFAULT_SPACE.id)).find((c) => c.id === id)
+    if (what === 'deleting the chat') {
+      await new Promise((r) => setTimeout(r, 30))
+      expect(await saved()).toBeUndefined()
+    } else {
+      await waitFor(async () => expect(results((await saved())?.messages)[0]).toContain('<<data '))
+      expect(results((await saved())?.messages)[1]).toContain('Nothing was run')
+    }
+    if (what === 'the 10 minutes') { expect(a().ended).toBe('limit'); expect(state()).toBe('applied') }
+    expect(await post()).toBe('two')
+    expect(rust.sent).toHaveLength(1)
+  })
+  it('applying that throws: neither said to be applied nor not, and the answer goes on', async () => {
+    await seed(); await mount([local()], { applyProposal: async () => { throw new Error('boom') } })
+    const p = await proposed('two', says('Ok'))
+    await approve(p.id)
+    await idle()
+    expect(card()).toMatchObject({ state: 'expired', text: expect.stringContaining('Look at it') })
+    expect(results()[0]).toContain('Look at it')
+    expect(results()[0]).not.toMatch(/nothing was|boom/i)
+    expect(a().ended).toBe('done')
   })
   it('a write that fails is said to have failed', async () => {
     await seed(); await mount()
@@ -494,7 +595,18 @@ describe('the clock', () => {
     expect(t.out.ended).toBe('stopped')
     expect(vi.getTimerCount()).toBe(0)
   })
-  it('a result that settles is awaited after a stop and after the time is up; another isn’t', async () => {
+  it('a result that settles is awaited after the time is up', async () => {
+    vi.useFakeTimers()
+    let finish!: () => void
+    const t = start([edit], { run: () => new Promise((r) => { finish = () => r({ text: 'it was applied', isError: false }) }) })
+    await vi.advanceTimersByTimeAsync(600_001)
+    expect(t.out.ended).toBe('')
+    finish()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(t.out.ended).toBe('limit')
+    expect(JSON.stringify(t.out.messages)).toContain('it was applied')
+  })
+  it('a result that settles is awaited after a stop; another isn’t', async () => {
     let finish!: () => void
     const ends: unknown[] = []
     const run = () => new Promise<{ text: string; isError: boolean }>((r) => { finish = () => r({ text: 'it was applied', isError: false }) })
