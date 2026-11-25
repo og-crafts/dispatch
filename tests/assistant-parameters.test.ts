@@ -70,7 +70,7 @@ describe('suggest_parameters', () => {
     const c = col(), r = req(c, { url: 'https://shop.test/acme-prod', headers: [kv('Authorization', `Bearer ${TOKEN}`), kv('Ocp-Apim-Subscription-Key', 'plant-ocp-DDDD4')] })
     const s = await setup({ collections: [c], requests: [r], active: envOf([kv('tenant', 'acme-prod'), secretVar('tok', TOKEN)]) }).suggest()
     expect(s.lines.map((l) => l.slice(1))).toEqual([
-      ['a value that a variable already has', '{{tok}}', 'existing', 'secret'], ['a value that a variable already has', '{{tenant}}', 'existing'], ['base URL', '{{baseUrl}}', 'new'],
+      ['a value that a variable already has', '{{tenant}}', 'existing'], ['a value that a variable already has', '{{tok}}', 'existing', 'secret'], ['base URL', '{{baseUrl}}', 'new'],
       ['API key in the header Ocp-Apim-Subscription-Key', '{{apiKey}}', 'new', 'secret'],
     ])
     without(s.text, 'plant-ocp-DDDD4'); without(s.text, TOKEN)
@@ -78,7 +78,7 @@ describe('suggest_parameters', () => {
   it('a name made from a hidden part of the path isn’t used', async () => {
     const c = col(), r = req(c, { url: 'https://shop.test/plant-seg-EEEE5/12345/a/67890' })
     const s = await setup({ collections: [c], requests: [r], secrets: ['plant-seg-EEEE5'] }).suggest()
-    expect(s.lines.filter((l) => l[1].includes('path')).map((l) => l[2])).toEqual([':itemId', ':itemId2'])
+    expect(s.lines.filter((l) => l[1].includes('path')).map((l) => l[2])).toEqual([':hiddenId', ':aId'])
     expect(s.text.toLowerCase()).not.toContain('eeee5')
   })
   it.each<[string, KV, Partial<RequestDef>]>([
@@ -91,6 +91,30 @@ describe('suggest_parameters', () => {
     const c = col(), r = req(c, over)
     const lines = async (value: string) => (await setup({ collections: [c], requests: [r], active: envOf([{ ...v, value }]) }).suggest()).lines
     expect(await lines(v.value)).toEqual(await lines('something-else'))
+  })
+  it.each<[string, (guess: string) => { r: Partial<RequestDef>; v?: KV[] }, string, string]>([
+    ['the start of a password in the URL', (g) => ({ r: { url: 'https://bob:hunter2pass@shop.test/a', body: { ...emptyBody('text'), text: g } }, v: [kv('g', g)] }), 'https://bob:hun', 'https://bob:xyz'],
+    ['the start of a hidden path', (g) => ({ r: { url: 'https://shop.test/hook/plantedSecret99', body: { ...emptyBody('text'), text: g } }, v: [kv('g', g)] }), 'https://shop.test/hook/planted', 'https://shop.test/hook/wronged'],
+    ['a short password', (g) => ({ r: { auth: { ...emptyAuth('basic'), username: 'a', password: '1234' }, body: { ...emptyBody('text'), text: g } }, v: [kv('g', g)] }), '1234', '9999'],
+    ['a short token', (g) => ({ r: { headers: [kv('Authorization', 'Bearer 1234')], body: { ...emptyBody('text'), text: g } }, v: [kv('g', g)] }), '1234', '9999'],
+    ['a short sign-in key', (g) => ({ r: { auth: { ...emptyAuth('apikey'), key: 'k', value: '1234' }, body: { ...emptyBody('text'), text: g } }, v: [kv('g', g)] }), '1234', '9999'],
+    ['a header’s key', (g) => ({ r: { headers: [kv('X-API-Key', '1234')], body: { ...emptyBody('text'), text: g } }, v: [kv('g', g)] }), '1234', '9999'],
+    ['two equal keys', (g) => ({ r: { headers: [kv('X-API-Key', g)], auth: { ...emptyAuth('apikey'), key: 'k', value: 'key12' } } }), 'key12', 'key99'],
+    ['two equal keys in headers', (g) => ({ r: { headers: [kv('X-API-Key', 'k1'), kv('Api-Key', g)] } }), 'k1', 'k9'],
+    ['a whole token under a secret’s name', (g) => ({ r: { headers: [kv('Authorization', `Bearer ${TOKEN}`)] }, v: [kv('myToken', g)] }), TOKEN, 'plant-wrong-AAAA1'],
+    ['an ID inside a hidden path', (g) => ({ r: { url: `https://shop.test/plant${g}tail9` } }), '/123456/', '-123456-'],
+    ['which secret is longer', (g) => ({ r: { body: { ...emptyBody('text'), text: `${g} seven77` } }, v: [secretVar('a', g), secretVar('b', 'seven77')] }), 'longer-than-that', 'short6'],
+  ])('the same lines for a right and a wrong guess: %s', async (_n, of, right, wrong) => {
+    const lines = async (g: string) => {
+      const c = col(), x = of(g)
+      return (await setup({ collections: [c], requests: [req(c, x.r)], active: envOf(x.v ?? []), secrets: ['plantedSecret99', 'plant/123456/tail9', 'plant-123456-tail9'] }).suggest()).lines
+    }
+    expect(await lines(right)).toEqual(await lines(wrong))
+    expect((await lines(right)).length).toBeGreaterThan(0)
+  })
+  it('a readable plain value that starts the URL stands for its base', async () => {
+    const c = col(), s = await setup({ collections: [c], requests: [req(c, { url: 'https://shop.test/v2/x' })], globals: [kv('api', 'https://shop.test/v2')] }).suggest()
+    expect(s.lines.map((l) => l[2])).toEqual(['{{api}}'])
   })
   it('leaves out a value that name doesn’t have here', async () => {
     const c = col({ variables: [kv('tenant', 'acme-prod')] }), r = req(c, { url: 'https://shop.test/acme-prod' })
@@ -173,7 +197,7 @@ describe('apply_parameters', () => {
   })
   it('a key that wasn’t known to be a secret isn’t on the card either', async () => {
     const c = col(), p = await good(make({ collections: [c], requests: [req(c, { headers: [kv('Ocp-Apim-Subscription-Key', 'plant-ocp-DDDD4')], body: { ...emptyBody('text'), text: 'plant-ocp-DDDD4!' } })] }).move({ 'API key': '' }))
-    expect(reqOf(p)).toMatchObject({ headers: [{ value: '{{apiKey}}' }], body: { text: '{{apiKey}}!' } })
+    expect(reqOf(p)).toMatchObject({ headers: [{ value: '{{apiKey}}' }], body: { text: 'plant-ocp-DDDD4!' } })
     expect(card(p)).not.toContain('plant')
   })
   it('only an existing variable needs no table', async () => {
@@ -276,19 +300,50 @@ describe('apply_parameters', () => {
     })
   })
   describe('loses nothing, and changes nothing that is sent', () => {
-    it('another sign-in kept on the request', async () => {
-      const c = col(), s = make({ collections: [c], requests: [typical(c, { auth: { ...emptyAuth('basic'), username: 'me', password: 'plant-old-GGGG7' } })] })
-      const t = await refused(s.move({ 'bearer token': '' }))
-      expect(t).toContain('holds a secret')
-      expect(t).not.toContain('plant')
+    it('equal keys in two places each move on their own', async () => {
+      const c = col(), p = await good(make({ collections: [c], requests: [req(c, { headers: [kv('X-API-Key', 'key12')], auth: { ...emptyAuth('apikey'), key: 'k', value: 'key12' } })] }).move({ 'in the header': 'one', 'of the sign-in': 'two' }))
+      expect(reqOf(p)).toMatchObject({ headers: [{ value: '{{one}}' }], auth: { value: '{{two}}' } })
+      expect(varsOf(p).slice(1)).toMatchObject([{ key: 'one', value: 'key12' }, { key: 'two', value: 'key12' }])
     })
-    it('an inherited sign-in that is sent too', async () => {
-      const c = col({ auth: { ...emptyAuth('apikey'), key: 'X-K', value: 'k1' } })
-      expect(await refused(make({ collections: [c], requests: [typical(c)] }).move({ 'bearer token': '' }))).toBe('That would change what this request sends. Nothing was changed.')
+    it('an ID that can’t be told from one inside something hidden isn’t moved', async () => {
+      const c = col(), s = make({ collections: [c], requests: [req(c, { url: 'https://shop.test/aaa/12/bbb/12/SECRET22' })], secrets: ['aaa/12/bbb', 'SECRET22'] })
+      expect(await refused(s.move({ 'ID in the path': '' }))).toContain('without showing a secret')
+    })
+    it('an ID is moved where it is shown, not inside something hidden', async () => {
+      const c = col(), p = await good(make({ collections: [c], requests: [req(c, { url: 'https://shop.test/plant/123456/tail9/users/123456' })], secrets: ['plant/123456/tail9'] }).move({ 'ID in the path': '' }))
+      expect(reqOf(p).url).toBe('https://shop.test/plant/123456/tail9/users/:userId')
+    })
+    const signIns = [
+      { ...emptyAuth('awsv4'), accessKey: 'AK-plant', secretKey: 'SK-plant' }, { ...emptyAuth('digest'), username: 'me', password: 'plant-d' }, { ...emptyAuth('jwt'), secret: 'plant-j' },
+      { ...emptyAuth('oauth2'), tokenUrl: 'https://shop.test/t', refreshToken: 'plant-r' }, { ...emptyAuth('basic'), username: 'me', password: 'plant-b' }, { ...emptyAuth('apikey'), key: 'X-K', value: 'k1' },
+    ]
+    it.each(signIns.flatMap((a) => [[a.kind, 'own', a], [a.kind, 'of the folder', a], [a.kind, 'of the collection', a]] as const))('a %s sign-in, %s: the header stays and only its value moves', async (_k, from, auth) => {
+      const c = col(from === 'of the collection' ? { auth } : {}), f = { ...newFolder(c.id, 'F'), auth: from === 'of the folder' ? auth : emptyAuth() }
+      const r = typical(c, { folderId: f.id, auth: from === 'own' ? auth : emptyAuth() })
+      const s = make({ collections: [c], folders: [f], requests: [r] }), g = await s.suggest('Shop/F/Create order')
+      const p = await good(s.run('apply_parameters', { name: 'Shop/F/Create order', batch: g.batch, choose: { [g.id('bearer')]: '' }, where: 'environment' }))
+      expect(reqOf(p).auth).toEqual(r.auth)
+      expect(reqOf(p).headers[0].value).toBe('Bearer {{token}}')
+      expect(added(p, 'Headers')).toEqual(['Authorization: Bearer {{token}}'])
+      expect(p.warnings).toEqual([])
+    })
+    it('another token in the Auth tab: the same for a right and a wrong guess', async () => {
+      for (const token of ['1234', '9999']) {
+        const c = col(), p = await good(make({ collections: [c], requests: [req(c, { headers: [kv('Authorization', 'Bearer 1234')], auth: { ...emptyAuth('bearer'), token } })] }).move({ 'bearer token': '' }))
+        expect(reqOf(p)).toMatchObject({ headers: [{ value: 'Bearer {{token}}' }], auth: { token } })
+      }
+    })
+    it('an old value kept under no sign-in', async () => {
+      const c = col(), p = await good(make({ collections: [c], requests: [typical(c, { auth: { ...emptyAuth('none'), password: 'plant-old' } })] }).move({ 'bearer token': '' }))
+      expect(reqOf(p)).toMatchObject({ auth: { kind: 'none', password: 'plant-old' }, headers: [{ value: 'Bearer {{token}}' }, {}, {}] })
     })
     it('a hidden path variable that isn’t in the URL', async () => {
       const c = col(), s = make({ collections: [c], requests: [typical(c, { pathVars: [kv('token', 'stale-1')] })] })
       expect(await refused(s.move({ 'ID in the path': '' }))).toContain('path variables')
+    })
+    it('a signature that waits for the name', async () => {
+      const c = col(), s = make({ collections: [c], requests: [typical(c, { auth: { ...emptyAuth('awsv4'), region: '{{leak}}' } })] })
+      expect(await refused(s.move({ 'API key': 'leak' }))).toContain('change what this request sends')
     })
     it('a body that waits for the name', async () => {
       const c = col(), s = make({ collections: [c], requests: [typical(c, { body: { ...emptyBody('text'), text: '{{leak}}' } })] })
@@ -317,7 +372,7 @@ describe('apply_parameters', () => {
       expect(p.warnings).toEqual([NEW('evil.example'), 'Uses {{t}}, which is secret.'])
     })
     it('a place of this or another request that waits for the name', async () => {
-      const c = col(), t = typical(c, { headers: [kv('X-API-Key', KEY)], auth: { ...emptyAuth('oauth2'), tokenUrl: 'https://shop.test/t', clientId: '{{leak}}' } }), other = req(c, { name: 'Other', url: 'https://evil.example/?t={{spill}}', sort: 2 })
+      const c = col(), t = typical(c, { method: 'HEAD', body: { ...emptyBody('text'), text: '{{leak}}' } }), other = req(c, { name: 'Other', url: 'https://evil.example/?t={{spill}}', sort: 2 })
       expect((await good(make({ collections: [c], requests: [t] }).move({ 'API key': 'leak' }))).warnings).toEqual(['Uses {{leak}}, which is secret.', 'Used by 1 request.'])
       expect((await good(make({ collections: [c], requests: [typical(c), other] }).move({ 'bearer token': 'spill' }, 'globals'))).warnings).toEqual(['Uses {{spill}}, which is secret.', 'Used by 1 request.'])
     })
@@ -373,6 +428,14 @@ describe('set_environment_variables', () => {
     expect(await refused(s.run('set_environment_variables', { environment: named.name, variables: { a: 'b' } }))).toContain('No environment “E <hidden>”')
     const p = await good(s.run('set_environment_variables', { environment: 'E <hidden>', variables: { a: 'b' } }))
     expect([p.title, (p.changes[0].after as Environment).name]).toEqual(['Change the variables of “E <hidden>”', named.name])
+  })
+  it.each<[string, W]>([['a collection', { collections: [col({ variables: [secretVar(' apiToken ', 'real-1')] })] }], ['the globals', { globals: [kv('apiToken', 'real-1', false)] }]])('an empty secret one may not hide that of %s', async (_n, o) => {
+    const e = envOf([]), t = await refused(setup({ ...o, active: e }).run('set_environment_variables', { variables: { apiToken: 'x' } }))
+    expect(t).toContain('would hide it')
+    expect(t).not.toContain('real-1')
+  })
+  it('a name set and removed at once, spaces aside', async () => {
+    for (const k of [' base ', 'base ']) expect(await refused(set({ variables: { base: 'z' }, remove: [k] }))).toContain('set and removed at once')
   })
   it('odd names, <hidden>, a missing name, and nothing at all', async () => {
     for (const i of [{ variables: { 'a b': '1' } }, { variables: { '{{a}}': '1' } }, { variables: { '': '1' } }, { variables: { a: '<hidden>' } }, { remove: ['plain', 'none'] }, { variables: { plain: 'x' }, remove: ['plain'] }, {}, { variables: { plain: 'old' } }]) {

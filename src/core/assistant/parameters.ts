@@ -9,12 +9,13 @@ import { FAKE } from '../fake'
 import type { McpServeOptions } from '../mcpHandler'
 import { AUTH_SECRETS, HIDDEN, hide, hideInText } from '../mcpWorkspace'
 import { knownSecrets, Redactor } from '../mcpLogs'
-import { addVariables, applySuggestions, knownVars, suggest, type Suggestion } from '../parameterize'
-import { pathVarNames, prepare } from '../prepare'
+import { addVariables, type KnownVar, knownVars, suggest, type Suggestion } from '../parameterize'
+import { effectiveAuth, pathVarNames, pathVarsFromUrl, prepare, scopeFor } from '../prepare'
 import { folderChain } from '../runtime'
 import { SECRET_NAME } from '../share'
-import { type Auth, type Collection, type Environment, kv, type KV, type RequestDef } from '../types'
-import { paramsFromUrl } from '../url'
+import { type Auth, type Collection, emptyAuth, emptyBody, type Environment, kv, type KV, type RequestDef } from '../types'
+import { paramsFromUrl, splitUrl } from '../url'
+import { interpolate } from '../vars'
 import { cleaner } from './clean'
 import type { ToolContext } from './gate'
 import { canonical, type Change } from './proposal'
@@ -56,12 +57,14 @@ export function parameterTools() {
   ]
 }
 
-interface Batch { code: string; at: string; suggestions: Suggestion[] }
+/** `header`: which header holds it; without one, a credential is the sign-in's. */
+export interface Found extends Suggestion { header?: number }
+interface Batch { code: string; at: string; suggestions: Found[] }
 const KEPT = 10
 /** What was suggested lately, in memory only: ids mean something only while the request and the tables are as they were. */
 export class ParameterBatches {
   private list: Batch[] = []
-  add(at: string, suggestions: Suggestion[]): string {
+  add(at: string, suggestions: Found[]): string {
     const code = globalThis.crypto.randomUUID()
     this.list = [...this.list, { code, at, suggestions }].slice(-KEPT)
     return code
@@ -84,57 +87,53 @@ const NAME = /^[^{}\s]+$/
 const IS_VAR = /^\s*\{\{[^{}]+\}\}\s*$/
 
 /**
- * What could move, as suggest() has it for the open request, less what would tell the model something about a value it
- * can't see. `clean` is what hides secrets from it; without one, every secret in `w` is hidden.
+ * What could move. Which lines there are, their order, names and ids tell nothing about a hidden value but this: that a
+ * variable marked secret is in the request. Everything else comes from what can be read (`clean` is what hides secrets
+ * from the model; without one, every secret in `w` is hidden), or from a credential's place alone.
  */
-export function suggestionsFor(r: RequestDef, w: McpServeOptions, clean: (s: string) => string = defaultClean(w), active: Environment | null = w.environment): Suggestion[] {
+export function suggestionsFor(r: RequestDef, w: McpServeOptions, clean: (s: string) => string = defaultClean(w), active: Environment | null = w.environment): Found[] {
   const t = tablesOf(r, w, active)
   const b = r.body
+  const url = clean(r.url)
   const shown = [
-    clean(r.url), ...r.headers.map((h) => clean(hide(h.key, h.value))), clean(r.auth.username),
+    url, ...r.headers.map((h) => clean(hide(h.key, h.value))), clean(r.auth.username),
     ...(b.kind === 'none' || b.kind === 'binary' ? [] : BODY_FIELDS.includes(b.kind) ? b.fields.map((f) => clean(hide(f.key, f.value))) : [clean(b.text), ...(b.kind === 'graphql' ? [clean(b.graphqlVariables)] : [])]),
   ].join('\n')
-  const whole = [r.auth.token, r.auth.value, r.auth.password, ...r.headers.flatMap((h) => [h.value, h.value.replace(/^bearer\s+/i, '')])]
+  const all = [r.url, ...r.headers.map((h) => h.value), b.text, ...b.fields.map((f) => f.value), r.auth.token, r.auth.value, r.auth.username, r.auth.password].join('\n')
   const rows = rowsOf(t).filter((v) => v.enabled)
-  const secret = (key: string, value: string) => rows.some((v) => v.key.trim() === key && v.value === value && named(v))
-  const known = knownVars(t.environment, t.collection, t.globals, t.handoff).filter((k) => {
-    if (IS_VAR.test(k.value) || !NAME.test(k.key)) return false
-    if (!secret(k.key, k.value)) return shown.includes(k.value)
-    if (k.value.trim().length < KNOWN) return false
-    // one that isn't marked may have been set by the model, to find out whether it is a part of something hidden
-    return rows.some((v) => v.key.trim() === k.key && v.value === k.value && v.secret) || whole.includes(k.value)
-  })
-  const list = suggest(r, known, rowsOf(t).map((v) => v.key.trim()))
-  const hiddenUrl = clean(r.url) !== r.url
-  let n = 0
-  return list.map((s) => ({
-    ...s,
-    secret: s.secret || (s.kind === 'existing' ? secret(s.varName, s.value) : s.kind === 'baseUrl' && (hideInText(s.value) !== s.value || !clean(r.url).includes(s.value))),
-    // named after the path before it, which may be hidden
-    ...(s.kind === 'pathId' && hiddenUrl ? { varName: freeName('itemId', [...rowsOf(t).map((v) => v.key.trim()), ...pathNames(r)], n++) } : {}),
-  }))
+  const row = (k: KnownVar) => rows.filter((v) => v.key.trim() === k.key && v.value === k.value)
+  const usable = knownVars(t.environment, t.collection, t.globals, t.handoff).filter((k) => k.value.length >= 4 && !IS_VAR.test(k.value) && NAME.test(k.key))
+  // One with a secret's name that isn't marked is never offered: the model may have set it, to try a guess.
+  const marked = usable.filter((k) => row(k).some((v) => v.secret) && k.value.trim().length >= KNOWN && all.includes(k.value))
+  const plain = usable.filter((k) => !row(k).some(named) && shown.includes(k.value))
+  const existing = usable.filter((k) => marked.includes(k) || plain.includes(k)).map((k): Found => ({ id: '', kind: 'existing', title: '', detail: '', varName: k.key, value: k.value, create: false, secret: marked.includes(k) }))
+
+  const taken = [...rowsOf(t).map((v) => v.key.trim()), ...pathNames(r)]
+  const ask = (part: Partial<RequestDef>, known: KnownVar[]) => {
+    const got = suggest({ ...r, url: '', headers: [], pathVars: [], auth: emptyAuth('none'), body: emptyBody('none'), ...part }, known, taken).filter((s) => s.kind !== 'existing')
+    taken.push(...got.map((s) => s.varName))
+    return got
+  }
+  const origin = /^https?:\/\/[^/{}]+/i.exec(splitUrl(r.url).base)?.[0]
+  const inUrl = ask({ url }, plain)
+  const base = origin && !plain.some((k) => url.startsWith(k.value)) ? inUrl.filter((s) => s.kind === 'baseUrl').map((s): Found => ({ ...s, value: origin, secret: hideInText(origin) !== origin || !url.includes(origin) })) : []
+  // Each place by itself, so that equal ones don't show as such.
+  const credentials = [...r.headers.flatMap((h, header) => ask({ headers: [h] }, marked).map((s): Found => ({ ...s, header }))), ...ask({ auth: r.auth }, marked)]
+  return [...existing, ...base, ...credentials, ...inUrl.filter((s) => s.kind === 'pathId')].map((s, i) => ({ ...s, id: `${s.kind}:${i}` }))
 }
 const defaultClean = (w: McpServeOptions) => {
   const known = new Redactor(knownSecrets({ environments: [...w.ws.environments, ...(w.environment ? [w.environment] : [])], globals: w.globals, collections: w.ws.collections, folders: w.ws.folders, requests: w.ws.requests, extra: [w.settings.mcpHostToken] }))
   return (s: string) => known.clean(s)
 }
 const pathNames = (r: RequestDef) => [...pathVarNames(r.url), ...r.pathVars.map((p) => p.key)]
-/** The nth name like `base` that isn't taken. */
-function freeName(base: string, taken: string[], n: number): string {
-  for (let i = 1; ; i++) {
-    const name = i === 1 ? base : `${base}${i}`
-    if (!taken.includes(name) && n-- === 0) return name
-  }
-}
-
 /** Its lines, made here: the titles and details of suggest() hold values. */
-export function suggestionLines(r: RequestDef, list: Suggestion[]): string[] {
-  const what = (s: Suggestion) => {
+export function suggestionLines(r: RequestDef, list: Found[]): string[] {
+  const what = (s: Found) => {
     switch (s.kind) {
       case 'existing': return 'a value that a variable already has'
       case 'baseUrl': return 'base URL'
       case 'bearer': return 'bearer token'
-      case 'apiKeyHeader': { const h = r.headers.find((x) => x.enabled && x.value === s.value); return h ? `API key in the header ${h.key}` : 'API key of the sign-in' }
+      case 'apiKeyHeader': return s.header === undefined ? 'API key of the sign-in' : `API key in the header ${r.headers[s.header].key}`
       case 'basic': return 'sign-in password'
       case 'pathId': return 'ID in the path'
     }
@@ -186,23 +185,58 @@ function showsNoMore(was: string, now: string): boolean {
 /** `s` with the value replaced, or as it is where that would show something. */
 function swapped(s: string, show: (x: string) => string, from: Suggestion): string {
   const shown = show(s), to = `{{${from.varName}}}`
-  if (from.secret && shown.includes(from.value)) return s // a short one: replacing it in what can be read would tell it
   const next = from.secret ? outside(s, from.value, to) : inShown(s, shown, from.value, to)
   return next !== s && showsNoMore(shown, show(next)) ? next : s
 }
 
-/** The request with the chosen values moved, and the variables to make. Only those that moved anything. */
-export function parameterize(r: RequestDef, chosen: Suggestion[], cl: Cleaner): { request: RequestDef; create: KV[]; done: Suggestion[] } {
-  const make = (s: Suggestion) => kv(s.varName, s.value, true, s.secret ? { secret: true } : {})
-  const done: Suggestion[] = [], create: KV[] = []
-  let out = r
-  // IDs first: they change the URL's shape.
-  for (const s of chosen.filter((x) => x.kind === 'pathId')) {
-    const next = applySuggestions(out, [s]).request
-    if (next.url !== out.url && showsNoMore(cl.clean(out.url), cl.clean(next.url))) { out = next; done.push(s) }
+/** The URL with the ID replaced by its name, the first time it can be read. */
+function withPathName(url: string, shown: string, value: string, name: string): string {
+  const parts = shown.split(HIDDEN)
+  const end = (i: number) => (i === parts.length - 1 ? '(?=[/?#]|$)' : '(?=[/?#])')
+  const i = parts.findIndex((p, n) => new RegExp(`/${value}${end(n)}`).test(p))
+  if (i < 0) return url
+  const mark = `/:${name}`
+  const next = parts.map((p, n) => (n === i ? p.replace(new RegExp(`/${value}${end(n)}`), mark) : p))
+  let out = '', at = 0
+  for (const [n, p] of parts.entries()) {
+    const start = n === 0 ? 0 : n === parts.length - 1 ? url.length - p.length : url.indexOf(p, at + 1)
+    if (start < at || !url.startsWith(p, start)) return url
+    out += url.slice(at, start) + next[n]
+    at = start + p.length
   }
-  for (const s of chosen.filter((x) => x.kind === 'bearer')) { out = applySuggestions(out, [s]).request; done.push(s); create.push(make(s)) }
-  for (const s of chosen.filter((x) => x.kind !== 'pathId' && x.kind !== 'bearer').sort((a, b) => b.value.length - a.value.length)) {
+  return out
+}
+
+/**
+ * The request with the chosen values moved, and the variables to make. Only those that moved anything. `signIn` is the
+ * sign-in that applies: a bearer header goes to the Auth tab only where there is none and nothing kept there.
+ */
+export function parameterize(r: RequestDef, chosen: Found[], cl: Cleaner, signIn: Auth | null): { request: RequestDef; create: KV[]; done: Found[] } {
+  const done: Found[] = [], create: KV[] = []
+  let out = r
+  const did = (s: Found) => { done.push(s); if (s.create) create.push(kv(s.varName, s.value, true, s.secret ? { secret: true } : {})) }
+  // Credentials, each in its place. Headers keep their number until all are done.
+  let headers: (KV | null)[] = [...r.headers]
+  let auth: Auth = r.auth
+  const clear = () => [...AUTH_SECRETS].every((k) => !(auth as unknown as Record<string, unknown>)[k])
+  for (const s of chosen.filter(credential)) {
+    const to = `{{${s.varName}}}`
+    if (s.header === undefined) auth = { ...auth, [s.kind === 'bearer' ? 'token' : s.kind === 'basic' ? 'password' : 'value']: to }
+    else {
+      const bearer = s.kind === 'bearer' && clear() && (!signIn || ['none', 'bearer'].includes(signIn.kind))
+      if (bearer) auth = { ...emptyAuth('bearer'), token: to }
+      headers = headers.map((h, i) => (i !== s.header || !h ? h : bearer ? null : { ...h, value: s.kind === 'bearer' ? h.value.replace(/\S+$/, to) : to }))
+    }
+    did(s)
+  }
+  out = { ...out, auth, headers: headers.filter((h) => h !== null) }
+  for (const s of chosen.filter((x) => x.kind === 'pathId')) {
+    const shown = cl.clean(out.url), url = withPathName(out.url, shown, s.value, s.varName)
+    if (url === out.url || !showsNoMore(shown, cl.clean(url))) continue
+    out = { ...out, url, pathVars: pathVarsFromUrl(url, [...out.pathVars, kv(s.varName, s.value)]), params: paramsFromUrl(url, out.params) }
+    did(s)
+  }
+  for (const s of chosen.filter((x) => x.kind === 'existing' || x.kind === 'baseUrl').sort((a, b) => b.value.length - a.value.length)) {
     const row = (x: KV): KV => { const value = swapped(x.value, (v) => cl.deep({ key: x.key, value: v }).value, s); return value === x.value ? x : { ...x, value } }
     const free = (v: string) => swapped(v, cl.clean, s)
     const auth: Auth = { ...out.auth, username: free(out.auth.username) }
@@ -213,17 +247,22 @@ export function parameterize(r: RequestDef, chosen: Suggestion[], cl: Cleaner): 
     }
     if (canonical(next) === canonical(out)) continue
     out = { ...next, params: next.url === out.url ? out.params : paramsFromUrl(next.url, out.params) }
-    done.push(s)
-    if (s.create) create.push(make(s))
+    did(s)
   }
   return { request: out, create, done }
 }
+
+const credential = (s: Suggestion) => s.kind === 'bearer' || s.kind === 'apiKeyHeader' || s.kind === 'basic'
+const signInOf = (r: RequestDef, t: Tables, w: McpServeOptions) => effectiveAuth(r, t.collection, folderChain(w.ws.folders, r.folderId))
 
 /** What a request sends, to compare: names of headers in lower case and one spelling of Bearer, dynamic names as they are. */
 function sent(r: RequestDef, t: Tables, w: McpServeOptions): string {
   const p = prepare(light(r), { ...t, folders: folderChain(w.ws.folders, r.folderId), locals: new Map(Object.keys(FAKE).map((n) => [n, n])) })
   const headers = p.headers.map(([k, v]) => `${k.toLowerCase()}: ${k.toLowerCase() === 'authorization' ? v.replace(/^bearer\s+/i, 'Bearer ') : v}`).sort()
-  return JSON.stringify([p.method, p.url, headers, p.body, p.multipart, p.unresolved])
+  // what signs it comes after prepare()
+  const a = signInOf(r, t, w), scope = scopeFor(t)
+  const signed = a && ['digest', 'jwt', 'awsv4', 'oauth2'].includes(a.kind) ? Object.entries(a).map(([k, v]) => [k, typeof v === 'string' ? interpolate(v, scope) : v]) : null
+  return JSON.stringify([signed, p.method, p.url, headers, p.body, p.multipart])
 }
 
 const CHANGED = 'The request changed. Look at the suggestions again.'
@@ -243,7 +282,7 @@ export function applyParameters(input: Record<string, unknown>, ctx: ProposeCont
   if (!['environment', 'collection', 'globals'].includes(where)) return refuse('Say where: environment, collection or globals.')
 
   const taken = new Set([...rowsOf(t).map((v) => v.key.trim()), ...pathNames(r)])
-  const chosen: Suggestion[] = []
+  const chosen: Found[] = []
   for (const [id, as] of Object.entries((input.choose as Record<string, string>) ?? {})) {
     const s = batch.suggestions.find((x) => x.id === id)
     if (!s) return refuse(`There is no suggestion “${id}”. Look at the suggestions again.`)
@@ -262,7 +301,7 @@ export function applyParameters(input: Record<string, unknown>, ctx: ProposeCont
 
   // What moves is hidden from here on, also where it wasn't known to be a secret before.
   const safe = cleaner({ ...ctx, secrets: () => [...ctx.secrets(), ...chosen.filter((s) => s.secret).map((s) => s.value)] }, w)
-  const { request, create, done } = parameterize(r, chosen, safe)
+  const { request, create, done } = parameterize(r, chosen, safe, signInOf(r, t, w))
   if (!done.length) return refuse('These can’t be moved here without showing a secret.')
   // Rule: a hidden value may move, but none is lost. What was swapped is put back before comparing.
   const values = new Map(done.map((s) => [s.varName, s.value]))
@@ -290,6 +329,8 @@ export function applyParameters(input: Record<string, unknown>, ctx: ProposeCont
   return {
     tool: 'apply_parameters', title: `Move values of “${r.name}” into ${create.length ? place : 'variables'}`, changes: structuredClone(changes), cleaner: safe,
     reply: `“${r.name}” now uses ${names}.${create.length ? ` New in ${place}: ${create.map((v) => v.key).join(', ')}.` : ''}`,
+    // a scheme and a variable, nothing hidden: shown as it is
+    exact: { headers: new Map(request.headers.filter((h, i) => h.value !== r.headers[i]?.value && /^bearer \{\{[^{}\s]+\}\}$/i.test(h.value)).map((h) => [h.key.toLowerCase(), h.value])) },
     moved: new Map(done.filter((s) => s.kind !== 'pathId').map((s) => [s.varName, s.value])),
   }
 }
@@ -307,11 +348,15 @@ export function setEnvironmentVariables(input: Record<string, unknown>, ctx: Pro
   const set = Object.entries((input.variables as Record<string, string>) ?? {}), drop = ((input.remove as string[] | undefined) ?? []).map((k) => k.trim())
   if (!set.length && !drop.length) return refuse('Give variables to set or names to remove.')
   // One with a secret's name is the person's, also while it is empty.
-  const why = badVariables(input, env.variables.map((v) => ({ ...v, secret: named(v) })), cl)
+  const why = badVariables({ ...input, remove: drop }, env.variables.map((v) => ({ ...v, secret: named(v) })), cl)
   if (why) return refuse(why)
   const at = (k: string) => (v: KV) => v.key.trim() === k.trim()
   const none = drop.find((k) => !env.variables.some(at(k)))
   if (none !== undefined) return refuse(`There is no variable “${none}” in that environment.`)
+
+  const lower = [...real.collections.flatMap((c) => c.variables), ...real.globals, ...real.requests.flatMap((x) => x.handoff?.variables ?? [])]
+  const hides = set.map(([k]) => k).find((k) => SECRET_NAME.test(k) && !env.variables.some(at(k)) && lower.some(at(k)))
+  if (hides !== undefined) return refuse(`There is a “${hides}” in a collection or the globals already, and an empty one here would hide it. Ask the person to add it.`)
 
   const empty: string[] = []
   let variables = env.variables.filter((v) => !drop.includes(v.key.trim()))
