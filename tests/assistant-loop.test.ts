@@ -4,7 +4,7 @@ import { newConnection, type Connection } from '../src/core/assistant/connection
 import { runTool, validate } from '../src/core/assistant/gate'
 import { ask, type LoopEvents } from '../src/core/assistant/loop'
 import { ParameterBatches } from '../src/core/assistant/parameters'
-import { allSecrets, readOnlyTools, systemPrompt } from '../src/core/assistant/tools'
+import { allSecrets, offeredTools, systemPrompt } from '../src/core/assistant/tools'
 import { createProvider } from '../src/core/assistant/providers'
 import { AssistantError } from '../src/core/assistant/providers/shared'
 import type { Call, Provider, Turn, TurnRequest } from '../src/core/assistant/providers/types'
@@ -98,7 +98,7 @@ const secrets = () => allSecrets({
   environments: [staging, foreign], globals: [secretVar('g', S.globalVar)], collections: [shop, elsewhere], folders: [folder], requests: [items, formReq, bodyPwd],
   connections: [anthropic(), cloud({ key: S.otherKey })], signIns: [signIn], cookies: [{ value: S.cookie }, { value: S.respHeader }], clientCerts: [{ key: PEM }], history: [entry], hostToken: S.host,
 })
-const ctx = (c = conn(), over: Partial<Parameters<typeof runTool>[2]> = {}) => ({ world: () => makeWorld(), conn: c, spaceId: 'default', signal: new AbortController().signal, secrets, batches: new ParameterBatches(), ...over })
+const ctx = (c = conn(), over: Partial<Parameters<typeof runTool>[2]> = {}) => ({ world: () => makeWorld(), conn: c, spaceId: 'default', signal: new AbortController().signal, secrets, batches: new ParameterBatches(), job: 'ask' as const, unsaved: () => false, schedules: async () => [], decide: vi.fn(async () => ({ outcome: 'rejected' as const })), ...over })
 const noSecrets = (t: string) => {
   for (const s of [...SECRETS, KEY]) for (const v of [s, JSON.stringify(s).slice(1, -1), encodeURIComponent(s)]) expect(t).not.toContain(v)
   expect(t).not.toContain('word-2') // the end of a password with commas in it
@@ -112,15 +112,16 @@ beforeEach(() => { rust.answers.length = 0; rust.bodies.length = 0; vi.mocked(ha
 afterEach(() => { vi.useRealTimers() })
 
 describe('the tools offered', () => {
-  const names = (c: Connection) => readOnlyTools(c).map((t) => t.name)
-  it('reads only, log tools with readLogs, none when the model can’t use tools', () => {
-    expect(names(conn({ readLogs: true }))).toEqual(['list_requests', 'get_request', 'get_environment', 'get_logs', 'list_history', 'get_history_entry', 'suggest_parameters'])
-    expect(names(conn({ readLogs: false }))).toEqual(['list_requests', 'get_request', 'get_environment', 'suggest_parameters'])
+  const names = (c: Connection) => offeredTools(c).map((t) => t.name)
+  const EDITS = ['create_request', 'update_request', 'copy_request', 'move_request', 'set_variables', 'set_scripts', 'delete_request', 'apply_parameters', 'set_environment_variables']
+  it('reading and proposing only, log tools with readLogs, none when the model can’t use tools', () => {
+    expect(names(conn({ readLogs: true }))).toEqual(['list_requests', 'get_request', 'get_environment', 'get_logs', 'list_history', 'get_history_entry', 'suggest_parameters', ...EDITS])
+    expect(names(conn({ readLogs: false }))).toEqual(['list_requests', 'get_request', 'get_environment', 'suggest_parameters', ...EDITS])
     expect(names(conn({ tools: 'no' }))).toEqual([])
-    expect(names(conn({ tools: 'unknown', readLogs: false }))).toHaveLength(4)
+    expect(names(conn({ tools: 'unknown', readLogs: false }))).toHaveLength(13)
   })
   it('descriptions hold nothing from the workspace', () => {
-    const t = JSON.stringify(readOnlyTools(conn()))
+    const t = JSON.stringify(offeredTools(conn()))
     expect(t).not.toContain('Staging')
     expect(t).not.toContain('assistant/')
     noSecrets(t)
@@ -128,7 +129,7 @@ describe('the tools offered', () => {
 })
 
 describe('the gate', () => {
-  it.each(['send_request', 'run_collection', 'run_flow', 'update_request', 'create_request', 'delete_request', 'set_variables', 'set_scripts', 'made_up', 'constructor', '', 'GET_REQUEST', 'get_request '])('refuses %j without touching handleMcp', async (name) => {
+  it.each(['send_request', 'run_collection', 'run_flow', 'made_up', 'constructor', '', 'GET_REQUEST', 'get_request '])('refuses %j without touching handleMcp', async (name) => {
     const r = await runTool(name, { name: 'Form' }, ctx(conn({ readLogs: true })))
     expect(r.isError).toBe(true)
     expect(handleMcp).not.toHaveBeenCalled()
@@ -287,7 +288,7 @@ describe('planted secrets', () => {
     rust.answers.push(answer('Looking', ALL_CALLS), answer('Done'))
     const r = await ask({
       provider: await createProvider(c, net), conn: c, system: systemPrompt({ openRequest: `Items ${spilled}`, workspace: `WS ${spilled}` }, secrets()),
-      messages: [{ role: 'user', content: `My key is ${KEY}, help with Items` }], tools: readOnlyTools(c), keys: () => [KEY, S.otherKey],
+      messages: [{ role: 'user', content: `My key is ${KEY}, help with Items` }], tools: offeredTools(c), keys: () => [KEY, S.otherKey],
       run: (n, i, signal) => runTool(n, i, { ...ctx(c), signal }), signal: new AbortController().signal, on: events().on,
     })
     expect(r.ended).toBe('done')
@@ -332,7 +333,7 @@ describe('secrets only a pattern or a name gives away, next to known values', ()
     for (const [kind, answer] of KINDS) {
       const c = kind === 'anthropic' ? anthropic({ readLogs: true }) : cloud({ readLogs: true })
       rust.answers.push(answer('Looking', calls), answer('Done')); rust.bodies.length = 0
-      const r = await ask({ provider: await createProvider(c, net), conn: c, system: systemPrompt({ workspace: text, openRequest: text }, sec()), messages: hello(), tools: readOnlyTools(c), run: (n, i, signal) => runTool(n, i, { ...ctx(c, { world, secrets: sec }), signal }), signal: new AbortController().signal, on: events().on })
+      const r = await ask({ provider: await createProvider(c, net), conn: c, system: systemPrompt({ workspace: text, openRequest: text }, sec()), messages: hello(), tools: offeredTools(c), run: (n, i, signal) => runTool(n, i, { ...ctx(c, { world, secrets: sec }), signal }), signal: new AbortController().signal, on: events().on })
       expect(r.ended).toBe('done')
       expect(rust.bodies).toHaveLength(2)
       for (const b of rust.bodies) for (const p of PARTS) expect(b).not.toContain(p)
@@ -391,7 +392,7 @@ function start(steps: Step[], over: Partial<Parameters<typeof ask>[0]> = {}) {
   const { provider, seen } = scripted(...steps), { on, log } = events(), ctl = new AbortController()
   const run = vi.fn(async () => ({ text: 'ok', isError: false }) as { text: string; isError: boolean })
   const c = over.conn ?? conn()
-  const result = ask({ provider: { ...provider, connectionId: c.id }, conn: c, system: 'sys', messages: hello(), tools: readOnlyTools(c), run, signal: ctl.signal, on, ...over })
+  const result = ask({ provider: { ...provider, connectionId: c.id }, conn: c, system: 'sys', messages: hello(), tools: offeredTools(c), run, signal: ctl.signal, on, ...over })
   return { result, seen, log, ctl, run }
 }
 const tick = () => new Promise((r) => setTimeout(r, 0))
@@ -426,7 +427,7 @@ describe('the loop', () => {
     expect(t.seen[0].system).toBe('sys')
   })
   it('offers no tools when the connection has none, and runs none then either', async () => {
-    const t = start([{ calls: [call('1')] }, { text: 'ok' }], { conn: conn({ tools: 'no' }), tools: readOnlyTools(conn()) })
+    const t = start([{ calls: [call('1')] }, { text: 'ok' }], { conn: conn({ tools: 'no' }), tools: offeredTools(conn()) })
     consistent((await t.result).messages)
     expect(t.seen[0].tools).toEqual([])
     expect(t.run).not.toHaveBeenCalled()
@@ -549,7 +550,7 @@ describe('the loop', () => {
   it.each(KINDS)('after a stop during a tool the next message goes through in the %s shape', async (kind, answer) => {
     const c = kind === 'anthropic' ? anthropic() : cloud()
     rust.answers.push(answer('Looking', [{ name: 'list_requests', input: '{}' }, { name: 'get_request', input: '{"name":"Form"}' }]), answer('Hello'))
-    const provider = await createProvider(c, net), ctl = new AbortController(), tools = readOnlyTools(c)
+    const provider = await createProvider(c, net), ctl = new AbortController(), tools = offeredTools(c)
     const r = await ask({ provider, conn: c, system: 's', messages: hello(), tools, run: async () => { setTimeout(() => ctl.abort()); return new Promise(() => {}) }, signal: ctl.signal, on: events().on })
     expect(r.ended).toBe('stopped')
     consistent(r.messages)
@@ -585,7 +586,7 @@ describe('the loop', () => {
     const c = kind === 'anthropic' ? anthropic() : cloud(), run = vi.fn()
     for (const [stop, ended] of kind === 'anthropic' ? [['max_tokens', 'length'], ['refusal', 'refused']] : [['length', 'length'], ['content_filter', 'refused']]) {
       rust.answers.push(answer('x', [{ name: 'list_requests', input: '{}' }], stop))
-      const r = await ask({ provider: await createProvider(c, net), conn: c, system: 's', messages: hello(), tools: readOnlyTools(c), run, signal: new AbortController().signal, on: events().on })
+      const r = await ask({ provider: await createProvider(c, net), conn: c, system: 's', messages: hello(), tools: offeredTools(c), run, signal: new AbortController().signal, on: events().on })
       expect(r).toMatchObject({ ended, messages: hello() })
     }
     expect(run).not.toHaveBeenCalled()

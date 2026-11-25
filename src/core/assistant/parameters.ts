@@ -17,7 +17,6 @@ import { type Auth, type Collection, emptyAuth, emptyBody, type Environment, kv,
 import { paramsFromUrl, splitUrl } from '../url'
 import { interpolate } from '../vars'
 import { cleaner } from './clean'
-import type { ToolContext } from './gate'
 import { canonical, type Change } from './proposal'
 import { badVariables, BODY_FIELDS, type Cleaner, cleanWorld, type Draft, held, inStep, light, lost, oneLine, type ProposeContext, type Refused } from './propose'
 
@@ -142,7 +141,7 @@ export function suggestionLines(r: RequestDef, list: Found[]): string[] {
 }
 
 /** The suggest_parameters tool. The gate hides, cuts and marks what it answers. */
-export function suggestParameters(input: Record<string, unknown>, ctx: ToolContext, w: McpServeOptions): { text: string; isError: boolean } {
+export function suggestParameters(input: Record<string, unknown>, ctx: ProposeContext, w: McpServeOptions): { text: string; isError: boolean } {
   const cl = cleaner(ctx, w)
   const { real, lookup } = cleanWorld(w, ctx.spaceId, cl)
   const found = lookup(String(input.name ?? ''))

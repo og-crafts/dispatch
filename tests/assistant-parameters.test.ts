@@ -31,7 +31,7 @@ const setup = (o: W) => {
     unsaved: (id) => (o.unsaved ?? []).includes(id), schedules: async () => o.schedules ?? [],
   }
   const suggest = async (name = 'Shop/Create order') => {
-    const r = await runTool('suggest_parameters', { name }, ctx)
+    const r = await runTool('suggest_parameters', { name }, { ...ctx, job: 'ask', decide: async () => ({ outcome: 'stopped' }) })
     const lines = r.text.split('\n').filter((l) => l.includes(' · ')).map((l) => l.split(' · '))
     return { ...r, lines, batch: /batch: (\S+)/.exec(r.text)?.[1] ?? '', id: (what: string) => lines.find((l) => l.slice(0, 3).join(' ').includes(what))?.[0] ?? `no ${what}` }
   }

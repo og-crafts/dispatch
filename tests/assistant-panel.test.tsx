@@ -212,7 +212,7 @@ describe('reading stored messages', () => {
 const api = (over: Partial<AssistantApi> = {}): AssistantApi => ({
   ready: true, connections: [local()], connection: local(), selectConnection: vi.fn(), chats: [], chat: null, paused: false, blocked: null,
   send: vi.fn(async () => 'sent' as const), stop: vi.fn(), newChat: vi.fn(), openChat: vi.fn(async () => {}), deleteChat: vi.fn(async () => {}),
-  status: 'idle', ended: null, streamed: '', tools: [], usage: null, fallback: null, error: '', pendingConsent: null, allowConsent: vi.fn(async () => 'sent' as const), declineConsent: vi.fn(),
+  status: 'idle', ended: null, streamed: '', tools: [], cards: [], approve: vi.fn(async () => {}), reject: vi.fn(), undo: vi.fn(async () => {}), job: 'ask', setJob: vi.fn(), usage: null, fallback: null, error: '', pendingConsent: null, allowConsent: vi.fn(async () => 'sent' as const), declineConsent: vi.fn(),
   nearFull: false, summarise: vi.fn(async () => 'sent' as const), summary: null, startFromSummary: vi.fn(async () => 'sent' as const), dismissSummary: vi.fn(), ...over,
 })
 const ws = (over: object = {}) => ({ spaces: [{ id: 'default', name: 'Orders' }, { id: 'two', name: 'Second' }], activeSpaceId: 'default', environment: { name: 'Staging' }, switchSpace: vi.fn(), setView: vi.fn(), ...over }) as never as WorkspaceApi

@@ -1,16 +1,20 @@
 /**
  * The gate between the model and Dispatch: the only way a tool runs, and the only way its result gets out. It refuses
  * what isn't offered and what doesn't fit the tool's schema before anything runs, hands on a cleaned copy of the open
- * workspace, and redacts and cuts what comes back.
+ * workspace, and redacts and cuts what comes back. A change is only proposed here: the person decides (`decide`).
  */
 import { handleMcp, type McpServeOptions } from '../mcpHandler'
 import { HIDDEN } from '../mcpWorkspace'
 import type { Transport } from '../transport'
 import { spaceOf, type HistoryEntry, type RequestDef } from '../types'
 import type { Connection } from './connections'
-import { cleaner } from './clean'
+import { cleaner, secretsNow } from './clean'
 import { type ParameterBatches, suggestParameters } from './parameters'
-import { offeredTools, smallContext, toolClass } from './tools'
+import type { Proposal } from './proposal'
+import { propose } from './propose'
+import { until } from './providers/shared'
+import { type AssistantJob, offeredTools, smallContext, toolClass } from './tools'
+import type { Schedule } from '../schedules'
 export { smallContext }
 
 export interface ToolContext {
@@ -24,7 +28,16 @@ export interface ToolContext {
   secrets: () => string[]
   /** What suggest_parameters suggested lately, one per chat. */
   batches: ParameterBatches
+  /** The chat's job, the one its tools were offered for. */
+  job: AssistantJob
+  /** Whether the request is open with edits that aren't saved: a change would be built on the old text. */
+  unsaved(requestId: string): boolean
+  schedules(): Promise<Schedule[]>
+  /** Shows the person the proposal and waits. Answers a stop at once, unless the change is being written: then the write decides. */
+  decide(p: Proposal, signal: AbortSignal): Promise<Decision>
 }
+/** `text`: why it couldn't be applied. */
+export interface Decision { outcome: 'applied' | 'rejected' | 'expired' | 'stopped'; text?: string }
 export interface ToolResult { text: string; isError: boolean }
 
 const RESULT_LIMIT = 20_000
@@ -32,7 +45,7 @@ const SMALL_RESULT_LIMIT = 4_000
 
 // Behind the gate's own refusal, what handleMcp is given can't send either: no request has this method (an empty list would
 // allow them all), and the transport and pipeline do nothing.
-const NO_METHODS = ['none: the assistant only reads']
+const NO_METHODS = ['none: the assistant never sends']
 const NO_TRANSPORT: Transport = { label: 'none', unrestricted: false, send: async () => { throw new Error('The assistant can’t send requests.') } }
 
 interface Schema { type?: string; properties?: Record<string, Schema>; required?: string[]; enum?: unknown[]; additionalProperties?: Schema; items?: Schema }
@@ -70,15 +83,22 @@ export function validate(input: unknown, schema: object, at = 'The input'): stri
 export async function runTool(name: string, input: unknown, ctx: ToolContext): Promise<ToolResult> {
   const refuse = (text: string): ToolResult => ({ text, isError: true })
   if (ctx.signal.aborted) return refuse('The person stopped this. Nothing was run.')
-  // Until edits can be proposed and approved, only reading runs; a name with no class never does.
-  const tool = toolClass(name) === 'read' ? offeredTools(ctx.conn).find((t) => t.name === name) : undefined
+  const tool = offeredTools(ctx.conn, ctx.job).find((t) => t.name === name)
   if (!tool) return refuse('There is no such tool here. Use only the tools you were given. Nothing was run.')
   const bad = validate(input, tool.inputSchema)
   if (bad) return refuse(`${bad} Nothing was run.`)
-  if (JSON.stringify(input).includes(HIDDEN)) return refuse(`${HIDDEN} stands for a secret you weren’t shown, so it can’t be used. Nothing was run.`)
+  const read = toolClass(name) === 'read'
+  // an edit's path may hold it; propose() refuses it anywhere else
+  if (read && JSON.stringify(input).includes(HIDDEN)) return refuse(`${HIDDEN} stands for a secret you weren’t shown, so it can’t be used. Nothing was run.`)
   try {
     const world = ctx.world()
     if (world.settings.activeSpaceId !== ctx.spaceId) return refuse('The person opened another workspace, so this chat can’t read here now. Nothing was run.')
+    if (!read) {
+      const before = secretsNow(ctx, world)
+      const p = await until(propose(name, input as Record<string, unknown>, ctx), ctx.signal)
+      if ('refused' in p) return { text: exit(p.refused, cleaner(ctx, ctx.world(), before).clean, ctx.conn), isError: true }
+      return await decided(p, ctx, before)
+    }
     if (name === 'suggest_parameters') {
       const r = suggestParameters(input as Record<string, unknown>, ctx, world)
       return { text: exit(r.text, cleaner(ctx, world).clean, ctx.conn), isError: r.isError }
@@ -87,7 +107,24 @@ export async function runTool(name: string, input: unknown, ctx: ToolContext): P
     const r = await handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: input } }, options)
     return { text: exit(String(r?.result?.content?.[0]?.text ?? 'This tool isn’t available.'), clean, ctx.conn), isError: !r?.result || !!r.result.isError }
   } catch {
-    return refuse('This tool failed inside Dispatch. Nothing was changed.')
+    return refuse(ctx.signal.aborted ? STOPPED : 'This tool failed inside Dispatch. Nothing was changed.')
+  }
+}
+
+const STOPPED = 'This was stopped. Nothing was changed.'
+
+/** Asks the person, and says what came of it. Never throws: it may have been applied. */
+async function decided(p: Proposal, ctx: ToolContext, before: string[]): Promise<ToolResult> {
+  let d: Decision
+  try { d = await ctx.decide(p, ctx.signal) } catch { return { text: 'This failed inside Dispatch. Look at it before you say whether it was changed.', isError: true } }
+  if (d.outcome === 'rejected') return { text: 'The person didn’t want this change. Don’t propose the same again; ask what they’d like instead.', isError: true }
+  if (d.outcome === 'stopped') return { text: STOPPED, isError: true }
+  const applied = d.outcome === 'applied'
+  try {
+    // with what is secret now too: it may have moved something into a secret variable
+    return { text: exit(applied ? p.reply : d.text ?? '', cleaner(ctx, ctx.world(), before).clean, ctx.conn), isError: !applied }
+  } catch {
+    return { text: applied ? 'The change was applied.' : 'The change wasn’t applied.', isError: !applied }
   }
 }
 

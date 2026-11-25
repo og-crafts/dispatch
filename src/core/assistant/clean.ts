@@ -8,16 +8,23 @@ import { HIDDEN } from '../mcpWorkspace'
 import type { ToolContext } from './gate'
 import { allSecrets } from './tools'
 
-export function cleaner(ctx: ToolContext, w: McpServeOptions): { clean(s: string): string; deep<T>(v: T): T } {
-  const history = ctx.conn.readLogs ? w.logs?.history() ?? [] : []
-  const redact = new Redactor([
+type From = Pick<ToolContext, 'conn' | 'secrets'>
+
+/** Every secret known now. */
+export function secretsNow(ctx: From, w: McpServeOptions): string[] {
+  return [
     ...ctx.secrets(),
     ...allSecrets({
       environments: [...w.ws.environments, ...(w.environment ? [w.environment] : [])], globals: w.globals, collections: w.ws.collections, folders: w.ws.folders,
-      requests: w.ws.requests, history,
+      requests: w.ws.requests, history: ctx.conn.readLogs ? w.logs?.history() ?? [] : [],
       connections: [ctx.conn], signIns: [], cookies: [], clientCerts: w.settings.clientCerts, hostToken: w.settings.mcpHostToken,
     }),
-  ])
+  ]
+}
+
+/** `also`: secrets that may not be known any more, such as those from before a change. */
+export function cleaner(ctx: From, w: McpServeOptions, also: string[] = []): { clean(s: string): string; deep<T>(v: T): T } {
+  const redact = new Redactor([...secretsNow(ctx, w), ...also])
   const clean = (s: string) => redact.clean(s)
   const deep = <T>(v: T, key = ''): T => {
     if (typeof v === 'string') return (/^(id|kind|method)$|Id$/.test(key) ? v : clean(v)) as T

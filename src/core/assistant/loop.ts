@@ -6,7 +6,7 @@
 import { Redactor } from '../mcpLogs'
 import { reach, validateAddress, type Connection } from './connections'
 import { smallContext, type ToolResult } from './gate'
-import { abortError, AssistantError, assertUsable, scrub } from './providers/shared'
+import { AssistantError, assertUsable, scrub, until } from './providers/shared'
 import type { Provider, ToolSpec, Turn } from './providers/types'
 
 export interface LoopEvents {
@@ -18,6 +18,9 @@ export interface LoopEvents {
   fallback?(model: string): void
 }
 
+/** The 10 minutes. They stand still while the person is asked. Once or many times, pausing is the same; it ends with the call. */
+export interface Clock { pause(): void; resume(): void }
+
 export interface AskOptions {
   provider: Provider
   conn: Connection
@@ -26,7 +29,9 @@ export interface AskOptions {
   messages: unknown[]
   tools: ToolSpec[]
   /** runTool, with its context. */
-  run: (name: string, input: unknown, signal: AbortSignal) => Promise<ToolResult>
+  run: (name: string, input: unknown, signal: AbortSignal, clock: Clock) => Promise<ToolResult>
+  /** Whether this tool's result is awaited even after a stop, because it says what was done. It must come soon after one. */
+  settles?: (name: string) => boolean
   /** Every connection key: hidden in what the person just typed. */
   keys?: () => string[]
   signal: AbortSignal
@@ -65,16 +70,6 @@ function canGoBack(t: Turn): boolean {
   return !t.calls.length && t.text.trim() !== '' && !(t.stop === 'length' && last.includes('thinking'))
 }
 
-/** `p`, or a rejection as soon as `signal` aborts. */
-function until<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
-  return new Promise<T>((res, rej) => {
-    const stop = () => rej(abortError())
-    if (signal.aborted) stop()
-    signal.addEventListener('abort', stop, { once: true })
-    p.then(res, rej).finally(() => signal.removeEventListener('abort', stop))
-  })
-}
-
 export async function ask(o: AskOptions): Promise<Answer> {
   const messages = o.messages.map((m, i) => (i === o.messages.length - 1 ? withoutKeys(m, [o.conn.key]) : m))
   const end = (ended: Answer['ended'], error?: string): Answer => ({ messages, ended, ...(error ? { error } : {}) })
@@ -92,7 +87,16 @@ export async function ask(o: AskOptions): Promise<Answer> {
   const { signal } = ctl
   const stop = () => ctl.abort()
   o.signal.addEventListener('abort', stop, { once: true })
-  const timer = setTimeout(stop, MAX_MS)
+  let left = MAX_MS, since = 0, timer: ReturnType<typeof setTimeout> | undefined
+  const go = () => { since = performance.now(); timer = setTimeout(stop, left) }
+  const halt = () => { clearTimeout(timer); left = Math.max(0, left - (performance.now() - since)) }
+  go()
+  /** One for each call, so a call that is over can't touch it. */
+  const clockOf = (): Clock & { end(): void } => {
+    let over = false, paused = false
+    const resume = () => { if (!paused) return; paused = false; go() }
+    return { pause: () => { if (over || paused) return; paused = true; halt() }, resume, end: () => { resume(); over = true } }
+  }
   /** Tells the panel, unless this was stopped. What the panel does with it must not break the conversation. */
   const tell = (f: () => void) => { if (!signal.aborted) try { f() } catch { /* the panel's problem */ } }
   const cut = () => (o.signal.aborted ? end('stopped') : end('limit', 'This took 10 minutes, so it was stopped. Send another message to go on.'))
@@ -125,21 +129,28 @@ export async function ask(o: AskOptions): Promise<Answer> {
         else {
           used++
           tell(() => o.on.toolStart(c.name, c.input))
+          const settles = !!o.settles?.(c.name)
+          const clock = clockOf()
           try {
             if (c.invalid) r = { text: c.invalid, isError: true }
             else if (!tools.some((t) => t.name === c.name)) r = { text: 'There is no such tool here. Nothing was run.', isError: true }
-            else r = await until((async () => o.run(c.name, c.input, signal))(), signal)
+            else {
+              const p = (async () => o.run(c.name, c.input, signal, clock))()
+              r = await (settles ? p : until(p, signal))
+            }
           } catch {
             r = { text: !signal.aborted ? 'This tool failed inside Dispatch.' : o.signal.aborted ? 'The person stopped this.' : 'Time ran out.', isError: true }
-          }
+          } finally { clock.end() }
           const { isError } = r
-          tell(() => o.on.toolEnd(c.name, isError))
+          // what was done is told also after a stop
+          if (settles && !isError) try { o.on.toolEnd(c.name, isError) } catch { /* the panel's problem */ }
+          else tell(() => o.on.toolEnd(c.name, isError))
         }
         results.push({ id: c.id, text: r.text, isError: r.isError })
       }
       messages.push(turn.message, ...o.provider.toolResults(results))
       if (signal.aborted) return cut()
-      if (used >= MAX_CALLS) return end('limit', `That was ${MAX_CALLS} look-ups for one message, so it stopped here. Send another message to go on.`)
+      if (used >= MAX_CALLS) return end('limit', `That was ${MAX_CALLS} steps for one message, so it stopped here. Send another message to go on.`)
     }
   } catch (e) {
     if (signal.aborted) return cut()

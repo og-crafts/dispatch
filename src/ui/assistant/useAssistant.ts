@@ -3,11 +3,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { version } from '../../../package.json'
 import { listChats, type Chat } from '../../core/assistant/chats'
 import { type Connection, reach, validateAddress } from '../../core/assistant/connections'
-import { runTool } from '../../core/assistant/gate'
-import { ask, type Answer } from '../../core/assistant/loop'
+import { type Decision, runTool } from '../../core/assistant/gate'
+import { ask, type Answer, type Clock } from '../../core/assistant/loop'
 import { ParameterBatches } from '../../core/assistant/parameters'
-import { AssistantError, assertUsable } from '../../core/assistant/providers/shared'
-import { allSecrets, readOnlyTools, systemPrompt } from '../../core/assistant/tools'
+import type { Proposal } from '../../core/assistant/proposal'
+import { oneLine } from '../../core/assistant/propose'
+import { AssistantError, assertUsable, until } from '../../core/assistant/providers/shared'
+import { allSecrets, type AssistantJob, offeredTools, systemPrompt, toolClass } from '../../core/assistant/tools'
 import * as db from '../../core/db'
 import type { McpSignIn } from '../../core/mcpAuth'
 import type { McpServeOptions } from '../../core/mcpHandler'
@@ -19,6 +21,8 @@ import { keepChat, onAllChatsDeleted, removeChat, updateConnections, useConnecti
 /** `sent`: take it out of the box. `consent`: ask (pendingConsent). `blocked`: see `blocked` or `error`. Otherwise keep the text. */
 export type SendResult = 'sent' | 'consent' | 'busy' | 'empty' | 'blocked' | 'stopped'
 export interface ToolActivity { id: number; name: string; input: unknown; state: 'running' | 'ok' | 'failed' | 'stopped'; /** Where in `streamed`, while it answers. */ at?: number }
+/** A proposed change the person decides on. `text`: why it wasn't applied, or why it couldn't be undone. */
+export interface Card { proposal: Proposal; state: 'waiting' | 'applying' | 'applied' | 'rejected' | 'expired' | 'stopped' | 'undone'; text?: string }
 /** `input` and `output` are the last call's (input is how full the chat is); the totals are this chat's since it was opened. */
 export interface Usage { input: number; output: number; totalInput: number; totalOutput: number }
 /** `kind`: what a yes goes on with: the message `text`, a summary of the chat on screen, or a new chat that begins with `text`. */
@@ -52,6 +56,15 @@ export interface AssistantApi {
   streamed: string
   /** What was looked up for the last message. */
   tools: ToolActivity[]
+  /** What was proposed in the chat on screen, in memory only. */
+  cards: Card[]
+  /** Applies exactly what the card shows. Does nothing unless it waits in the chat on screen. */
+  approve(id: string): Promise<void>
+  reject(id: string): void
+  undo(id: string): Promise<void>
+  /** What the next message is about; with little room it decides which tools are offered. */
+  job: AssistantJob
+  setJob(job: AssistantJob): void
   usage: Usage | null
   /** The model that answered instead of the chosen one, or null. */
   fallback: string | null
@@ -75,7 +88,11 @@ export interface AssistantApi {
 /** `conn` is the connection as it was when the job took it. */
 interface Job { ctl: AbortController; conn: Connection | null; chatId: string | null; spaceId: string; done: Promise<void>; end: () => void }
 
+/** A card that waits for the person. `end` answers the model and does nothing the second time. */
+interface Waiting { job: Job; end(state: Decision['outcome'], text?: string): void; /** No stop ends it from here. */ begin(): void }
+
 const TITLE_LENGTH = 60
+const NO_CARDS: Card[] = []
 const NEAR_FULL = 0.8
 const CONTEXT: Partial<Record<Connection['kind'], number>> = { anthropic: 200_000, openai: 128_000 }
 const contextOf = (c: Connection | null) => c?.contextTokens ?? (c ? CONTEXT[c.kind] : undefined)
@@ -130,6 +147,9 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
   const [usage, setUsage] = useState<Usage | null>(null)
   const [fallback, setFallback] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [about, setAboutState] = useState<AssistantJob>('ask')
+  /** By chat, so it is there when a chat is opened again. */
+  const [cardsOf, setCardsState] = useState<ReadonlyMap<string, Card[]>>(new Map())
   const [pendingConsent, setPendingConsent] = useState<PendingConsent | null>(null)
   const [summaryOf, setSummary] = useState<(Binding & { text: string }) | null>(null)
 
@@ -139,6 +159,9 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
   const current = useRef<Job | null>(null)
   /** The chat's, in memory only. */
   const batchesRef = useRef({ chatId: '', batches: new ParameterBatches() })
+  const aboutRef = useRef(about)
+  const cardsRef = useRef(cardsOf)
+  const waiting = useRef(new Map<string, Waiting>())
   const jobs = useRef(new Set<Job>())
   const mounted = useRef(false)
   /** Deleted chats: an answer still ending must not bring them back. */
@@ -158,6 +181,78 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
     try { found = await listChats(spaceId) } catch { /* shown as none */ }
     if (reads.current === mine && wsRef.current.activeSpaceId === spaceId) setChats(found)
   }, [])
+
+  /** A chat's cards; without any they are dropped. */
+  const setCards = (chatId: string, l: Card[]) => {
+    const next = new Map(cardsRef.current)
+    if (l.length) next.set(chatId, l); else next.delete(chatId)
+    cardsRef.current = next; setCardsState(next)
+  }
+  const cardsIn = (chatId: string) => cardsRef.current.get(chatId) ?? []
+  const setCard = (chatId: string, id: string, state: Card['state'], text?: string) =>
+    setCards(chatId, cardsIn(chatId).map((c) => (c.proposal.id === id ? { proposal: c.proposal, state, ...(text ? { text } : {}) } : c)))
+  const cardOnScreen = (id: string) => (chatRef.current ? cardsIn(chatRef.current.id) : []).find((c) => c.proposal.id === id)
+
+  /** One line in the console: what was decided, the tool and the record's name, without secrets. */
+  const note = (what: string, p: Proposal, secrets: () => string[]) => {
+    const c = p.changes.find((x) => x.kind === 'request') ?? p.changes[0]
+    const r = c?.after ?? c?.before
+    const name = !r || Array.isArray(r) ? c?.kind ?? '' : r.name
+    try { wsRef.current.log([{ level: 'info', at: Date.now(), source: 'assistant', text: `${what} ${p.tool}: “${oneLine(new Redactor(secrets()).clean(name))}”` }]) } catch { /* it was decided all the same */ }
+  }
+
+  /** Shows the card and waits for approve, reject or the job's end. */
+  const decide = (job: Job, chatId: string, clock: Clock, secrets: () => string[], p: Proposal, signal: AbortSignal) => new Promise<Decision>((answer) => {
+    if (signal.aborted) return answer({ outcome: 'stopped' })
+    const before = secrets()
+    let writing = false
+    const stop = () => { if (!writing) end('stopped') }
+    const end: Waiting['end'] = (outcome, text) => {
+      if (!waiting.current.delete(p.id)) return
+      signal.removeEventListener('abort', stop)
+      clock.resume()
+      setCard(chatId, p.id, outcome, text)
+      answer({ outcome, ...(text ? { text } : {}) })
+      if (outcome !== 'stopped') note(`${outcome[0].toUpperCase()}${outcome.slice(1)}`, p, () => [...before, ...secrets()])
+    }
+    waiting.current.set(p.id, { job, end, begin: () => { writing = true; clock.resume(); setCard(chatId, p.id, 'applying') } })
+    setCards(chatId, [...cardsIn(chatId), { proposal: p, state: 'waiting' }])
+    clock.pause()
+    signal.addEventListener('abort', stop, { once: true })
+  })
+  const waitingOnScreen = (id: string): Waiting | null => {
+    const w = waiting.current.get(id)
+    return w && mounted.current && !w.job.ctl.signal.aborted && current.current === w.job && cardOnScreen(id)?.state === 'waiting' ? w : null
+  }
+  const approve = async (id: string) => {
+    const w = waitingOnScreen(id), conn = w?.job.conn, card = cardOnScreen(id)
+    if (!w || !conn || !card) return
+    try {
+      const now = (await db.getConnections()).find((c) => c.id === conn.id)
+      if (waitingOnScreen(id) !== w) return // stopped, rejected or approved meanwhile
+      if (differs(conn, now) || wsRef.current.activeSpaceId !== w.job.spaceId) { w.job.ctl.abort(); return }
+    } catch { setError(FAILED); return }
+    w.begin()
+    try {
+      const r = await wsRef.current.applyProposal(card.proposal)
+      if (r.ok) w.end('applied'); else w.end('expired', r.text)
+    } catch { w.end('expired', 'Something went wrong while this was being applied. Look at it before you go on.') }
+  }
+  const reject = (id: string) => waitingOnScreen(id)?.end('rejected')
+  const undoing = useRef(new Set<string>())
+  const undo = async (id: string) => {
+    const chatId = chatRef.current?.id, card = cardOnScreen(id)
+    if (!chatId || card?.state !== 'applied' || undoing.current.has(id)) return
+    undoing.current.add(id)
+    try {
+      const signIns = await db.getMcpSignIns()
+      const secrets = () => secretsOf(wsRef.current, list ?? [], signIns)
+      const before = secrets()
+      const r = await wsRef.current.undoProposal(card.proposal)
+      setCard(chatId, id, r.ok ? 'undone' : 'applied', r.ok ? undefined : r.text)
+      if (r.ok) note('Undone', card.proposal, () => [...before, ...secrets()])
+    } catch { setCard(chatId, id, 'applied', 'Something went wrong while this was being undone. Look at it before you go on.') } finally { undoing.current.delete(id) }
+  }
 
   const begin = (kind: 'answering' | 'summarising'): Job => {
     let end!: () => void
@@ -233,19 +328,23 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
     const world = () => worldOf(wsRef.current)
     if (batchesRef.current.chatId !== start.id) batchesRef.current = { chatId: start.id, batches: new ParameterBatches() }
     const { batches } = batchesRef.current
+    const about = aboutRef.current
     let result: Answer
     try {
       result = await ask({
-        provider: r.provider, conn, messages: start.messages, tools: readOnlyTools(conn), keys: () => r.keys, signal: job.ctl.signal,
+        provider: r.provider, conn, messages: start.messages, tools: offeredTools(conn, about), keys: () => r.keys, signal: job.ctl.signal,
         system: systemPrompt({ workspace: wsRef.current.spaces.find((s) => s.id === start.spaceId)?.name ?? '', ...(wsRef.current.view.kind === 'request' ? { openRequest: wsRef.current.draft.name } : {}) }, secretsOf(wsRef.current, r.conns, r.signIns)),
-        run: async (name, input, signal) => {
+        settles: (name) => toolClass(name) !== 'read',
+        run: async (name, input, signal, clock) => {
           // read again: a key, a sign-in or the console tick may have changed since the question
-          const [conns, signIns] = await Promise.all([db.getConnections(), db.getMcpSignIns()])
+          const [conns, signIns] = await until(Promise.all([db.getConnections(), db.getMcpSignIns()]), signal)
           const now = conns.find((c) => c.id === conn.id)
           if (differs(conn, now)) { job.ctl.abort(); return { text: 'The connection was changed. Nothing was run.', isError: true } }
+          const secrets = () => secretsOf(wsRef.current, [...r.conns, ...conns], [...r.signIns, ...signIns])
           return runTool(name, input, {
-            world, signal, batches, spaceId: start.spaceId, conn: { ...conn, readLogs: conn.readLogs && now?.readLogs === true },
-            secrets: () => secretsOf(wsRef.current, [...r.conns, ...conns], [...r.signIns, ...signIns]),
+            world, signal, batches, secrets, job: about, spaceId: start.spaceId, conn: { ...conn, readLogs: conn.readLogs && now?.readLogs === true },
+            unsaved: (id) => wsRef.current.isUnsaved(id), schedules: db.getSchedules,
+            decide: (p, stop) => decide(job, start.id, clock, secrets, p, stop),
           })
         },
         on: {
@@ -390,6 +489,7 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
   const deleteChat = async (id: string) => {
     dropped.current.add(id)
     if (chatRef.current?.id === id) clear(null)
+    setCards(id, [])
     try { await removeChat(id) } catch { setError('Couldn’t delete the chat.') }
     await refresh()
   }
@@ -422,6 +522,7 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
     for (const job of jobs.current) { if (job.chatId) dropped.current.add(job.chatId); job.ctl.abort() }
     if (chatRef.current) dropped.current.add(chatRef.current.id)
     clearRef.current(null)
+    cardsRef.current = new Map(); setCardsState(cardsRef.current)
     setChats([])
   }), [])
 
@@ -438,7 +539,8 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
     paused: !!chat && chat.spaceId !== here,
     blocked: list ? reason(chat, connections, connection?.id ?? null) : null,
     send, stop: () => current.current?.ctl.abort(), newChat, openChat, deleteChat,
-    status, ended, streamed, tools, usage, fallback, error, pendingConsent, allowConsent,
+    status, ended, streamed, tools, cards: (chat && cardsOf.get(chat.id)) || NO_CARDS, approve, reject, undo,
+    job: about, setJob: (j) => { aboutRef.current = j; setAboutState(j) }, usage, fallback, error, pendingConsent, allowConsent,
     declineConsent: () => setPendingConsent(null),
     nearFull: !!usage && limit !== undefined && usage.input > NEAR_FULL * limit,
     summarise, summary: summaryOf?.text ?? null, startFromSummary, dismissSummary: () => setSummary(null),

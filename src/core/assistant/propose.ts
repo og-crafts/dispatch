@@ -21,11 +21,8 @@ import { applyParameters, setEnvironmentVariables } from './parameters'
 import { canonical, type Change, type Field, type Line, type Proposal, type Rec } from './proposal'
 import { toolClass } from './tools'
 
-export interface ProposeContext extends ToolContext {
-  /** Whether the request is open with edits that aren't saved: a change would be built on the old text. */
-  unsaved(requestId: string): boolean
-  schedules(): Promise<Schedule[]>
-}
+/** What proposing needs: everything but the person's answer. */
+export type ProposeContext = Omit<ToolContext, 'decide' | 'job'>
 
 export type Cleaner = ReturnType<typeof cleaner>
 interface World { collections: Collection[]; folders: Folder[]; requests: RequestDef[]; environments: Environment[]; globals: KV[]; active: Environment | null }
