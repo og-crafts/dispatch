@@ -1019,17 +1019,18 @@ body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: 
 .connectionDialog .toggle { padding-left: 0; margin-left: 0; justify-content: flex-start; }
 
 .connectionDialog .actions.end { position: sticky; bottom: -20px; margin: 0 -20px -20px; padding: 12px 20px; background: var(--surface-solid); }
-.connections ~ .actions + .auth { margin-top: 16px; }
+.addConnection + .auth { margin-top: 16px; }
 
 /* The panel: right of the work area; over it on narrower windows. */
 .aiSlot { display: contents; }
 .aiIcon { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 .aiIcon.on { color: var(--ink); background: var(--raised); }
-.assistant { grid-area: ai; position: relative; z-index: 25; width: var(--ai-w, 380px); max-width: 50vw; min-height: 0; min-width: 0; display: flex; flex-direction: column;
+.assistant { grid-area: ai; position: relative; z-index: 25; width: var(--ai-w, 380px); max-width: 100%; min-height: 0; min-width: 0; display: flex; flex-direction: column;
   background: var(--surface); border: 1px solid var(--outline); border-radius: 14px; }
 .assistant[hidden] { display: none; }
 .assistant .resizer { right: auto; left: -9px; }
-.aiHead { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 4px 8px; padding: 12px 8px 8px 16px; border-bottom: 1px solid var(--divider, var(--outline)); }
+.aiMiddle { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.aiHead { flex: none; position: relative; z-index: 2; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 4px 8px; padding: 12px 8px 8px 16px; border-bottom: 1px solid var(--divider, var(--outline)); }
 .aiHead h2 { margin: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .aiTitle > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aiBar { grid-column: 1 / -1; display: flex; align-items: center; gap: 4px; margin-left: -8px; min-width: 0; }
@@ -1072,16 +1073,15 @@ body.resizingRows { cursor: row-resize; user-select: none; -webkit-user-select: 
 [data-look^="grove"] .assistant { border-color: var(--panel-line); border-radius: var(--panel-r); box-shadow: var(--panel-shadow); }
 [data-look^="grove"] .aiAsk textarea { border-radius: 14px; }
 @media (min-width: 1200px) {
-  .app.withAssistant { grid-template: "top top top" auto "side work ai" minmax(0, 1fr) "con con con" auto "bar bar bar" auto / auto minmax(0, 1fr) auto; }
+  .app[data-assistant="beside"] { grid-template: "top top top" auto "side work ai" minmax(0, 1fr) "con con con" auto "bar bar bar" auto / auto minmax(0, 1fr) auto; }
 }
-@media (max-width: 1199px) {
-  .assistant { grid-area: work; justify-self: end; width: var(--ai-w, 380px); max-width: 100%; background: var(--surface-solid); box-shadow: var(--shadow); }
-  [data-look^="grove"] .assistant { border-color: var(--outline); box-shadow: var(--shadow); }
-  .assistant .resizer { left: -5px; }
-}
-@media (max-width: 760px) { .assistant { width: 100%; } .assistant .resizer { display: none; } }
-/* Low windows: the panel scrolls as a whole, and the box stays in view. */
-@media (max-height: 560px) { .assistant { overflow: auto; } .aiLog { flex: 1 0 96px; } .aiNotices { max-height: none; flex: none; } .aiBottom { position: sticky; bottom: 0; background: var(--surface-solid); } .aiHead h2 { -webkit-line-clamp: 1; }
+/* over: usePanelLayout (layout.ts) */
+.app:not([data-assistant="beside"]) > .assistant { grid-area: work; justify-self: end; width: var(--ai-w, 380px); max-width: 100%; background: var(--surface-solid); box-shadow: var(--shadow); }
+[data-look^="grove"] .app:not([data-assistant="beside"]) > .assistant { border-color: var(--outline); box-shadow: var(--shadow); }
+.app:not([data-assistant="beside"]) > .assistant .resizer { left: -5px; }
+@media (max-width: 760px) { .app > .assistant.assistant { width: 100%; } .assistant .resizer { display: none; } }
+/* Low windows: what's between the head and the box scrolls; the Chats menu isn't in it, so it isn't cut. */
+@media (max-height: 560px) { .aiMiddle { overflow: auto; } .aiLog { flex: 1 0 96px; } .aiNotices { max-height: none; flex: none; } .aiHead h2 { -webkit-line-clamp: 1; }
   .aiHead { padding-top: 6px; padding-bottom: 2px; } .aiTitle > span, .aiUsage { display: none; } .aiNote { padding-block: 4px; } .aiLog { padding-block: 8px; } .aiAsk { padding-top: 6px; padding-bottom: 4px; } .aiFoot { min-height: 32px; padding-bottom: 4px; } }
 /* With the panel beside it, the request's title row has no room for the shortcut. */
-@media (max-width: 1700px) { .app.withAssistant .titleRow kbd { display: none; } }
+@media (max-width: 1700px) { .app[data-assistant="beside"] .titleRow kbd { display: none; } }

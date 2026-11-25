@@ -127,6 +127,7 @@ export function FlowView({ ws, flowId, notify, confirm }: { ws: WorkspaceApi; fl
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Delete' && e.key !== 'Backspace') return
+      if (document.querySelector('dialog[open]')) return
       const t = e.target as HTMLElement | null
       if (t && (t.closest('input, textarea, select, [contenteditable="true"], .cm-editor'))) return
       if (selected?.kind === 'edge') { removeEdge(selected.id); setSelected(null) }

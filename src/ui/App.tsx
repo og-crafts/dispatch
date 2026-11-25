@@ -251,6 +251,8 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey
       const k = e.key.toLowerCase()
+      // in a dialog or the assistant, Ctrl+Enter is not the request's Send
+      if (mod && e.key === 'Enter' && (document.querySelector('dialog[open]') || (e.target instanceof Element && e.target.closest('.assistant')))) return
       if (mod && e.key === 'Enter') { e.preventDefault(); void ws.send() }
       else if (mod && e.shiftKey && k === 's') { e.preventDefault(); void saveAs() }
       else if (mod && k === 's') { e.preventDefault(); void save() }
@@ -330,7 +332,7 @@ export function App({ transport, engine, browserLauncher, extras = {} }: { trans
   const dialogs = { ask, confirm, askNote, notify, pickPlace: (title: string, cur: { collectionId: string | null; folderId: string | null }) => askPlace(title, ws.collections, ws.folders, cur) }
 
   return (
-    <div className={`app ${assistantOpen ? 'withAssistant' : ''}`}>
+    <div className="app">
       <header className="top">
         <button type="button" className="brand" title="Home" onClick={() => ws.setView({ kind: 'home' })}><img src="./icon.svg" alt="" width="26" height="26" />Dispatch</button>
         <label className="spacePick">

@@ -17,7 +17,7 @@ import { keepChat, onAllChatsDeleted, removeChat, updateConnections, useConnecti
 
 /** `sent`: take it out of the box. `consent`: ask (pendingConsent). `blocked`: see `blocked` or `error`. Otherwise keep the text. */
 export type SendResult = 'sent' | 'consent' | 'busy' | 'empty' | 'blocked' | 'stopped'
-export interface ToolActivity { id: number; name: string; input: unknown; state: 'running' | 'ok' | 'failed' | 'stopped' }
+export interface ToolActivity { id: number; name: string; input: unknown; state: 'running' | 'ok' | 'failed' | 'stopped'; /** Where in `streamed`, while it answers. */ at?: number }
 /** `input` and `output` are the last call's (input is how full the chat is); the totals are this chat's since it was opened. */
 export interface Usage { input: number; output: number; totalInput: number; totalOutput: number }
 /** `kind`: what a yes goes on with: the message `text`, a summary of the chat on screen, or a new chat that begins with `text`. */
@@ -225,7 +225,7 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
   const answer = async (job: Job, start: Chat, r: Ready) => {
     const { conn } = r
     /** Text of the turn being written; a finished turn is in the messages. */
-    let turn = '', n = 0
+    let turn = '', n = 0, shown = ''
     const mine = () => current.current === job
     const world = () => worldOf(wsRef.current)
     let result: Answer
@@ -244,13 +244,15 @@ export function useAssistant(ws: WorkspaceApi): AssistantApi {
           })
         },
         on: {
-          text: (s) => { turn += s; if (mine()) setStreamed((x) => x + s) },
+          text: (s) => { turn += s; shown += s; if (mine()) setStreamed((x) => x + s) },
           toolStart: (name, input) => {
             turn = ''
             if (!mine()) return
             const id = ++n
-            setStreamed((x) => (x.trim() && !x.endsWith('\n\n') ? `${x}\n\n` : x))
-            setTools((l) => [...l, { id, name, input, state: 'running' }])
+            if (shown.trim() && !shown.endsWith('\n\n')) shown += '\n\n'
+            const at = shown.length, so = shown
+            setStreamed(so)
+            setTools((l) => [...l, { id, name, input, state: 'running', at }])
           },
           toolEnd: (_name, isError) => { if (mine()) setTools((l) => l.map((t) => (t.state === 'running' ? { ...t, state: isError ? 'failed' : 'ok' } : t))) },
           usage: (u) => { if (mine()) setUsage((x) => ({ ...u, totalInput: (x?.totalInput ?? 0) + u.input, totalOutput: (x?.totalOutput ?? 0) + u.output })) },

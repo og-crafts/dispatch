@@ -22,7 +22,7 @@ export function AssistantHost({ ws, slot, open, onOpen }: { ws: WorkspaceApi; sl
     {slot && createPortal(
       <button ref={icon} type="button" className={`btn small ghost aiIcon ${open ? 'on' : ''}`} aria-label={busy ? 'Assistant, answering' : 'Assistant'} title="Assistant" aria-expanded={open} aria-controls={open ? 'assistant-panel' : undefined}
         onClick={() => (open ? close() : onOpen(true))}><Icon name="chat" />{busy && <span className="spin" aria-hidden="true" />}</button>, slot)}
-    {(open || used) && <Boundary fallback={open ? <aside className="assistant" aria-label="Assistant"><p className="warnLine">The assistant couldn’t be shown. The rest of Dispatch works as before; restart Dispatch to try again.</p>
+    {(open || used) && <Boundary resetKey={`${a.chat?.id} ${open}`} fallback={open ? <aside className="assistant" aria-label="Assistant"><p className="warnLine">The assistant couldn’t be shown. The rest of Dispatch works as before; restart Dispatch to try again.</p>
       <div className="actions"><button type="button" className="btn small" onClick={close}>Close</button></div></aside> : null}>
       <AssistantPanel a={a} ws={ws} open={open} onClose={close} />
     </Boundary>}

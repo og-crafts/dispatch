@@ -71,3 +71,13 @@ export function lastAnswer(messages: unknown): string {
   const last = all[all.length - 1]
   return last?.kind === 'assistant' ? last.text : ''
 }
+
+/** A model's Markdown as words to be read out. */
+export const plainText = (s: string): string => s.slice(0, 20_000)
+  .replace(/^[ \t]*`{3,}.*$\n?/gm, '')
+  .replace(/^[ \t|:-]*-[ \t|:-]*$\n?/gm, (l) => (l.includes('|') ? '' : l))
+  .replace(/^ {0,3}(?:#{1,6}|>|[-*+])[ \t]+/gm, '')
+  .replace(/^[ \t]*\|(.*)\|[ \t]*$/gm, (_l, row: string) => row.split('|').map((c) => c.trim()).join(', '))
+  .replace(/!\[([^\]\n]{0,500})\]\([^)\n]{0,2000}\)/g, 'image: $1')
+  .replace(/\[([^\]\n]{1,500})\]\(([^)\s]{0,2000})\)/g, '$1 ($2)')
+  .replace(/\*\*([^*\n]{1,2000})\*\*/g, '$1').replace(/\*([^*\s][^*\n]{0,2000})\*/g, '$1').replace(/`([^`\n]{1,2000})`/g, '$1')

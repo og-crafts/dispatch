@@ -86,7 +86,7 @@ export function AssistantSettings({ ws, notify }: { ws: WorkspaceApi; notify: (m
         )
       })}
     </ul>}
-    <div className="actions"><button type="button" className="btn small" onClick={() => setEditing('new')}>+ Add connection</button></div>
+    <div className="actions addConnection"><button type="button" className="btn small" onClick={() => setEditing('new')}>+ Add connection</button></div>
     <div className="auth">
       <label className="toggle"><input type="checkbox" checked={ws.settings.keepChats} onChange={(e) => ws.setSettings({ keepChats: e.target.checked })} /> Keep chats on this device</label>
       <div className="actions"><button type="button" className="btn small danger" onClick={() => void deleteAll()}>Delete all chats</button></div>

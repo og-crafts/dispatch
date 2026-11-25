@@ -20,6 +20,7 @@ const LONG_TEXT = 100_000, LONG_LINE = 4000, DEEPEST = 20
 function openable(address: string): string | null {
   try {
     const u = new URL(address)
+    if (u.username || u.password) return null // what stands before the @ is there to mislead
     return /^https?:\/\//i.test(address) || u.protocol === 'mailto:' ? u.href : null
   } catch { return null }
 }
@@ -40,12 +41,12 @@ function CodeBlock({ code }: { code: string }) {
     setSaid(next); clearTimeout(timer.current)
     timer.current = setTimeout(() => setSaid('Copy'), 2000)
   }
-  return <div className="codeBlock"><button type="button" className="btn small" aria-label={said === 'Copy' ? 'Copy code' : said} onClick={() => void copy()}>{said}</button><pre><code>{code}</code></pre></div>
+  return <div className="codeBlock"><button type="button" className="btn small" aria-label={said === 'Copy' ? 'Copy code' : said} onClick={() => void copy()}>{said}</button><pre tabIndex={0} aria-label="Code"><code>{code}</code></pre></div>
 }
 
 /** Bounded, so that no line takes long. In order: code, image (also inside a link), link, bold, italic, bare address. */
-const TARGET = String.raw`\(<?([^)\s>]{0,2000})>?(?:\s+"[^"]{0,500}")?\)`
-const UNTRUSTED = new RegExp(String.raw`(`+'`[^`]+`'+String.raw`)|(\[?!\[([^\]]{0,500})\]`+TARGET+String.raw`(?:\]`+TARGET+String.raw`)?)|(\[([^\]]{1,500})\]`+TARGET+String.raw`)|(\*\*[^*]+\*\*)|(\*[^*\s][^*]*\*|_[^_\s][^_]*_(?!\w))|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"*\]])`, 'g')
+const TARGET = String.raw`\(<?((?:[^()\s>]|\([^()\s>]{0,300}\)){0,2000})>?(?:\s+"[^"]{0,500}")?\)`
+const UNTRUSTED = new RegExp(String.raw`(`+'`[^`]+`'+String.raw`)|(\[?!\[([^\]]{0,500})\]`+TARGET+String.raw`(?:\]`+TARGET+String.raw`)?)|(\[([^\]]{1,500})\]`+TARGET+String.raw`)|(\*\*[^*]+\*\*)|(\*[^*\s][^*]*\*|_[^_\s][^_]*_(?!\w))|(https?:\/\/(?:[^\s<>()]|\([^\s<>()]{0,300}\))+)`, 'g')
 
 function untrustedInline(s: string, u: Untrusted, key = 0): ReactNode[] {
   if (s.length > LONG_LINE) return [s]
@@ -64,7 +65,13 @@ function untrustedInline(s: string, u: Untrusted, key = 0): ReactNode[] {
     } else if (bold) out.push(<strong key={k++}>{untrustedInline(t.slice(2, -2), u, k * 100)}</strong>)
     else if (italic && italic[0] === '_' && /\w/.test(s[m.index! - 1] ?? '')) out.push(t) // part of a name
     else if (italic) out.push(<em key={k++}>{untrustedInline(t.slice(1, -1), u, k * 100)}</em>)
-    else { const to = openable(t); out.push(to ? address(to, u, k++) : t) }
+    else {
+      let end = t.length
+      while (end && '.,;:!?\'"*]'.includes(t[end - 1])) end-- // the sentence's, not the address's
+      last -= t.length - end
+      const to = openable(t.slice(0, end))
+      out.push(to ? address(to, u, k++) : t.slice(0, end))
+    }
   }
   if (last < s.length) out.push(s.slice(last))
   return out
@@ -96,11 +103,16 @@ function inline(s: string, key = 0, u?: Untrusted): ReactNode[] {
 
 const safeHref = (h: string) => (/^(https?:|mailto:|#)/i.test(h) ? h : null)
 
+/** A table's second line; each part is looked at once, however long the line is. */
+const delimiter = (l: string) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').every((c) => /^:?-+:?$/.test(c.trim()))
+
 function blocks(text: string, u?: Untrusted, depth = 0): ReactNode[] {
   const lines = text.replace(/\r\n/g, '\n').split('\n')
   const out: ReactNode[] = []
   let i = 0
   let k = 0
+  /** Nothing is matched against a longer line than this in a model's output. */
+  const fits = (l: string | undefined): l is string => l !== undefined && (!u || l.length <= LONG_LINE)
   while (i < lines.length) {
     const line = lines[i]
     if (!line.trim()) { i++; continue }
@@ -110,7 +122,7 @@ function blocks(text: string, u?: Untrusted, depth = 0): ReactNode[] {
     if (open) {
       const body: string[] = [], end = new RegExp(`^\\s*\`{${open[2].length},}\\s*$`), indent = new RegExp(`^\\s{0,${open[1].length}}`)
       i++
-      while (i < lines.length && !end.test(lines[i])) body.push(lines[i++].replace(indent, ''))
+      while (i < lines.length && !(fits(lines[i]) && end.test(lines[i]))) body.push(lines[i++].replace(indent, ''))
       i++
       out.push(<CodeBlock key={k++} code={body.join('\n')} />)
       continue
@@ -133,19 +145,19 @@ function blocks(text: string, u?: Untrusted, depth = 0): ReactNode[] {
       continue
     }
     if (/^(-{3,}|\*{3,})\s*$/.test(line)) { out.push(<hr key={k++} />); i++; continue }
-    if (/^\s*\|.*\|\s*$/.test(line) && i + 1 < lines.length && /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(lines[i + 1])) {
+    if (/^\s*\|.*\|\s*$/.test(line) && fits(lines[i + 1]) && delimiter(lines[i + 1])) {
       const cells = (l: string) => l.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim())
       const head = cells(line)
       i += 2
       const rows: string[][] = []
-      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) rows.push(cells(lines[i++]))
+      while (fits(lines[i]) && /^\s*\|.*\|\s*$/.test(lines[i])) rows.push(cells(lines[i++]))
       out.push(<table key={k++}><thead><tr>{head.map((c, j) => <th key={j}>{inline(c, 0, u)}</th>)}</tr></thead><tbody>{rows.map((r, j) => <tr key={j}>{r.map((c, n) => <td key={n}>{inline(c, 0, u)}</td>)}</tr>)}</tbody></table>)
       continue
     }
     if (/^\s*([-*+]|\d+[.)])\s+/.test(line)) {
       const ordered = /^\s*\d/.test(line)
       const items: string[] = []
-      while (i < lines.length && /^\s*([-*+]|\d+[.)])\s+/.test(lines[i])) items.push(lines[i++].replace(/^\s*([-*+]|\d+[.)])\s+/, ''))
+      while (fits(lines[i]) && /^\s*([-*+]|\d+[.)])\s+/.test(lines[i])) items.push(lines[i++].replace(/^\s*([-*+]|\d+[.)])\s+/, ''))
       const lis = items.map((it, j) => <li key={j}>{inline(it, 0, u)}</li>)
       out.push(ordered ? <ol key={k++} start={u ? parseInt(line, 10) || undefined : undefined}>{lis}</ol> : <ul key={k++}>{lis}</ul>)
       continue
@@ -158,7 +170,7 @@ function blocks(text: string, u?: Untrusted, depth = 0): ReactNode[] {
     }
     // Always take the current line, so a line no other rule wanted can't stall the loop.
     const para: string[] = [lines[i++]]
-    while (i < lines.length && lines[i].trim() && !(u ? /^(#{1,4}\s|\s*```|>|\s*([-*+]|\d+[.)])\s+|\s*\|)/ : /^(#{1,4}\s|```|>|\s*([-*+]|\d+[.)])\s+|\s*\|)/).test(lines[i])) para.push(lines[i++])
+    while (fits(lines[i]) && lines[i].trim() && !(u ? /^(#{1,4}\s|\s*```|>|\s*([-*+]|\d+[.)])\s+|\s*\|)/ : /^(#{1,4}\s|```|>|\s*([-*+]|\d+[.)])\s+|\s*\|)/).test(lines[i])) para.push(lines[i++])
     out.push(<p key={k++}>{para.map((p, j) => <Fragment key={j}>{j > 0 && ' '}{inline(p, j * 1000, u)}</Fragment>)}</p>)
   }
   return out

@@ -5,6 +5,7 @@ import { useState } from 'react'
 import * as db from '../src/core/db'
 import { listChats, saveChat, type Chat } from '../src/core/assistant/chats'
 import { newConnection, type Connection } from '../src/core/assistant/connections'
+import { newFlow, newNode } from '../src/core/flows'
 import { defaultSettings, type HttpResponse } from '../src/core/types'
 import type { Transport } from '../src/core/transport'
 import type { WorkspaceApi } from '../src/ui/useWorkspace'
@@ -12,7 +13,7 @@ import { App } from '../src/ui/App'
 import { Markdown } from '../src/ui/Markdown'
 import { AssistantHost } from '../src/ui/assistant/AssistantHost'
 import AssistantPanel from '../src/ui/assistant/AssistantPanel'
-import { items } from '../src/ui/assistant/transcript'
+import { items, plainText } from '../src/ui/assistant/transcript'
 import { updateConnections } from '../src/ui/assistant/store'
 import type { AssistantApi } from '../src/ui/assistant/useAssistant'
 
@@ -137,10 +138,46 @@ describe('untrusted Markdown', () => {
     expect(show('>'.repeat(3900)).querySelectorAll('blockquote').length).toBeLessThan(30)
   }, 30_000)
 
+  it.each([
+    ['a delimiter that is none', '|a|\n' + ' '.repeat(90_000) + 'x'], ['dashes and spaces', '|a|\n-' + ' '.repeat(90_000) + 'x'], ['a long delimiter', '|a|\n' + '|-'.repeat(45_000) + 'x'],
+    ['a long row', '|a|\n|-|\n' + '| '.repeat(45_000) + 'x'], ['a row of space', '|a|\n|-|\n|' + ' '.repeat(90_000) + 'x'], ['a list item', '- a\n- ' + ' '.repeat(45_000) + '['.repeat(45_000)],
+    ['a fence that never ends', '```\n' + '`'.repeat(90_000) + 'x'], ['a fence after space', '```\n' + ' '.repeat(90_000) + 'x'], ['a paragraph', 'a\n' + ' '.repeat(90_000) + 'x'], ['a quote', '> a\n> ' + '>'.repeat(90_000)],
+    ['digits', '1. a\n' + '1'.repeat(90_000)], ['parentheses', ('[a](' + '('.repeat(3900) + '\n').repeat(23)],
+  ])('stays quick just below the limit: %s', (_what, text) => {
+    const t = performance.now()
+    show(text)
+    expect(performance.now() - t).toBeLessThan(1500)
+  })
+
+  it.each(['[x](https://good.test@evil.test/)', 'https://u:p@evil.test/a', '[x](https://u@evil.test/)'])('an address with a user name is text: %s', (text) => {
+    const c = show(text)
+    expect(c.querySelector('[role="link"],a')).toBeNull()
+    expect(c.textContent).toContain('evil.test')
+  })
+
+  it('keeps balanced parentheses in an address', () => {
+    show('[a](https://x.test/A_(b)) and https://x.test/C_(d), (see https://x.test/e).')
+    expect(screen.getAllByRole('link').map((l) => l.textContent)).toEqual(['https://x.test/A_(b)', 'https://x.test/C_(d)', 'https://x.test/e'])
+  })
+
+  it('code can be scrolled with the keyboard', () => {
+    expect(show('```\nx\n```').querySelector('pre')!.tabIndex).toBe(0)
+  })
+
   it('documents written by people stay as they were', () => {
     const c = render(<Markdown text={'[a](https://x.test)\n\n```js\n1\n```'} />).container
     expect(c.querySelector('a')!.getAttribute('href')).toBe('https://x.test')
     expect(c.querySelector('button')).toBeNull()
+  })
+})
+
+describe('what is read out', () => {
+  it('is the words, without Markdown', () => {
+    expect(plainText('## Title\n\n**Bold** and *it* and `code` [docs](https://x.test/a) ![pic](https://e.test/p)\n\n```js\ndx.test()\n```\n- one\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n> said'))
+      .toBe('Title\n\nBold and it and code docs (https://x.test/a) image: pic\n\ndx.test()\none\n\na, b\n1, 2\n\nsaid')
+    const t = performance.now()
+    for (const x of ['[', '*', '`', '|', '> ', '![a](']) plainText(x.repeat(100_000))
+    expect(performance.now() - t).toBeLessThan(1500)
   })
 })
 
@@ -184,6 +221,7 @@ function panel(over: Partial<AssistantApi> = {}, w = ws()) {
 const box = () => screen.getByRole('textbox', { name: 'Message to the assistant' }) as HTMLTextAreaElement
 const region = () => screen.getByRole('complementary', { name: 'Assistant' })
 const said = () => screen.getByTestId('assistant-said').textContent
+const region0 = () => document.querySelector('.aiAsk textarea')
 const type = (t: string) => fireEvent.change(box(), { target: { value: t } })
 
 describe('the panel', () => {
@@ -279,9 +317,10 @@ describe('the panel', () => {
     p.set({ status: 'answering', ...done })
     expect(said()).toBe('')
     p.set(done)
-    expect(said()).toBe('Hello **world**')
+    expect(said()).toBe('Hello world')
     p.set({ ...done }); p.set({ ...done, usage: { input: 1, output: 1, totalInput: 1, totalOutput: 1 } })
-    seen.takeRecords()
+    expect(seen.takeRecords()).toHaveLength(1)
+    seen.disconnect()
     expect(screen.getByTestId('assistant-said').getAttribute('aria-live')).toBe('polite')
     // nothing else is live: the text as it comes must not be read out piece by piece
     expect(region().querySelectorAll('[aria-live]:not([aria-live="off"]),[role="log"],[role="status"],[role="alert"]')).toHaveLength(1)
@@ -468,6 +507,112 @@ describe('the panel', () => {
     expect(open).toHaveBeenCalledWith('https://x.test/a', '_blank', 'noopener')
   })
 
+  it('keeps look-ups where they happened while the answer comes', () => {
+    panel({ status: 'answering', streamed: 'AAA\n\nBBB', tools: [{ id: 1, name: 'get_request', input: { name: 'Items' }, state: 'ok', at: 5 }, { id: 2, name: 'list_requests', input: {}, state: 'running', at: 8 }] })
+    expect(region().textContent).toMatch(/AAARead Items(Assistant)?BBBListed the requests/)
+  })
+
+  it('focus goes to the box when the focused button goes away, and is left alone otherwise', () => {
+    const p = panel({ status: 'answering' })
+    screen.getByRole('button', { name: 'Stop' }).focus()
+    p.set({})
+    expect(document.activeElement).toBe(box())
+    p.set({ nearFull: true })
+    screen.getByRole('button', { name: 'Summarise for a new chat' }).focus()
+    p.set({ nearFull: true, status: 'summarising' })
+    expect(document.activeElement).toBe(box())
+    p.set({ connection: local({ keyLost: true }) })
+    screen.getByRole('button', { name: 'Open Settings' }).focus()
+    p.set({})
+    expect(document.activeElement).toBe(box())
+    const outside = document.body.appendChild(document.createElement('button'))
+    p.set({ status: 'answering' })
+    screen.getByRole('button', { name: 'Stop' }).focus(); outside.focus()
+    p.set({})
+    expect(document.activeElement).toBe(outside)
+    outside.remove()
+  })
+
+  it.each([['Delete', {}], ['Backspace', {}], ['s', { ctrlKey: true }], ['S', { ctrlKey: true, shiftKey: true }], ['t', { metaKey: true }], ['w', { ctrlKey: true }], ['n', { ctrlKey: true, altKey: true }], ['Enter', { metaKey: true }]])('%s stays in the panel', (key, mods) => {
+    const seen = vi.fn()
+    window.addEventListener('keydown', seen)
+    panel()
+    for (const el of [box(), screen.getByRole('button', { name: 'New chat' })]) fireEvent.keyDown(el, { key, ...mods })
+    window.removeEventListener('keydown', seen)
+    expect(seen).not.toHaveBeenCalled()
+  })
+
+  it('other keys go on as always', () => {
+    const seen = vi.fn()
+    window.addEventListener('keydown', seen)
+    panel()
+    fireEvent.keyDown(box(), { key: 'k', ctrlKey: true })
+    window.removeEventListener('keydown', seen)
+    expect(seen).toHaveBeenCalledTimes(1)
+  })
+
+  it('says so when a link couldn’t be opened', async () => {
+    vi.spyOn(window, 'open').mockImplementation(() => { throw new Error('no') })
+    panel({ chat: chatOf([{ role: 'assistant', content: 'https://x.test/a' }]) })
+    await act(async () => { fireEvent.click(screen.getByRole('link')) })
+    expect(region().querySelector('.errorBox')!.textContent).toMatch(/couldn’t be opened/)
+    expect(said()).toMatch(/couldn’t be opened/)
+  })
+
+  it('a consent question answered while the panel is closed doesn’t focus the hidden box', async () => {
+    const p = panel()
+    box().blur()
+    p.set({ pendingConsent: { kind: 'message', connection: cloud(), host: 'models.example.com', text: 'hi' } }, false)
+    fireEvent.click(screen.getByRole('button', { name: 'Not now' }))
+    expect(document.activeElement).not.toBe(region0())
+    await act(async () => { fireEvent.submit(screen.getByRole('button', { name: 'Allow models.example.com' }).closest('form')!) })
+    expect(document.activeElement).not.toBe(region0())
+  })
+
+  it('is never wider than leaves the work area 320 px', () => {
+    const was = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1300 })
+    const r = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('side') ? 400 : 0 })
+    localStorage.setItem('dispatch.assistantWidth', '720')
+    render(<div className="app"><div className="side" /><main className="work" /><AssistantPanel a={api()} ws={ws()} open onClose={() => {}} /></div>)
+    const s = screen.getByRole('separator', { name: 'Resize the assistant' })
+    expect(Number(s.getAttribute('aria-valuemax'))).toBe(580)
+    expect(Number(s.getAttribute('aria-valuenow'))).toBe(580)
+    expect(region().style.getPropertyValue('--ai-w')).toBe('580px')
+    expect(document.querySelector('.app')!.getAttribute('data-assistant')).toBe('beside')
+    fireEvent.keyDown(s, { key: 'ArrowRight' })
+    expect(s.getAttribute('aria-valuenow')).toBe('564')
+    r.mockRestore()
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: was })
+  })
+
+  it.each([[1199, 'over', true], [1400, 'beside', false]])('at %i px what it covers can’t be reached, until it closes', (wide, mode, inert) => {
+    const was = window.innerWidth
+    const set = (n: number) => Object.defineProperty(window, 'innerWidth', { configurable: true, value: n })
+    set(wide)
+    const el = (open: boolean) => <div className="app"><main className="work"><button>Behind</button></main><AssistantPanel a={api()} ws={ws()} open={open} onClose={() => {}} /></div>
+    const v = render(el(true))
+    const work = v.container.querySelector('.work')!, app = v.container.querySelector('.app')!
+    expect([app.getAttribute('data-assistant'), work.hasAttribute('inert')]).toEqual([mode, inert])
+    set(1400); act(() => { window.dispatchEvent(new Event('resize')) })
+    expect(work.hasAttribute('inert')).toBe(false)
+    set(1000); act(() => { window.dispatchEvent(new Event('resize')) })
+    expect(work.hasAttribute('inert')).toBe(true)
+    v.rerender(el(false))
+    expect([app.getAttribute('data-assistant'), work.hasAttribute('inert')]).toEqual([null, false])
+    v.rerender(el(true))
+    expect(work.hasAttribute('inert')).toBe(true)
+    v.rerender(<div className="app"><main className="work" /></div>)
+    expect(v.container.querySelector('.work')!.hasAttribute('inert')).toBe(false)
+    set(was)
+  })
+
+  it('Open Settings closes the panel when it lies over them', () => {
+    const p = panel({ connection: local({ keyLost: true }) }) // 1024 px
+    fireEvent.click(screen.getByRole('button', { name: 'Open Settings' }))
+    expect(p.onClose).toHaveBeenCalled()
+  })
+
   it('a chat that can’t be shown doesn’t take the panel along', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const broken = chatOf([]); Object.defineProperty(broken, 'messages', { get() { throw new Error('boom') } })
@@ -573,6 +718,46 @@ describe('in the app', () => {
     expect(region().textContent).toContain('old question')
     await act(() => updateConnections((l) => l.map((c) => ({ ...c, model: 'new' }))))
     await waitFor(() => expect(region().textContent).not.toContain('old question'))
+  })
+
+  it('Ctrl+Enter in its dialogs sends no request, and works again after', async () => {
+    const send = vi.fn(transport.send)
+    const t = { ...transport, send } as Transport
+    await open([cloud()], t)
+    fireEvent.change(await screen.findByLabelText('URL'), { target: { value: 'https://x.test' } })
+    await opened()
+    type('hi')
+    await act(async () => { fireEvent.keyDown(box(), { key: 'Enter' }) })
+    const no = await screen.findByRole('button', { name: 'Not now' })
+    for (const m of [{ ctrlKey: true }, { metaKey: true }]) await act(async () => { fireEvent.keyDown(no, { key: 'Enter', ...m }) })
+    expect(send).not.toHaveBeenCalled()
+    fireEvent.click(no)
+    await act(async () => { fireEvent.keyDown(document.body, { key: 'Enter', ctrlKey: true }) })
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+  })
+
+  it('Delete in the panel or its dialog leaves the selected block of a flow alone', async () => {
+    const f = newFlow('My flow'), n = newNode('delay', 300, 140)
+    await db.putSpaces([{ id: 'default', name: 'Orders' }])
+    await db.putFlow({ ...f, nodes: [...f.nodes, { ...n, label: 'Wait here' }] })
+    await saveChat(chatOf([{ role: 'user', content: 'q' }]))
+    await open([local()])
+    fireEvent.click(within(screen.getByRole('complementary', { name: 'Library' })).getByRole('tab', { name: 'Flows' }))
+    fireEvent.click(await screen.findByRole('button', { name: /My flow/ }))
+    const block = () => screen.queryByRole('button', { name: /Wait here \(delay/ })
+    await waitFor(() => expect(block()).toBeTruthy())
+    fireEvent.click(block()!)
+    await opened()
+    for (const key of ['Delete', 'Backspace']) fireEvent.keyDown(screen.getByRole('button', { name: 'New chat' }), { key })
+    expect(block()).toBeTruthy()
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete chat Why 401' }, { timeout: 5000 }))
+    const dialog = await waitFor(() => document.querySelector<HTMLElement>('dialog[open]')!)
+    fireEvent.keyDown(within(dialog).getByRole('button', { name: 'Delete' }), { key: 'Delete' })
+    expect(block()).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(document.querySelector('dialog[open]')).toBeNull())
+    fireEvent.keyDown(document.body, { key: 'Delete' })
+    await waitFor(() => expect(block()).toBeNull())
   })
 
   it('a link goes to the system browser', async () => {
