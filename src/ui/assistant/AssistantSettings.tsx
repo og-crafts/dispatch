@@ -53,7 +53,7 @@ export function AssistantSettings({ ws, notify }: { ws: WorkspaceApi; notify: (m
 
   return <>
     <h2>Dispatch assistant</h2>
-    <p className="muted small">Ask about the workspace you’re working in, right here: why a test fails, what a script does, how to write the next one. Connect a model with your own key, or one that runs on this computer. Nothing is sent until you ask something.</p>
+    <p className="muted small">Ask about the workspace you’re working in, right here: why a test fails, what a script does, how to write the next one. Connect a model with your own key, or one that runs on this computer. Nothing from your workspace is sent until you ask something.</p>
     {connections?.length === 0 && <p className="muted small">No connections yet.</p>}
     {!!connections?.length && <ul className="connections" aria-label="Connections">
       {connections.map((c) => {
