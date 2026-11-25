@@ -1,5 +1,6 @@
 import type { StoredCookie } from './cookies'
 import type { Collection, Environment, Folder, HistoryEntry, KV, RequestDef, Settings } from './types'
+import type { Change } from './assistant/proposal'
 import { defaultSettings, normalizeCollection, normalizeFolder, normalizeRequest } from './types'
 import { resetVaultForTests, secretsOf, seal, unseal, vaultKey } from './vault'
 
@@ -58,10 +59,20 @@ export const listRequests = async () => { const f = await unsealer(); return Pro
 export const listCollections = async () => { const f = await unsealer(); return Promise.all((await all<Collection>('collections')).map((c) => secretsOf.collection(normalizeCollection(c), f))) }
 export const listFolders = async () => { const f = await unsealer(); return Promise.all((await all<Folder>('folders')).map((x) => secretsOf.folder(normalizeFolder(x), f))) }
 export const listEnvironments = async () => { const f = await unsealer(); return Promise.all((await all<Environment>('environments')).map((e) => secretsOf.environment(e, f))) }
-export const putFolder = async (x: Folder) => put('folders', await secretsOf.folder(x, await sealer()))
-export const putRequest = async (r: RequestDef) => put('requests', await secretsOf.request(r, await sealer()))
-export const putCollection = async (c: Collection) => put('collections', await secretsOf.collection(c, await sealer()))
-export const putEnvironment = async (e: Environment) => put('environments', await secretsOf.environment(e, await sealer()))
+/** Record writes that have started and not finished: sealing takes a moment, so a later write could overtake them. */
+const writing = new Set<Promise<unknown>>()
+function inFlight<A extends unknown[], T>(write: (...a: A) => Promise<T>) {
+  return (...a: A): Promise<T> => {
+    const p = write(...a)
+    const end = () => { writing.delete(p) }
+    writing.add(p); p.then(end, end)
+    return p
+  }
+}
+export const putFolder = inFlight(async (x: Folder) => put('folders', await secretsOf.folder(x, await sealer())))
+export const putRequest = inFlight(async (r: RequestDef) => put('requests', await secretsOf.request(r, await sealer())))
+export const putCollection = inFlight(async (c: Collection) => put('collections', await secretsOf.collection(c, await sealer())))
+export const putEnvironment = inFlight(async (e: Environment) => put('environments', await secretsOf.environment(e, await sealer())))
 export const deleteRequest = (id: string) => del('requests', id)
 export const deleteEnvironment = (id: string) => del('environments', id)
 
@@ -100,7 +111,33 @@ export async function getGlobals(): Promise<KV[]> {
   const db = await open()
   return secretsOf.globals((await wrap<KV[] | undefined>(db.transaction('meta').objectStore('meta').get('globals'))) ?? [], await unsealer())
 }
-export const putGlobals = async (g: KV[]) => put('meta', await secretsOf.globals(g, await sealer()), 'globals')
+export const putGlobals = inFlight(async (g: KV[]) => put('meta', await secretsOf.globals(g, await sealer()), 'globals'))
+
+/**
+ * Writes and removes records in one transaction: all of them or none. Everything is sealed first (waiting would end the
+ * transaction), and writes that started earlier are let finish, so none of them lands on top. `check` runs right before
+ * the transaction, in the same moment; what it throws stops it.
+ */
+export async function applyRecords(puts: Change[], deletes: Change[], check: () => void = () => {}): Promise<void> {
+  const f = await sealer()
+  const sealed = await Promise.all(puts.map((c): Promise<unknown> => {
+    if (c.kind === 'globals') return secretsOf.globals(c.after as KV[], f)
+    return (secretsOf[c.kind] as (r: unknown, f: (s: string) => Promise<string>) => Promise<unknown>)(c.after, f)
+  }))
+  const stores = { collection: 'collections', folder: 'folders', request: 'requests', environment: 'environments', globals: 'meta' } as const
+  const names = [...new Set([...puts, ...deletes].map((c) => stores[c.kind]))]
+  if (!names.length) return
+  const db = await open()
+  while (writing.size) await Promise.allSettled([...writing])
+  check()
+  const t = db.transaction(names, 'readwrite')
+  const finished = done(t)
+  try {
+    puts.forEach((c, i) => { const s = t.objectStore(stores[c.kind]); if (c.kind === 'globals') s.put(sealed[i], 'globals'); else s.put(sealed[i]) })
+    deletes.forEach((c) => t.objectStore(stores[c.kind]).delete(c.id))
+  } catch (e) { finished.catch(() => {}); t.abort(); throw e }
+  await finished
+}
 
 /** Small UI state kept between sessions (open tabs...). */
 export async function getMeta<T>(key: string): Promise<T | undefined> {
@@ -168,7 +205,7 @@ export async function putCookieJars(jars: Record<string, StoredCookie[]>) {
 export async function putLegacyCookiesForTests(list: StoredCookie[]) { await put('meta', await (await sealer())(JSON.stringify(list)), 'cookies') }
 
 /** Writes a whole workspace (imports) in one transaction. */
-export async function putMany(plain: { collections?: Collection[]; folders?: Folder[]; requests?: RequestDef[]; environments?: Environment[]; flows?: Flow[] }) {
+async function putManyNow(plain: { collections?: Collection[]; folders?: Folder[]; requests?: RequestDef[]; environments?: Environment[]; flows?: Flow[] }) {
   if (plain.flows?.length) for (const f of plain.flows) await putFlow(f)
   const f = await sealer()
   const data = {
@@ -185,6 +222,8 @@ export async function putMany(plain: { collections?: Collection[]; folders?: Fol
   data.environments?.forEach((e) => t.objectStore('environments').put(e))
   await done(t)
 }
+
+export const putMany = inFlight(putManyNow)
 
 /** Open tabs (drafts included), with their secrets sealed like saved requests. */
 export async function putOpenTabs(drafts: RequestDef[], active: number, spaces?: (string | null)[]) {
