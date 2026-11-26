@@ -248,11 +248,14 @@ focus on the URL at all, both fixed in #50. gRPC over the internet couldn't be c
 9000/9001 time out from the homelab and the Predator) and grpc.postman-echo.com fails the TLS handshake
 ("InvalidContentType") with the old crates on `main` exactly as with #53, so TLS behaves as before; the local
 end-to-end and grpc-js tests cover plaintext.
-**Resume here (2026-11-25, read first): 0.3.0 is being prepared** on `release/0.3.0-prep` (version bump, changelog). On `main`
-since 0.2.0: #90 and #91 (secrets in responses, update notice), #92 and #93 (built-in assistant steps 1 and 2), #95 (saves in
-order), #94 (tighter secret hiding). Next, each with the owner's OK: merge the prep PR, tag `v0.3.0` on `main`, the owner
-publishes the draft, then `docs/RELEASING.md` "After publishing" and the first recorded in-app update (0.2.0 -> 0.3.0).
-Not checked so far: a cloud model with the assistant, LM Studio, macOS and Linux by hand.
+**Resume here (2026-11-26, read first): Dispatch 0.3.0 is OUT.** #96 merged, tag `v0.3.0` on `main` 82e6fe7, CI green on
+every job incl. updater; the owner published it as **Latest** on 2026-11-26 (`latest.json` serves 0.3.0). Site published
+from the tag (`VITE_DISPATCH_CHANNEL=release`, dispatch-site e028501), `site/release.json` on `main` matches, ogcrafts.cloud
+`apps.json` 0.3.0 (og-crafts/site 2894e52). In-app update on the Predator: 0.1.0 -> 0.2.0 by the silent setup worked (the
+owner's data opened); in 0.2.0, Check for updates offered 0.3.0, downloaded it (checksum matches) and started the installer
+(`/P /UPDATE /R`), which closed after about 3.5 minutes without installing (0.2.0 stays installed). Cause not known yet:
+possibly Norton 360 holding a new unsigned file (it refused the 0.2.0 setup once before allowing it) or the window being
+closed by hand. Not checked: a cloud model with the assistant, LM Studio, macOS and Linux by hand.
 
 **Earlier (2026-11-24): Dispatch 0.2.0 is OUT.** #86 merged, tag `v0.2.0` on `main` ec241ec, CI green
 on every job incl. updater; the owner published it as **Latest**. Site published from the tag (`VITE_DISPATCH_CHANNEL=release`),
