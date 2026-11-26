@@ -248,11 +248,14 @@ focus on the URL at all, both fixed in #50. gRPC over the internet couldn't be c
 9000/9001 time out from the homelab and the Predator) and grpc.postman-echo.com fails the TLS handshake
 ("InvalidContentType") with the old crates on `main` exactly as with #53, so TLS behaves as before; the local
 end-to-end and grpc-js tests cover plaintext.
-**Resume here (2026-11-25, read first): 0.3.0 is being prepared** on `release/0.3.0-prep` (version bump, changelog). On `main`
-since 0.2.0: #90 and #91 (secrets in responses, update notice), #92 and #93 (built-in assistant steps 1 and 2), #95 (saves in
-order), #94 (tighter secret hiding). Next, each with the owner's OK: merge the prep PR, tag `v0.3.0` on `main`, the owner
-publishes the draft, then `docs/RELEASING.md` "After publishing" and the first recorded in-app update (0.2.0 -> 0.3.0).
-Not checked so far: a cloud model with the assistant, LM Studio, macOS and Linux by hand.
+**Resume here (2026-11-26, read first): Dispatch 0.3.0 is OUT.** #96 merged, tag `v0.3.0` on `main` 82e6fe7, CI green on
+every job incl. updater; the owner published it as **Latest** on 2026-11-26 (`latest.json` serves 0.3.0). Site published
+from the tag (`VITE_DISPATCH_CHANNEL=release`, dispatch-site e028501), `site/release.json` on `main` matches, ogcrafts.cloud
+`apps.json` 0.3.0 (og-crafts/site 2894e52). **First in-app update recorded (Predator, 2026-11-26):** 0.1.0 -> 0.2.0 by the silent setup (Norton 360 refused the
+first start of the new setup, fine on retry); in 0.2.0, Check for updates offered 0.3.0, OK downloaded it (checksum
+matches), the installer (`/P /UPDATE /R`) installed it in about 20 s and restarted Dispatch; the owner's data, tabs and
+drafts opened in 0.3.0 with the update notice. (A first try was cut short when the setup window was closed by hand.)
+Not checked: a cloud model with the assistant, LM Studio, macOS and Linux by hand.
 
 **Earlier (2026-11-24): Dispatch 0.2.0 is OUT.** #86 merged, tag `v0.2.0` on `main` ec241ec, CI green
 on every job incl. updater; the owner published it as **Latest**. Site published from the tag (`VITE_DISPATCH_CHANNEL=release`),
