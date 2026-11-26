@@ -23,6 +23,14 @@ The installers aren't signed yet, so Windows SmartScreen and macOS Gatekeeper wa
    `VITE_APTABASE_APP_KEY` / `VITE_SENTRY_DSN` from the repo variables and `VITE_DISPATCH_CHANNEL=release`, and run
    `scripts/publish-site.sh`. Commit the same `site/release.json` to `main`.
 3. **ogcrafts.cloud:** bump Dispatch's `version` in `apps.json` (repo og-crafts/site) and push.
+4. **Update proof:** on a Windows machine, install the previous release, then **Menu, Check for updates…** and OK; the
+   new version installs in about 20 s and Dispatch restarts. Check the version and that the data opens. First done for
+   0.2.0 -> 0.3.0 on 2026-11-26 (`CLAUDE.md`). Back up `%LOCALAPPDATA%\cloud.ogcrafts.dispatch` first if it holds real data.
+   - Norton 360 refuses the first start of a new unsigned setup ("Access is denied", exit code 5) and allows it on the
+     next try; people with Norton may see the same until the files are signed.
+   - The update installer shows a "Dispatch Setup" progress window; closing it cancels the update and leaves the old
+     version installed.
+   - A copy started with `--remote-debugging-port` restarts after the update without the port; start it again to check it.
 
 ### The first plain release (0.1.0, once)
 
