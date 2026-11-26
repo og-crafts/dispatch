@@ -251,11 +251,11 @@ end-to-end and grpc-js tests cover plaintext.
 **Resume here (2026-11-26, read first): Dispatch 0.3.0 is OUT.** #96 merged, tag `v0.3.0` on `main` 82e6fe7, CI green on
 every job incl. updater; the owner published it as **Latest** on 2026-11-26 (`latest.json` serves 0.3.0). Site published
 from the tag (`VITE_DISPATCH_CHANNEL=release`, dispatch-site e028501), `site/release.json` on `main` matches, ogcrafts.cloud
-`apps.json` 0.3.0 (og-crafts/site 2894e52). In-app update on the Predator: 0.1.0 -> 0.2.0 by the silent setup worked (the
-owner's data opened); in 0.2.0, Check for updates offered 0.3.0, downloaded it (checksum matches) and started the installer
-(`/P /UPDATE /R`), which closed after about 3.5 minutes without installing (0.2.0 stays installed). Cause not known yet:
-possibly Norton 360 holding a new unsigned file (it refused the 0.2.0 setup once before allowing it) or the window being
-closed by hand. Not checked: a cloud model with the assistant, LM Studio, macOS and Linux by hand.
+`apps.json` 0.3.0 (og-crafts/site 2894e52). **First in-app update recorded (Predator, 2026-11-26):** 0.1.0 -> 0.2.0 by the silent setup (Norton 360 refused the
+first start of the new setup, fine on retry); in 0.2.0, Check for updates offered 0.3.0, OK downloaded it (checksum
+matches), the installer (`/P /UPDATE /R`) installed it in about 20 s and restarted Dispatch; the owner's data, tabs and
+drafts opened in 0.3.0 with the update notice. (A first try was cut short when the setup window was closed by hand.)
+Not checked: a cloud model with the assistant, LM Studio, macOS and Linux by hand.
 
 **Earlier (2026-11-24): Dispatch 0.2.0 is OUT.** #86 merged, tag `v0.2.0` on `main` ec241ec, CI green
 on every job incl. updater; the owner published it as **Latest**. Site published from the tag (`VITE_DISPATCH_CHANNEL=release`),
